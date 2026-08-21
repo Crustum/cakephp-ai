@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 use Crustum\Ai\Exception\AiException;
 
-describe('cohere embeddings', function (): void {
     test('unwraps the float vectors when embeddings are keyed by embedding type', function (): void {
         $client = $this->fakeBedrockInvoke([
             'embeddings' => ['float' => [[0.1, 0.2, 0.3]], 'int8' => [[1, 2, 3]]],
@@ -93,9 +92,7 @@ describe('cohere embeddings', function (): void {
         expect(json_decode($mock->getLastCommand()['body'], true))->toHaveKey('texts');
         expect($response->first())->toBe([0.1, 0.2, 0.3]);
     });
-});
 
-describe('titan embeddings', function (): void {
     test('requests the given dimensions', function (): void {
         $mock = $this->bedrockInvokeMock(['embedding' => [0.1, 0.2, 0.3], 'inputTextTokenCount' => 5]);
 
@@ -111,4 +108,3 @@ describe('titan embeddings', function (): void {
             'dimensions' => 256,
         ]);
     });
-});

@@ -66,9 +66,7 @@ dataset('malformed attachment types', [
     'remote-video' => [['type' => 'remote-video'], 'url'],
 ]);
 
-test('File::fromArray round-trips attachment types', function (Closure $factory, string $class, array $properties): void {
-    $original = $factory();
-
+test('File::fromArray round-trips attachment types', function (File $original, string $class, array $properties): void {
     $rehydrated = File::fromArray($original->toArray());
 
     expect($rehydrated)->toBeInstanceOf($class)

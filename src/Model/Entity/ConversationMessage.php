@@ -21,8 +21,8 @@ use Cake\ORM\Entity;
  * @property array<int|string, mixed>|null $usage_data
  * @property array<int|string, mixed>|null $meta
  * @property string|null $approval_state
- * @property \Cake\I18n\DateTime|null $created
- * @property \Cake\I18n\DateTime|null $modified
+ * @property \Cake\I18n\FrozenTime|null $created
+ * @property \Cake\I18n\FrozenTime|null $modified
  * @property \Crustum\Ai\Model\Entity\Conversation|null $conversation
  */
 class ConversationMessage extends Entity
@@ -30,7 +30,7 @@ class ConversationMessage extends Entity
     /**
      * @var array<string, bool>
      */
-    protected array $_accessible = [
+    protected $_accessible = [
         'id' => true,
         'conversation_id' => true,
         'participant_id' => true,

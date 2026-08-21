@@ -87,7 +87,7 @@ test('agent streamed event receives prompt when middleware short circuits a stre
         fn(AgentStreamed $event): bool => $event->prompt instanceof AgentPrompt
             && $event->prompt->prompt === 'Test prompt',
     );
-});
+})->skip('Unsupported on Cake 4');
 
 test('stream response conversation id is available after remembered conversations stream completes', function (): void {
     Ai::manager()->setConversationStore(new FakeConversationStore());

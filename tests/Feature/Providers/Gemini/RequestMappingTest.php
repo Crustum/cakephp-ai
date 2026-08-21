@@ -12,7 +12,6 @@ use Crustum\Ai\Test\Fixtures\Agents\ToolChoiceAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolUsingAgent;
 use Crustum\Ai\Test\Support\IntegrationPrompts;
 
-describe('request structure', function (): void {
     test('request includes model in url and contents', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('CakePHP is great'),
@@ -141,9 +140,7 @@ describe('request structure', function (): void {
         expect($toolCall)->not->toBeNull()
             ->and($toolCall->id)->toBe('call_abc123');
     });
-});
 
-describe('structured output', function (): void {
     test('structured output uses response json schema', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => $this->fakeStructuredResponse(['symbol' => 'Fe']),
@@ -217,9 +214,7 @@ describe('structured output', function (): void {
                 && $props['boilingPoint']['type'] === ['number', 'null'];
         });
     });
-});
 
-describe('usage parsing', function (): void {
     test('response usage is correctly parsed', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => aiHttpResponse([
@@ -320,9 +315,7 @@ describe('usage parsing', function (): void {
         'MALFORMED_FUNCTION_CALL maps to ContentFilter' => ['MALFORMED_FUNCTION_CALL', FinishReason::ContentFilter],
         'RECITATION maps to ContentFilter' => ['RECITATION', FinishReason::ContentFilter],
     ]);
-});
 
-describe('citations', function (): void {
     test('grounding metadata citations are filtered through supports', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => aiHttpResponse([
@@ -407,9 +400,7 @@ describe('citations', function (): void {
 
         expect($response->meta->citations)->toHaveCount(1);
     });
-});
 
-describe('tool choice', function (): void {
     test('required tool choice sends function calling config in ANY mode', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('The number is 42'),
@@ -442,4 +433,3 @@ describe('tool choice', function (): void {
             'allowed_function_names' => ['custom_named_tool'],
         ]);
     });
-});

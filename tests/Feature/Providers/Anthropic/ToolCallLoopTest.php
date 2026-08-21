@@ -165,7 +165,7 @@ test('full compose: pause_turn + server_tool_use replay with input cast and bloc
         'server_tool_use',
     ]);
 
-    $serverBlocks = collect($assistant->content)->filter(fn($b): bool => $b->type === 'server_tool_use')->values();
+    $serverBlocks = collect($assistant->content)->filter(fn($b): bool => $b->type === 'server_tool_use');
     $serverBlocks = $serverBlocks->toList();
     expect($serverBlocks)->toHaveCount(2)
         ->and($serverBlocks[0]->input)->toBeInstanceOf(stdClass::class)

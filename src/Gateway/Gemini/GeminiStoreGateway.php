@@ -142,7 +142,7 @@ class GeminiStoreGateway implements StoreGateway
             is_numeric($value) => ['key' => $key, 'numericValue' => $value],
             is_array($value) => ['key' => $key, 'stringListValue' => ['values' => $value]],
             default => ['key' => $key, 'stringValue' => (string)$value],
-        })->values()->toList();
+        })->toList();
     }
 
     /**

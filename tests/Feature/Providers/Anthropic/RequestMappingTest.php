@@ -14,7 +14,6 @@ use Crustum\Ai\Test\Fixtures\Agents\ToolChoiceAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolUsingAgent;
 use Crustum\Ai\Test\Support\IntegrationPrompts;
 
-describe('request structure', function (): void {
     test('request includes model and messages', function (): void {
         aiHttpFake([
             'api.anthropic.com/*' => $this->fakeTextResponse('CakePHP is great'),
@@ -180,9 +179,7 @@ describe('request structure', function (): void {
         aiAssertHttpSent(fn($request): bool => ! $request->hasHeader('x-api-key')
             && $request->hasHeader('anthropic-version', '2023-06-01'));
     });
-});
 
-describe('structured output', function (): void {
     test('structured output uses native output_config by default', function (): void {
         aiHttpFake([
             'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Taylor', 'age' => 30]),
@@ -331,9 +328,7 @@ describe('structured output', function (): void {
         );
         expect($response->structured)->toMatchArray(['name' => 'Taylor', 'age' => 30]);
     });
-});
 
-describe('response parsing', function (): void {
     test('response text is correctly parsed', function (): void {
         aiHttpFake([
             'api.anthropic.com/*' => $this->fakeTextResponse('CakePHP is a PHP framework'),
@@ -374,9 +369,7 @@ describe('response parsing', function (): void {
             ->promptTokens->toBe(25)
             ->completionTokens->toBe(15);
     });
-});
 
-describe('tool choice', function (): void {
     test('required tool choice maps to any', function (): void {
         aiHttpFake([
             'api.anthropic.com/*' => $this->fakeTextResponse('The number is 42'),
@@ -428,4 +421,3 @@ describe('tool choice', function (): void {
                 'Anthropic cannot force tool use while extended thinking is enabled.',
             );
     });
-});

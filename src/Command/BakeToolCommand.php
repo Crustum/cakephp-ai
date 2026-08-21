@@ -17,9 +17,12 @@ use Override;
 class BakeToolCommand extends BakeAiCommand
 {
     /**
-     * @var string
+     * @inheritDoc
      */
-    public string $pathFragment = 'Ai/Tools/';
+    protected function outputPathFragment(): string
+    {
+        return 'Ai/Tools/';
+    }
 
     /**
      * @inheritDoc

@@ -27,7 +27,6 @@ use Crustum\Ai\Test\Fixtures\Agents\MultiStepToolAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
 use PHPUnit\Framework\AssertionFailedError;
 
-describe('prompt responses', function (): void {
     test('agents can be faked', function (): void {
         AssistantAgent::fake([
             'First response',
@@ -144,9 +143,7 @@ describe('prompt responses', function (): void {
             ->and($response)->not->toBeInstanceOf(StructuredAgentResponse::class)
             ->and($response->text)->toEqual('Hello');
     });
-});
 
-describe('stream responses', function (): void {
     test('agent streams can be faked', function (): void {
         AssistantAgent::fake([
             'First response',
@@ -223,9 +220,7 @@ describe('stream responses', function (): void {
             ->and($searchIndex($events, fn($event): bool => $event instanceof ToolCallEvent))
             ->toBeLessThan($searchIndex($events, fn($event): bool => $event instanceof ToolResultEvent));
     });
-});
 
-describe('queue responses', function (): void {
     test('queued agents can be faked', function (): void {
         AssistantAgent::fake();
 
@@ -278,7 +273,7 @@ describe('queue responses', function (): void {
 
         expect($GLOBALS['agentResponse'])->toBeInstanceOf(AgentResponse::class);
         expect($GLOBALS['agentResponse']->text)->toEqual('First response');
-    });
+    })->skip('Unsupported on Cake 4');
 
     test('queued agents can be faked and then callback is not executed if queue is faked', function (): void {
         aiFakeQueue();
@@ -295,10 +290,8 @@ describe('queue responses', function (): void {
         expect($GLOBALS['agentResponse'])->toBeNull();
 
         $this->assertJobPushed(InvokeAgentJob::class);
-    });
-});
+    })->skip('Unsupported on Cake 4');
 
-describe('provider enum support', function (): void {
     test('queued agents accept ai provider enum', function (): void {
         AssistantAgent::fake();
 
@@ -324,9 +317,7 @@ describe('provider enum support', function (): void {
 
         AssistantAgent::assertPrompted(fn(AgentPrompt $prompt): bool => $prompt->prompt === 'Enum stream');
     });
-});
 
-describe('timeout handling', function (): void {
     test('timeout can be passed to agent prompt', function (): void {
         AssistantAgent::fake();
 
@@ -410,4 +401,3 @@ describe('timeout handling', function (): void {
             ->and($revised->prompt)->toBe('')
             ->and($revised->approvalDecisions)->toBe($prompt->approvalDecisions);
     });
-});

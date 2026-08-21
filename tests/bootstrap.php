@@ -61,7 +61,7 @@ use Crustum\Ai\AiPlugin;
 use Crustum\Ai\Providers\ElevenLabsProvider;
 use Crustum\Ai\Providers\OpenAiCompatibleProvider;
 use Crustum\Ai\Providers\OpenRouterProvider;
-use Crustum\Queue\ContainerRegistry;
+// use Crustum\Queue\ContainerRegistry;
 
 function ensureDirectoryExists(string $path): void
 {
@@ -138,7 +138,7 @@ $aiPlugin->services($container);
 Ai::setContainer($container);
 
 QueueManager::setConfig('default', ['url' => 'null:']);
-ContainerRegistry::setInstance($container);
+// ContainerRegistry::setInstance($container);
 
 Configure::load('Crustum/Ai.ai', 'default');
 Configure::write('Ai.conversations.connection', 'test');

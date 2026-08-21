@@ -6,7 +6,7 @@ namespace Crustum\Ai\Storage;
 use Cake\Collection\Collection;
 use Cake\Core\Configure;
 use Cake\Database\Driver\Sqlite;
-use Cake\I18n\DateTime;
+use Cake\I18n\FrozenTime;
 use Cake\ORM\Locator\TableLocator;
 use Crustum\Ai\Approvals\ApprovalMismatchException;
 use Crustum\Ai\Contracts\ConversationStore;
@@ -54,7 +54,7 @@ class DatabaseConversationStore implements ConversationStore
                 'participant_type' => $participantType,
                 'participant_id' => (string)$participantId,
             ])
-            ->orderByDesc('modified')
+            ->order(['modified' => 'DESC'])
             ->first();
 
         return $record?->id;
@@ -66,7 +66,7 @@ class DatabaseConversationStore implements ConversationStore
     public function storeConversation(?string $participantType, string|int|null $participantId, string $title): string
     {
         $conversationId = Uuid::v7();
-        $now = DateTime::now();
+        $now = FrozenTime::now();
 
         $this->conversationsTable()->saveOrFail($this->conversationsTable()->newEntity([
             'id' => $conversationId,
@@ -90,7 +90,7 @@ class DatabaseConversationStore implements ConversationStore
         AgentPrompt $prompt,
     ): string {
         $messageId = Uuid::v7();
-        $now = DateTime::now();
+        $now = FrozenTime::now();
 
         $this->messagesTable()->saveOrFail($this->messagesTable()->newEntity([
             'id' => $messageId,
@@ -125,7 +125,7 @@ class DatabaseConversationStore implements ConversationStore
         AgentResponse $response,
     ): ?string {
         $messageId = Uuid::v7();
-        $now = DateTime::now();
+        $now = FrozenTime::now();
 
         $toolResults = $response->toolResults->toList();
 
@@ -265,7 +265,7 @@ class DatabaseConversationStore implements ConversationStore
         $records = $this->messagesTable()
             ->find()
             ->where(['conversation_id' => $conversationId])
-            ->orderBy(['id' => 'ASC'])
+            ->order(['id' => 'ASC'])
             ->limit($limit)
             ->all()
             ->toList();
@@ -465,7 +465,7 @@ class DatabaseConversationStore implements ConversationStore
                 ->find()
                 ->where(['conversation_id' => $conversationId, 'role' => 'assistant'])
                 ->where(fn($exp) => $exp->isNotNull('approval_state'))
-                ->orderByDesc('id');
+                ->order(['id' => 'DESC']);
 
             if ($participantType === null) {
                 $query->where(fn($exp) => $exp->isNull('participant_type'));
@@ -525,7 +525,7 @@ class DatabaseConversationStore implements ConversationStore
 
             $row->tool_results = $merged;
             $row->approval_state = json_encode(['pending' => $pending]);
-            $row->modified = DateTime::now();
+            $row->modified = FrozenTime::now();
 
             $messagesTable->saveOrFail($row);
         });
@@ -533,10 +533,10 @@ class DatabaseConversationStore implements ConversationStore
 
     /**
      * @param string $conversationId Conversation identifier.
-     * @param \Cake\I18n\DateTime $timestamp Timestamp.
+     * @param \Cake\I18n\FrozenTime $timestamp Timestamp.
      * @return void
      */
-    protected function touchConversation(string $conversationId, DateTime $timestamp): void
+    protected function touchConversation(string $conversationId, FrozenTime $timestamp): void
     {
         $this->conversationsTable()->updateAll(
             ['modified' => $timestamp],

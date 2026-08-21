@@ -137,6 +137,6 @@ trait DeepSeekHelpersTrait
      */
     protected function filterMessages(array $messages, string $role): array
     {
-        return collect($messages)->filter(fn(array $m): bool => $m['role'] === $role)->values()->toList();
+        return collect($messages)->filter(fn(array $m): bool => $m['role'] === $role)->toList();
     }
 }

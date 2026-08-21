@@ -8,7 +8,7 @@ use Crustum\Ai\Files\Document;
 use Crustum\Ai\Files\ProviderDocument;
 use Crustum\Ai\Stores;
 
-describe('store operations', function (): void {
+
     test('stores can be faked', function (): void {
         Stores::fake([
             'first-store',
@@ -47,9 +47,7 @@ describe('store operations', function (): void {
 
         Stores::get('vs_1');
     })->throws(RuntimeException::class);
-});
 
-describe('store assertions', function (): void {
     test('can assert store was created by name', function (): void {
         Stores::fake();
 
@@ -104,9 +102,7 @@ describe('store assertions', function (): void {
 
         Stores::assertNothingDeleted();
     });
-});
 
-describe('file operations', function (): void {
     test('can add file to store with provider id', function (): void {
         Stores::fake();
 
@@ -146,9 +142,7 @@ describe('file operations', function (): void {
             fn(StorableFile $file): bool => $file->content() === 'Hello, world!',
         );
     });
-});
 
-describe('file assertions', function (): void {
     test('can assert file added to store', function (): void {
         Stores::fake();
 
@@ -217,4 +211,3 @@ describe('file assertions', function (): void {
 
         $store->assertNotRemoved(fn($fileId): bool => $fileId === 'file_456');
     });
-});

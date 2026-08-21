@@ -32,27 +32,27 @@ class AiPlugin extends BasePlugin implements ManifestInterface
     /**
      * Plugin name
      */
-    protected ?string $name = 'Ai';
+    protected $name = 'Ai';
 
     /**
      * Do bootstrapping or not
      */
-    protected bool $bootstrapEnabled = true;
+    protected $bootstrapEnabled = true;
 
     /**
      * Load routes or not
      */
-    protected bool $routesEnabled = false;
+    protected $routesEnabled = false;
 
     /**
      * Console middleware enabled
      */
-    protected bool $consoleEnabled = true;
+    protected $consoleEnabled = true;
 
     /**
      * HTTP middleware enabled
      */
-    protected bool $middlewareEnabled = false;
+    protected $middlewareEnabled = false;
 
     /**
      * Register plugin services in the container

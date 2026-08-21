@@ -69,12 +69,11 @@ class SimilaritySearch implements Tool
             : $model;
 
         return new self(function (string $queryString) use ($table, $column, $minSimilarity, $limit, $query): Collection {
-            $pendingQuery = $table->find(
-                'similarTo',
-                column: $column,
-                search: $queryString,
-                minSimilarity: $minSimilarity,
-            );
+            $pendingQuery = $table->find('similarTo', [
+                'column' => $column,
+                'search' => $queryString,
+                'minSimilarity' => $minSimilarity,
+            ]);
 
             if ($query instanceof Closure) {
                 $pendingQuery = $query($pendingQuery);

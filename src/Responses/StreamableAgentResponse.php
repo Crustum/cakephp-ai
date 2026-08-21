@@ -202,7 +202,7 @@ class StreamableAgentResponse implements IteratorAggregate
     public function getIterator(): Traversable
     {
         // Use existing events if we've already streamed them once...
-        if (count($this->events) > 0) {
+        if (!$this->events->isEmpty()) {
             foreach ($this->events as $event) {
                 $this->hasYielded = true;
 

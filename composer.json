@@ -10,35 +10,29 @@
         }
     ],
     "require": {
-        "php": ">=8.4",
+        "php": ">=8.2",
         "aws/aws-sdk-php": "^3.393",
-        "cakephp/cakephp": "^5.4",
-        "crustum/cakephp-queue": "^1.2",
-        "crustum/broadcasting": "^1.3",
+        "cakephp/cakephp": "^4.5",
+        "cakephp/queue": "^1.0",
+        "crustum/broadcasting": "^0.0.1",
+        "crustum/plugin-manifest": "^0.0.1",
+        "guzzlehttp/guzzle": "^7.8",
         "crustum/json-schema": "^1.0",
-        "crustum/mcp": "dev-main",
-        "crustum/plugin-manifest": "^1.1",
-        "enqueue/enqueue": "^0.10.27",
-        "enqueue/simple-client": "^0.10.27",
-        "enqueue/dsn": "^0.10.27",
-        "enqueue/null": "^0.10.27",
-        "guzzlehttp/guzzle": "^7.15",
+        "opis/closure": "^4.5",
         "laravel/serializable-closure": "^2.0",
-        "league/flysystem": "^3.35",
-        "league/flysystem-local": "^3.31",
-        "opis/closure": "^4.5"
+        "league/flysystem": "^3.29",
+        "league/flysystem-local": "^3.29",
+        "psr/simple-cache": "^2.0",
+        "symfony/polyfill-php84": "^1.31"
     },
     "require-dev": {
-        "boundwize/structarmed": "^0.15.44",
-        "cakephp/bake": "^3.8",
-        "crustum/essentia": "^1.0.2",
-        "phpunit/phpunit": "^12.5.33",
-        "pestphp/pest": "^4.7",
-        "pestphp/pest-plugin-type-coverage": "^4.0",
-        "cakephp/cakephp-codesniffer": "^5.3",
-        "phpstan/phpstan": "^2.2",
-        "rector/rector": "^2.6",
-        "mockery/mockery": "^1.6.15"
+        "cakephp/bake": "^2.0",
+        "phpunit/phpunit": "^9.0",
+        "pestphp/pest": "^1.0|^2.0",
+        "cakephp/cakephp-codesniffer": "^4.0",
+        "phpstan/phpstan": "^1.0",
+        "mockery/mockery": "^1.6",
+        "doctrine/instantiator": "^1.5"
     },
     "autoload": {
         "psr-4": {
@@ -95,6 +89,9 @@
             "pestphp/pest-plugin": true,
             "php-http/discovery": false
         },
-        "platform-check": false
+        "platform-check": false,
+        "audit": {
+            "block-insecure": false
+        }
     }
 }

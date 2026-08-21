@@ -4,7 +4,6 @@ declare(strict_types=1);
 use Crustum\Ai\Gateway\TextGenerationLoop;
 use Crustum\Ai\Messages\AssistantMessage;
 
-describe('reasoning capture', function (): void {
     test('captures reasoning content into providerContentBlocks', function (): void {
         $client = $this->fakeBedrockConverse([
             'output' => [
@@ -35,4 +34,3 @@ describe('reasoning capture', function (): void {
         ]);
         expect($assistant->content)->toBe('Hello');
     });
-});

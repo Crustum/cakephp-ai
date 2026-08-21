@@ -18,8 +18,8 @@ use Throwable;
  * @property string|int|null $participant_id
  * @property string|null $participant_type
  * @property string $title
- * @property \Cake\I18n\DateTime|null $created
- * @property \Cake\I18n\DateTime|null $modified
+ * @property \Cake\I18n\FrozenTime|null $created
+ * @property \Cake\I18n\FrozenTime|null $modified
  * @property list<\Crustum\Ai\Model\Entity\ConversationMessage>|null $messages
  * @property list<\Crustum\Ai\Model\Entity\ConversationMessage>|null $conversation_messages
  * @property object|null $participant
@@ -29,7 +29,7 @@ class Conversation extends Entity
     /**
      * @var array<string, bool>
      */
-    protected array $_accessible = [
+    protected $_accessible = [
         'id' => true,
         'participant_id' => true,
         'participant_type' => true,

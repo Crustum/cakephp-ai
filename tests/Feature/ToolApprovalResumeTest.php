@@ -76,7 +76,7 @@ test('a remembered agent pauses for approval, persists the tool_use, and resumes
     $messagesTable = $this->getTableLocator()->get('Crustum/Ai.ConversationMessages');
     $assistantRow = $messagesTable->find()
         ->where(['conversation_id' => $paused->conversationId, 'role' => 'assistant'])
-        ->orderByDesc('id')
+        ->order(['id' => 'DESC'])
         ->first();
 
     expect($assistantRow->tool_calls)->toHaveCount(1)
@@ -113,7 +113,7 @@ test('an ownerless remembered agent pauses for approval and resumes without a pa
     $messagesTable = $this->getTableLocator()->get('Crustum/Ai.ConversationMessages');
     $assistantRow = $messagesTable->find()
         ->where(['conversation_id' => $paused->conversationId, 'role' => 'assistant'])
-        ->orderByDesc('id')
+        ->order(['id' => 'DESC'])
         ->first();
 
     expect($assistantRow->participant_type)->toBeNull()
@@ -451,7 +451,7 @@ test('a rejected resume stores and rehydrates the tool result as denied', functi
     $messagesTable = $this->getTableLocator()->get('Crustum/Ai.ConversationMessages');
     $assistantRow = $messagesTable->find()
         ->where(['conversation_id' => $paused->conversationId, 'role' => 'assistant'])
-        ->orderByDesc('id')
+        ->order(['id' => 'DESC'])
         ->first();
 
     expect($assistantRow->tool_results[0]['denied'])->toBeTrue();

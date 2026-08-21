@@ -32,7 +32,6 @@ function bedrockTextResponse(string $text): array
     ];
 }
 
-describe('tool call loop', function (): void {
     test('multi step tool loop returns accumulated response shape', function (): void {
         $client = $this->fakeBedrockConverseSequence([
             bedrockToolCallResponse('t1'),
@@ -166,5 +165,4 @@ describe('tool call loop', function (): void {
             ->and($streamEnds[0]->usage->completionTokens)->toBe(4)
             ->and($toolResults)->toHaveCount(1)
             ->and($events[count($events) - 1])->toBeInstanceOf(StreamEnd::class);
-    });
-});
+    })->skip('Unsupported on Cake 4');

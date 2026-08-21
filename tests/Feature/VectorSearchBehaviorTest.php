@@ -53,12 +53,11 @@ test('behavior declares the similarTo finder', function (): void {
 });
 
 test('similarTo finder builds a pgvector cosine similarity query', function (): void {
-    $query = vectorSearchTestTable()->find(
-        'similarTo',
-        column: 'embedding',
-        embedding: [0.1, 0.2, 0.3],
-        minSimilarity: 0.7,
-    );
+    $query = vectorSearchTestTable()->find('similarTo', [
+        'column' => 'embedding',
+        'embedding' => [0.1, 0.2, 0.3],
+        'minSimilarity' => 0.7,
+    ]);
 
     $sql = $query->sql();
 
@@ -71,12 +70,11 @@ test('similarTo finder builds a pgvector cosine similarity query', function (): 
 test('similarTo finder generates embeddings from a query string', function (): void {
     Embeddings::fake([[[0.9, 0.8]]]);
 
-    $query = vectorSearchTestTable()->find(
-        'similarTo',
-        column: 'embedding',
-        search: 'best wineries in Napa Valley',
-        minSimilarity: 0.4,
-    );
+    $query = vectorSearchTestTable()->find('similarTo', [
+        'column' => 'embedding',
+        'search' => 'best wineries in Napa Valley',
+        'minSimilarity' => 0.4,
+    ]);
 
     expect($query->sql())->toContain('[0.9,0.8]');
 });
@@ -105,12 +103,11 @@ test('similarTo finder executes against a pgvector column', function (): void {
     ]));
     $table->addBehavior('Crustum/Ai.VectorSearch');
 
-    $results = $table->find(
-        'similarTo',
-        column: 'embedding',
-        embedding: [0.1, 0.2, 0.3],
-        minSimilarity: 0.0,
-    )
+    $results = $table->find('similarTo', [
+        'column' => 'embedding',
+        'embedding' => [0.1, 0.2, 0.3],
+        'minSimilarity' => 0.0,
+    ])
         ->select(['id', 'title'])
         ->all();
 

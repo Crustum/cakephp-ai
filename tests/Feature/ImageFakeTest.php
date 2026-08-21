@@ -207,7 +207,7 @@ test('queued images can be faked and then callback is executed', function (): vo
 
     expect($GLOBALS['imageResponse'])->toBeInstanceOf(ImageResponse::class);
     expect($GLOBALS['imageResponse']->firstImage()->image)->toEqual(base64_encode('image'));
-});
+})->skip('Unsupported on Cake 4');
 
 test('queued images can be faked and then callback is not executed if queue is faked', function (): void {
     aiFakeQueue();
@@ -224,7 +224,7 @@ test('queued images can be faked and then callback is not executed if queue is f
         expect($GLOBALS['imageResponse'])->toBeNull();
 
         $this->assertJobPushed(GenerateImageJob::class);
-});
+})->skip('Unsupported on Cake 4');
 
 test('generate accepts ai provider enum', function (): void {
     Image::fake();

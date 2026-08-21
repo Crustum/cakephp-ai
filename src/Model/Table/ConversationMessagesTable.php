@@ -47,14 +47,6 @@ class ConversationMessagesTable extends Table
             'className' => ConversationsTable::class,
             'foreignKey' => 'conversation_id',
         ]);
-
-        $schema = $this->getSchema();
-
-        foreach (['attachments', 'tool_calls', 'tool_results', 'usage_data', 'meta'] as $field) {
-            if ($schema->hasColumn($field)) {
-                $schema->setColumnType($field, 'json');
-            }
-        }
     }
 
     /**
@@ -102,16 +94,18 @@ class ConversationMessagesTable extends Table
     }
 
     /**
-     * @param \Cake\Database\Schema\TableSchemaInterface $schema Table schema.
      * @return \Cake\Database\Schema\TableSchemaInterface
      */
-    protected function _initializeSchema(TableSchemaInterface $schema): TableSchemaInterface
+    #[Override]
+    public function getSchema(): TableSchemaInterface
     {
-        $schema->setColumnType('attachments', 'json');
-        $schema->setColumnType('tool_calls', 'json');
-        $schema->setColumnType('tool_results', 'json');
-        $schema->setColumnType('usage_data', 'json');
-        $schema->setColumnType('meta', 'json');
+        $schema = parent::getSchema();
+
+        foreach (['attachments', 'tool_calls', 'tool_results', 'usage_data', 'meta'] as $field) {
+            if ($schema->hasColumn($field)) {
+                $schema->setColumnType($field, 'json');
+            }
+        }
 
         return $schema;
     }

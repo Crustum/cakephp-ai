@@ -14,7 +14,6 @@ use Crustum\Ai\Streaming\Event\TextEnd;
 use Crustum\Ai\Streaming\Event\TextStart;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 
-describe('text streaming', function (): void {
     test('streaming handles reasoning and text blocks', function (): void {
         $client = $this->fakeBedrockStream([
             $this->contentBlockStart(0),
@@ -335,4 +334,3 @@ describe('text streaming', function (): void {
             'reasoningContent' => ['redactedContent' => 'redacted-bytes'],
         ]);
     });
-});

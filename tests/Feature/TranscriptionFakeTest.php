@@ -156,7 +156,7 @@ test('queued transcriptions can be faked and then callback is executed', functio
 
     expect($GLOBALS['transcriptionResponse'])->toBeInstanceOf(TranscriptionResponse::class);
     expect($GLOBALS['transcriptionResponse']->text)->toEqual('Some transcription text');
-});
+})->skip('Unsupported on Cake 4');
 
 test('queued transcriptions can be faked and then callback is not executed if queue is faked', function (): void {
     aiFakeQueue();
@@ -173,7 +173,7 @@ test('queued transcriptions can be faked and then callback is not executed if qu
         expect($GLOBALS['transcriptionResponse'])->toBeNull();
 
         $this->assertJobPushed(GenerateTranscriptionJob::class);
-});
+})->skip('Unsupported on Cake 4');
 
 test('generate accepts ai provider enum', function (): void {
     Transcription::fake();

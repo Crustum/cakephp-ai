@@ -10,8 +10,8 @@ use Cake\ORM\Entity;
  *
  * @property int $id
  * @property string $name
- * @property \Cake\I18n\DateTime|null $created
- * @property \Cake\I18n\DateTime|null $modified
+ * @property \Cake\I18n\FrozenTime|null $created
+ * @property \Cake\I18n\FrozenTime|null $modified
  * @property \Crustum\Ai\Model\Entity\Conversation[] $conversations
  */
 class User extends Entity
@@ -19,7 +19,7 @@ class User extends Entity
     /**
      * @var array<string, bool>
      */
-    protected array $_accessible = [
+    protected $_accessible = [
         'name' => true,
         'created' => true,
         'modified' => true,

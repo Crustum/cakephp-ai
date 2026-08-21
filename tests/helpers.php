@@ -4,7 +4,7 @@ declare(strict_types=1);
 use Cake\Collection\Collection;
 use Cake\Core\Configure;
 use Cake\Http\Client\Exception\ClientException;
-use Cake\I18n\DateTime;
+use Cake\I18n\FrozenTime;
 use Cake\Queue\TestSuite\TestQueueClient;
 use Crustum\Ai\AnonymousAgent;
 use Crustum\Ai\Contracts\Agent;
@@ -114,11 +114,11 @@ if (!function_exists('now')) {
     /**
      * Get the current datetime.
      *
-     * @return \Cake\I18n\DateTime
+     * @return \Cake\I18n\FrozenTime
      */
-    function now(): DateTime
+    function now(): FrozenTime
     {
-        return DateTime::now();
+        return FrozenTime::now();
     }
 }
 

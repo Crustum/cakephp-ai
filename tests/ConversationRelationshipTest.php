@@ -53,7 +53,7 @@ test('model can retrieve conversations using relationship', function (): void {
                 'participant_type' => User::class,
                 'participant_id' => (string)$user->id,
             ])
-            ->orderByDesc('modified')
+            ->order(['modified' => 'DESC'])
             ->all(),
     );
 

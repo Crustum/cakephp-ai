@@ -193,7 +193,6 @@ class GeminiGateway implements Gateway, StepTextGateway
 
         $images = (new Collection($data['candidates'][0]['content']['parts'] ?? []))
             ->filter(fn(mixed $part): bool => isset($part['inlineData']))
-            ->values()
             ->map(fn(mixed $part): GeneratedImage => new GeneratedImage(
                 $part['inlineData']['data'],
                 $part['inlineData']['mimeType'],

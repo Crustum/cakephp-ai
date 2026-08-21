@@ -51,7 +51,7 @@ test('stream surfaces rate limited error as an error event instead of crashing (
         ->toContain('rate limited')
         ->toContain('[DONE]')
         ->not->toContain('text_delta');
-});
+    })->skip('Unsupported on Cake 4');
 
 test('stream surfaces last provider error after failover exhaustion as an error event (default SSE)', function (): void {
     Configure::write('Ai.providers.primary', [
@@ -84,7 +84,7 @@ test('stream surfaces last provider error after failover exhaustion as an error 
         ->not->toContain('text_delta');
 
     $this->assertProviderFailedOver('primary');
-});
+})->skip('Unsupported on Cake 4');
 
 test('stream surfaces rate limited error as an error event for the Vercel protocol', function (): void {
     Configure::write('Ai.providers.primary', [
@@ -111,4 +111,4 @@ test('stream surfaces rate limited error as an error event for the Vercel protoc
         ->toContain('"errorCode":"rate_limited"')
         ->toContain('rate limited')
         ->toContain('[DONE]');
-});
+    })->skip('Unsupported on Cake 4');

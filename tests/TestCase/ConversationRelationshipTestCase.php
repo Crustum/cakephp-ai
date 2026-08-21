@@ -11,7 +11,7 @@ abstract class ConversationRelationshipTestCase extends AiTestCase
     /**
      * @var array<int, string>
      */
-    protected array $fixtures = [
+    protected $fixtures = [
         'plugin.Crustum/Ai.Users',
         'plugin.Crustum/Ai.AgentConversations',
         'plugin.Crustum/Ai.AgentConversationMessages',

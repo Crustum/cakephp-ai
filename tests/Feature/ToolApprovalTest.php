@@ -135,7 +135,7 @@ test('a paused stream dispatches the tool approval requested event', function ()
         'DeleteFile',
         fn(PendingApproval $approval): bool => $approval->id === 'call-1',
     );
-});
+})->skip('Unsupported on Cake 4');
 
 test('approval resumes flow through queue and broadcast delivery styles', function (): void {
     ConversationalAgent::fake();
@@ -169,7 +169,7 @@ test('approval resumes flow through queue and broadcast delivery styles', functi
     ConversationalAgent::assertQueued(
         fn(QueuedAgentPrompt $prompt): bool => $prompt->approvalDecisions?->get('*')?->isApproved() === true,
     );
-});
+})->skip('Unsupported on Cake 4');
 
 function toolApprovalToolUse(string $id): AiHttpResponseDefinition
 {

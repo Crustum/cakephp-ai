@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Crustum\Ai\Model\Behavior;
 
 use Cake\ORM\Behavior;
-use Cake\ORM\Query\SelectQuery;
+use Cake\ORM\Query;
+use Cake\ORM\Table;
 use Crustum\Ai\Embeddings;
 use JsonException;
 use RuntimeException;
@@ -23,11 +24,11 @@ use RuntimeException;
  *     $this->addBehavior('Crustum/Ai.VectorSearch');
  * }
  *
- * $results = $this->Documents->find('similarTo',
- *     column: 'embedding',
- *     search: 'best wineries in Napa Valley',
- *     minSimilarity: 0.4,
- * )->limit(10)->all();
+ * $results = $this->Documents->find('similarTo', [
+ *     'column' => 'embedding',
+ *     'search' => 'best wineries in Napa Valley',
+ *     'minSimilarity' => 0.4,
+ * ])->limit(10)->all();
  * ```
  */
 class VectorSearchBehavior extends Behavior
@@ -35,7 +36,7 @@ class VectorSearchBehavior extends Behavior
     /**
      * @var array<string, mixed>
      */
-    protected array $_defaultConfig = [
+    protected $_defaultConfig = [
         'implementedFinders' => [
             'similarTo' => 'findSimilarTo',
         ],
@@ -48,20 +49,19 @@ class VectorSearchBehavior extends Behavior
      * search string is given, embeddings are generated automatically via the
      * `Embeddings` facade.
      *
-     * @param \Cake\ORM\Query\SelectQuery $query The query to modify.
-     * @param string $column The vector column name.
-     * @param float $minSimilarity Minimum cosine similarity (0.0 - 1.0).
-     * @param string|null $search Text to embed and search for.
-     * @param array<int, float|int>|null $embedding Pre-computed embedding vector.
-     * @return \Cake\ORM\Query\SelectQuery
+     * @param \Cake\ORM\Query $query The query to modify.
+     * @param array<string, mixed> $options Finder options: column, minSimilarity, search, embedding.
+     * @return \Cake\ORM\Query
      */
     public function findSimilarTo(
-        SelectQuery $query,
-        string $column = 'embedding',
-        float $minSimilarity = 0.6,
-        ?string $search = null,
-        ?array $embedding = null,
-    ): SelectQuery {
+        Query $query,
+        array $options = [],
+    ): Query {
+        $column = $options['column'] ?? 'embedding';
+        $minSimilarity = $options['minSimilarity'] ?? 0.6;
+        $search = $options['search'] ?? null;
+        $embedding = $options['embedding'] ?? null;
+
         if ($embedding === null) {
             $embedding = $this->embeddingFor((string)$search);
         }
@@ -71,7 +71,7 @@ class VectorSearchBehavior extends Behavior
 
         return $query
             ->where(sprintf('%s >= %F', $similarity, $minSimilarity))
-            ->orderByDesc($similarity);
+            ->order([$similarity => 'DESC']);
     }
 
     /**

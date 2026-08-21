@@ -32,6 +32,13 @@ abstract class BakeAiCommand extends BakeCommand
     abstract protected function templateName(Arguments $args): string;
 
     /**
+     * Output path under the application or plugin source directory.
+     *
+     * @return string
+     */
+    abstract protected function outputPathFragment(): string;
+
+    /**
      * Optional class name suffix (e.g. Tool). Empty string to skip.
      *
      * @return string
@@ -122,7 +129,7 @@ abstract class BakeAiCommand extends BakeCommand
             $namespace = $this->_pluginNamespace($this->plugin);
         }
 
-        $namespace .= '\\' . str_replace('/', '\\', rtrim($this->pathFragment, '/'));
+        $namespace .= '\\' . str_replace('/', '\\', rtrim($this->outputPathFragment(), '/'));
 
         $vars = [
             'namespace' => $namespace,
@@ -144,10 +151,11 @@ abstract class BakeAiCommand extends BakeCommand
     #[Override]
     public function getPath(Arguments $args): string
     {
-        $path = APP . $this->pathFragment;
+        $pathFragment = $this->outputPathFragment();
+        $path = APP . $pathFragment;
 
         if ($this->plugin) {
-            $path = $this->_pluginPath($this->plugin) . 'src/' . $this->pathFragment;
+            $path = $this->_pluginPath($this->plugin) . 'src/' . $pathFragment;
         }
 
         $prefix = $this->getPrefix($args);

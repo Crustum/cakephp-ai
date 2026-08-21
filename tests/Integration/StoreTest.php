@@ -124,7 +124,7 @@ test('can add and remove file from store', function (string $provider, string $a
     $store->delete();
 })->with('store-providers');
 
-describe('file search', function (): void {
+
     afterEach(function (): void {
         if (property_exists($this, 'fileSearchStore') && $this->fileSearchStore !== null) {
             $this->fileSearchStore->delete();
@@ -186,4 +186,3 @@ describe('file search', function (): void {
 
         expect(trim((string)$response))->toStartWith('Yes');
     });
-});

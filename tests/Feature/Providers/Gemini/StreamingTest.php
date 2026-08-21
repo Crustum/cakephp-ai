@@ -15,7 +15,6 @@ use Crustum\Ai\Streaming\Event\TextStart;
 use Crustum\Ai\Streaming\Event\ToolCall as ToolCallEvent;
 use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsWithToolsAgent;
 
-describe('text streaming', function (): void {
     test('streaming emits text events', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => aiHttpResponse(
@@ -54,9 +53,7 @@ describe('text streaming', function (): void {
 
         aiAssertHttpSent(fn($request): bool => str_contains((string)$request->url(), 'streamGenerateContent?alt=sse'));
     });
-});
 
-describe('tool calls', function (): void {
     test('streaming handles tool calls', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => aiHttpSequence([
@@ -210,9 +207,7 @@ describe('tool calls', function (): void {
 
         expect($signature)->toBe('sig_stream_555');
     });
-});
 
-describe('thinking blocks', function (): void {
     test('streaming handles thinking parts', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => aiHttpResponse(
@@ -237,9 +232,7 @@ describe('thinking blocks', function (): void {
         $reasoningDelta = array_values(array_filter($events, fn($e): bool => $e instanceof ReasoningDelta))[0];
         expect($reasoningDelta->delta)->toBe('Let me think...');
     });
-});
 
-describe('error handling', function (): void {
     test('streaming error event stops stream', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => aiHttpResponse(
@@ -261,9 +254,7 @@ describe('error handling', function (): void {
 
         expect($error)->toBeInstanceOf(Error::class)->type->toBe('overloaded')->message->toBe('Server overloaded');
     });
-});
 
-describe('usage tracking', function (): void {
     test('streaming captures usage from final chunk', function (): void {
         aiHttpFake([
             'generativelanguage.googleapis.com/*' => aiHttpResponse(
@@ -310,4 +301,3 @@ describe('usage tracking', function (): void {
         'MALFORMED_FUNCTION_CALL maps to ContentFilter' => ['MALFORMED_FUNCTION_CALL', FinishReason::ContentFilter],
         'RECITATION maps to ContentFilter' => ['RECITATION', FinishReason::ContentFilter],
     ]);
-});

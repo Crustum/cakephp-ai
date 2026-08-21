@@ -30,13 +30,9 @@ use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Responses\StructuredTextResponse;
 use Crustum\Ai\Tools\AgentTool;
-use Crustum\Ai\Tools\McpServerTool;
-use Crustum\Ai\Tools\McpTool;
 use Crustum\Ai\Trait\RemembersConversationsTrait;
 use Crustum\Ai\Utility\Reflection;
 use Crustum\JsonSchema\JsonSchemaTypeFactory;
-use Crustum\Mcp\Client\Primitives\Tool as McpClientTool;
-use Crustum\Mcp\Server\Tool as McpServerToolContract;
 use Throwable;
 
 /**
@@ -201,8 +197,6 @@ trait GeneratesTextTrait
             $tool instanceof ToolSearch => $tool->withTools(
                 array_map(fn($nested) => $this->resolveTool($nested), $tool->tools),
             ),
-            $tool instanceof McpClientTool => new McpTool($tool),
-            $tool instanceof McpServerToolContract => new McpServerTool($tool),
             default => $tool,
         };
     }

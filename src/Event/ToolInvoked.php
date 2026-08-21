@@ -28,7 +28,7 @@ class ToolInvoked extends AiEvent
         public Agent $agent,
         public Tool $tool,
         public array $arguments,
-        public mixed $result,
+        public $result,
         public float $time,
     ) {
         parent::__construct([

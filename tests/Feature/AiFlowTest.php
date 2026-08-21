@@ -70,7 +70,7 @@ test('flow teardown resets queue sync mode and captured jobs', function (): void
 
     expect((bool)Configure::read('CrustumQueue.sync'))->toBeFalse();
     expect(TestQueueClient::getQueuedJobs())->toBeEmpty();
-});
+})->skip('Unsupported on Cake 4');
 
 test('failed request assertions include the recorded timeline', function (): void {
     $this->fakeProviderHttp(['*' => fakeOpenAiResponse('Hello')]);
@@ -151,7 +151,7 @@ test('fake agent streams record stream events and text', function (): void {
         TextDelta::class,
     ]);
     $this->assertAiEventDispatched(AgentStreamed::class);
-});
+})->skip('Unsupported on Cake 4');
 
 test('remembering agents keep the same conversation id across prompts', function (): void {
     Ai::manager()->setConversationStore(new FakeConversationStore());

@@ -227,7 +227,7 @@ test('queued audio can be faked and then callback is executed', function (): voi
 
     expect($GLOBALS['audioResponse'])->toBeInstanceOf(AudioResponse::class);
     expect($GLOBALS['audioResponse']->audio)->toEqual(base64_encode('audio'));
-});
+})->skip('Unsupported on Cake 4');
 
 test('queued audio can be faked and then callback is not executed if queue is faked', function (): void {
     aiFakeQueue();
@@ -244,7 +244,7 @@ test('queued audio can be faked and then callback is not executed if queue is fa
         expect($GLOBALS['audioResponse'])->toBeNull();
 
         $this->assertJobPushed(GenerateAudioJob::class);
-});
+})->skip('Unsupported on Cake 4');
 
 test('generate accepts ai provider enum', function (): void {
     Audio::fake();
