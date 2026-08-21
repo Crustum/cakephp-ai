@@ -1,0 +1,48 @@
+<?php
+declare(strict_types=1);
+
+use Crustum\Ai\Responses\Data\GeneratedImage;
+
+test('generated image stores base64 encoded image', function (): void {
+    $image = new GeneratedImage('SGVsbG8gV29ybGQ=', 'image/png');
+
+    expect($image->image)->toBe('SGVsbG8gV29ybGQ=')
+        ->and($image->mime)->toBe('image/png');
+});
+
+test('generated image accepts null mime type', function (): void {
+    $image = new GeneratedImage('YmFzZTY0IGRhdGE=');
+
+    expect($image->image)->toBe('YmFzZTY0IGRhdGE=')
+        ->and($image->mime)->toBeNull();
+});
+
+test('generated image content decodes base64 to string', function (): void {
+    $image = new GeneratedImage('SGVsbG8gV29ybGQ=');
+
+    expect($image->content())->toBe('Hello World');
+});
+
+test('generated image to array includes image and mime', function (): void {
+    $image = new GeneratedImage('dGVzdCBpbWFnZQ==', 'image/jpeg');
+
+    $array = $image->toArray();
+
+    expect($array['image'])->toBe('dGVzdCBpbWFnZQ==')
+        ->and($array['mime'])->toBe('image/jpeg');
+});
+
+test('generated image json serialize returns to array', function (): void {
+    $image = new GeneratedImage('ZGF0YQ==', 'image/webp');
+
+    $json = $image->jsonSerialize();
+
+    expect($json['image'])->toBe('ZGF0YQ==')
+        ->and($json['mime'])->toBe('image/webp');
+});
+
+test('generated image to string returns decoded content', function (): void {
+    $image = new GeneratedImage('VGVzdA==');
+
+    expect((string)$image)->toBe('Test');
+});

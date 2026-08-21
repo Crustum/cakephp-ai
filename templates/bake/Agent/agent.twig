@@ -1,0 +1,48 @@
+<?php
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\Conversational;
+use Crustum\Ai\Contracts\HasTools;
+use Crustum\Ai\Trait\PromptableTrait;
+use Stringable;
+
+/**
+ * {{ class }} agent.
+ */
+class {{ class }} implements Agent, Conversational, HasTools
+{
+    use PromptableTrait;
+
+    /**
+     * Get the instructions that the agent should follow.
+     *
+     * @return \Stringable|string
+     */
+    public function instructions(): Stringable|string
+    {
+        return 'You are a helpful assistant.';
+    }
+
+    /**
+     * Get the list of messages comprising the conversation so far.
+     *
+     * @return iterable<int, \Crustum\Ai\Messages\Message>
+     */
+    public function messages(): iterable
+    {
+        return [];
+    }
+
+    /**
+     * Get the tools available to the agent.
+     *
+     * @return iterable<int, \Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>
+     */
+    public function tools(): iterable
+    {
+        return [];
+    }
+}

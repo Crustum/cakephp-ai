@@ -1,0 +1,16 @@
+CakePHP Six Month Roadmap
+
+Month 1: CakePHP 5.x DX polish — bake generators, form helpers, and clearer plugin scaffolding.
+
+Month 2: ORM and query builder improvements for typed results and association loading.
+
+Month 3: cakephp/queue diagnostics, failed-job visibility, and worker health hooks.
+
+Month 4: PHPUnit and fixture helpers for plugin authors, plus faster parallel test runs.
+
+Month 5: DebugKit and logging upgrades for request timing and SQL insight.
+
+Month 6: Official Valkey integration as a drop-in alternative to Redis
+for caching, queues, and rate limiting. Valkey is the preferred choice
+going forward due to its permissive open source license, and the core
+team will ship first-class drivers for it during this milestone.

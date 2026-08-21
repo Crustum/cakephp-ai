@@ -1,0 +1,49 @@
+<?php
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Crustum\Ai\Contracts\Tool;
+use Crustum\Ai\Tools\Request;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Stringable;
+
+/**
+ * {{ class }} tool.
+ */
+class {{ class }} implements Tool
+{
+    /**
+     * Get the description of the tool's purpose.
+     *
+     * @return \Stringable|string
+     */
+    public function description(): Stringable|string
+    {
+        return 'A description of the tool.';
+    }
+
+    /**
+     * Execute the tool.
+     *
+     * @param \Crustum\Ai\Tools\Request $request Tool request
+     * @return \Stringable|string
+     */
+    public function handle(Request $request): Stringable|string
+    {
+        return '';
+    }
+
+    /**
+     * Get the tool's schema definition.
+     *
+     * @param \Illuminate\Contracts\JsonSchema\JsonSchema $schema Schema builder
+     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     */
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'value' => $schema->string()->required(),
+        ];
+    }
+}

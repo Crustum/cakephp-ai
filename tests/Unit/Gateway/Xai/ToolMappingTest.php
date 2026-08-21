@@ -1,0 +1,95 @@
+<?php
+declare(strict_types=1);
+
+use Crustum\Ai\Contracts\Providers\Provider;
+use Crustum\Ai\Contracts\Tool;
+use Crustum\Ai\Gateway\Xai\Trait\MapsToolsTrait;
+use Crustum\Ai\Tools\Request;
+use Crustum\JsonSchema\Contracts\JsonSchema;
+
+test('tool parameters are not wrapped in schema definition', function (): void {
+    $mapper = new class
+    {
+        use MapsToolsTrait;
+
+        public function map(array $tools, Provider $provider): array
+        {
+            return $this->mapTools($tools, $provider);
+        }
+    };
+
+    $tool = new class implements Tool
+    {
+        public function description(): string
+        {
+            return 'Creates a new lead';
+        }
+
+        public function handle(Request $request): string
+        {
+            return 'done';
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [
+                'name' => $schema->string()->required()->description('full customer name'),
+                'email' => $schema->string()->nullable(),
+                'phone_number' => $schema->string()->required()->description("customer's phone number"),
+            ];
+        }
+    };
+
+    $provider = $this->createMock(Provider::class);
+
+    $mapped = $mapper->map([$tool], $provider);
+
+    $parameters = $mapped[0]['parameters'];
+
+    expect($parameters['properties'] ?? [])->not->toHaveKey('schema_definition')
+        ->and($parameters['required'] ?? [])->not->toContain('schema_definition')
+        ->and($parameters['properties'])->toHaveKeys(['name', 'email', 'phone_number'])
+        ->and($parameters['required'])->toContain('name')
+        ->toContain('phone_number')
+        ->and($parameters['type'])->toEqual('object')
+        ->and($parameters['additionalProperties'])->toBeFalse();
+});
+
+test('tool with empty schema includes parameters', function (): void {
+    $mapper = new class
+    {
+        use MapsToolsTrait;
+
+        public function map(array $tools, Provider $provider): array
+        {
+            return $this->mapTools($tools, $provider);
+        }
+    };
+
+    $tool = new class implements Tool
+    {
+        public function description(): string
+        {
+            return 'A tool with no parameters';
+        }
+
+        public function handle(Request $request): string
+        {
+            return 'done';
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [];
+        }
+    };
+
+    $provider = $this->createMock(Provider::class);
+
+    $mapped = $mapper->map([$tool], $provider);
+
+    expect($mapped[0])->toHaveKey('parameters')
+        ->and($mapped[0]['parameters']['type'])->toEqual('object')
+        ->and($mapped[0]['parameters']['required'])->toBeEmpty()
+        ->and($mapped[0]['parameters']['additionalProperties'])->toBeFalse();
+});

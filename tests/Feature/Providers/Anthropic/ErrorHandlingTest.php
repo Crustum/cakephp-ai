@@ -1,0 +1,117 @@
+<?php
+declare(strict_types=1);
+
+use Crustum\Ai\Exception\AiException;
+use Crustum\Ai\Exception\InsufficientCreditsException;
+use Crustum\Ai\Exception\ProviderOverloadedException;
+use Crustum\Ai\Exception\RateLimitedException;
+use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
+
+test('http error response throws request exception', function (): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => aiHttpResponse([
+            'type' => 'error',
+            'error' => [
+                'type' => 'invalid_request_error',
+                'message' => 'max_tokens: must be at least 1',
+            ],
+        ], 400),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'anthropic',
+    );
+})->throws(RequestException::class);
+
+test('rate limit response throws rate limited exception', function (): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => aiHttpResponse([
+            'type' => 'error',
+            'error' => [
+                'type' => 'rate_limit_error',
+                'message' => 'Rate limit exceeded',
+            ],
+        ], 429),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'anthropic',
+    );
+})->throws(RateLimitedException::class);
+
+test('insufficient credit response throws insufficient credits exception', function (string $message): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => aiHttpResponse([
+            'type' => 'error',
+            'error' => [
+                'type' => 'invalid_request_error',
+                'message' => $message,
+            ],
+        ], 400),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'anthropic',
+    );
+})->with([
+    'credit balance' => ['Your credit balance is too low to access the API.'],
+    'insufficient' => ['You have insufficient funds to complete this request.'],
+    'quota exceeded' => ['Your monthly quota exceeded the configured limit.'],
+    'exceeded your current quota' => ['You have exceeded your current quota, please check your plan.'],
+    'billing' => ['There is a billing issue with your account; please update your payment method.'],
+    'usage limit' => ['You have reached your specified API usage limits. To continue, please adjust your limits.'],
+])->throws(InsufficientCreditsException::class);
+
+test('error in 200 response throws ai exception', function (): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => aiHttpResponse([
+            'type' => 'error',
+            'error' => [
+                'type' => 'api_error',
+                'message' => 'Internal server error',
+            ],
+        ], 200),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'anthropic',
+    );
+})->throws(AiException::class, 'api_error');
+
+test('529 overloaded response throws provider overloaded exception', function (): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => aiHttpResponse([
+            'type' => 'error',
+            'error' => [
+                'type' => 'overloaded_error',
+                'message' => 'Overloaded',
+            ],
+        ], 529),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'anthropic',
+    );
+})->throws(ProviderOverloadedException::class);
+
+test('transient upstream errors fail over as overloaded', function (int $status): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => aiHttpResponse([
+            'type' => 'error',
+            'error' => [
+                'type' => 'api_error',
+                'message' => 'The service is temporarily unavailable.',
+            ],
+        ], $status),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'anthropic',
+    );
+})->with([502, 503, 504, 520, 522, 524])->throws(ProviderOverloadedException::class);

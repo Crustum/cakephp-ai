@@ -1,0 +1,29 @@
+<?php
+declare(strict_types=1);
+
+namespace Crustum\Ai\Enums;
+
+/**
+ * AI Provider Laboratory Enum
+ *
+ * Defines supported AI provider laboratories/platforms.
+ */
+enum Lab: string
+{
+    case Anthropic = 'anthropic';
+    case Azure = 'azure';
+    case Bedrock = 'bedrock';
+    case Cohere = 'cohere';
+    case DeepSeek = 'deepseek';
+    case ElevenLabs = 'eleven';
+    case Gemini = 'gemini';
+    case Groq = 'groq';
+    case Jina = 'jina';
+    case Mistral = 'mistral';
+    case Ollama = 'ollama';
+    case OpenAI = 'openai';
+    case OpenAICompatible = 'openai-compatible';
+    case OpenRouter = 'openrouter';
+    case VoyageAI = 'voyageai';
+    case xAI = 'xai';
+}

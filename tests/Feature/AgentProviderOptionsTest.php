@@ -1,0 +1,87 @@
+<?php
+declare(strict_types=1);
+
+use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Gateway\TextGenerationOptions;
+use Crustum\Ai\Prompts\AgentPrompt;
+use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
+use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsAgent;
+
+test('text generation options can extract provider options for openai', function (): void {
+    $options = TextGenerationOptions::forAgent(new ProviderOptionsAgent());
+
+    $providerOptions = $options->providerOptions(Lab::OpenAI);
+
+    expect($providerOptions)->not->toBeNull()
+        ->toBeArray()
+        ->toEqual(['reasoning' => [
+            'effort' => 'high',
+        ], 'frequency_penalty' => 0.5, 'presence_penalty' => 0.3]);
+});
+
+test('text generation options can extract provider options for anthropic', function (): void {
+    $options = TextGenerationOptions::forAgent(new ProviderOptionsAgent());
+
+    $providerOptions = $options->providerOptions(Lab::Anthropic);
+
+    expect($providerOptions)->not->toBeNull()
+        ->toEqual(['thinking' => [
+            'type' => 'enabled',
+            'budget_tokens' => 10000,
+        ]]);
+});
+
+test('text generation options accept string provider', function (): void {
+    $options = TextGenerationOptions::forAgent(new ProviderOptionsAgent());
+
+    $providerOptions = $options->providerOptions('openai');
+
+    expect($providerOptions)->not->toBeNull()
+        ->toEqual(['reasoning' => [
+            'effort' => 'high',
+        ], 'frequency_penalty' => 0.5, 'presence_penalty' => 0.3]);
+});
+
+test('text generation options return empty array for unknown provider', function (): void {
+    $options = TextGenerationOptions::forAgent(new ProviderOptionsAgent());
+
+    $providerOptions = $options->providerOptions(Lab::Cohere);
+
+    expect($providerOptions)->toBeEmpty();
+});
+
+test('text generation options have null provider options when agent does not implement interface', function (): void {
+    $options = TextGenerationOptions::forAgent(new AssistantAgent());
+
+    expect($options->providerOptions(Lab::OpenAI))->toBeNull();
+});
+
+test('provider options are passed through when prompting', function (): void {
+    ProviderOptionsAgent::fake();
+
+    (new ProviderOptionsAgent())->prompt('Hello');
+
+    ProviderOptionsAgent::assertPrompted(function (AgentPrompt $prompt): bool {
+        $options = TextGenerationOptions::forAgent($prompt->agent);
+
+        return $options->providerOptions(Lab::OpenAI) === [
+            'reasoning' => [
+                'effort' => 'high',
+            ],
+            'frequency_penalty' => 0.5,
+            'presence_penalty' => 0.3,
+        ];
+    });
+});
+
+test('provider options default to null when not provided', function (): void {
+    AssistantAgent::fake();
+
+    (new AssistantAgent())->prompt('Hello');
+
+    AssistantAgent::assertPrompted(function (AgentPrompt $prompt): bool {
+        $options = TextGenerationOptions::forAgent($prompt->agent);
+
+        return $options->providerOptions(Lab::OpenAI) === null;
+    });
+});

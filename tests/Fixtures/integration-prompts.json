@@ -1,0 +1,28 @@
+{
+    "knowledge": {
+        "id": "knowledge",
+        "question": "What is the name of the PHP framework created by Larry Masters?",
+        "expected": ["CakePHP"],
+        "match": "contains"
+    },
+    "chemical_symbol": {
+        "id": "chemical_symbol",
+        "question": "What is the chemical symbol for silver?",
+        "expected": ["ag"],
+        "match": "equals_ci"
+    },
+    "conversation_name": {
+        "id": "conversation_name",
+        "context": "My name is Taylor",
+        "question": "What did I say my name was?",
+        "expected": ["Taylor"],
+        "match": "contains"
+    },
+    "research": {
+        "id": "research",
+        "question": "What is CakePHP?",
+        "prompt": "Use the research_agent tool to answer: \"{question}\" Forward the user question verbatim as the task.",
+        "expected": [],
+        "match": "contains"
+    }
+}

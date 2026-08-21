@@ -1,0 +1,52 @@
+<?php
+declare(strict_types=1);
+
+use Crustum\Ai\Gateway\Trait\ComposesSchemaInstructionsTrait;
+use Crustum\JsonSchema\JsonSchemaTypeFactory;
+
+beforeEach(function (): void {
+    $this->trait = new class
+    {
+        use ComposesSchemaInstructionsTrait {
+            composeInstructions as public;
+        }
+    };
+
+    $this->factory = new JsonSchemaTypeFactory();
+});
+
+test('returns instructions unchanged when schema is blank', function (): void {
+    expect($this->trait->composeInstructions('Be helpful.', null))
+        ->toBe('Be helpful.');
+});
+
+test('returns null when both instructions and schema are blank', function (): void {
+    expect($this->trait->composeInstructions(null, null))
+        ->toBeNull();
+});
+
+test('appends schema instruction when instructions are blank', function (): void {
+    $schema = ['name' => $this->factory->string()->description('The name')];
+
+    $result = $this->trait->composeInstructions(null, $schema);
+
+    expect($result)->toContain('JSON object');
+});
+
+test('prepends instructions before schema instruction', function (): void {
+    $schema = ['name' => $this->factory->string()->description('The name')];
+
+    $result = $this->trait->composeInstructions('Be concise.', $schema);
+
+    expect($result)->toStartWith('Be concise.');
+    expect($result)->toContain('JSON object');
+});
+
+test('non-ascii characters in schema descriptions are not unicode-escaped', function (): void {
+    $schema = ['name' => $this->factory->string()->description('名前を入力してください')];
+
+    $result = $this->trait->composeInstructions(null, $schema);
+
+    expect($result)->toContain('名前を入力してください');
+    expect($result)->not->toContain('\u');
+});

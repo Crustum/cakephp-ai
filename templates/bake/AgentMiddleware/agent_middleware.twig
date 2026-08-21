@@ -1,0 +1,27 @@
+<?php
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use Closure;
+use Crustum\Ai\Prompts\AgentPrompt;
+use Crustum\Ai\Responses\AgentResponse;
+
+/**
+ * {{ class }} agent middleware.
+ */
+class {{ class }}
+{
+    /**
+     * Handle the incoming prompt.
+     *
+     * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
+     * @param \Closure $next Next middleware callback
+     * @return mixed
+     */
+    public function handle(AgentPrompt $prompt, Closure $next): mixed
+    {
+        return $next($prompt)->then(function (AgentResponse $response): void {
+        });
+    }
+}
