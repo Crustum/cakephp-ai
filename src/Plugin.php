@@ -25,14 +25,14 @@ use Override;
  *
  * @uses \Crustum\PluginManifest\Manifest\ManifestTrait
  */
-class AiPlugin extends BasePlugin implements ManifestInterface
+class Plugin extends BasePlugin implements ManifestInterface
 {
     use ManifestTrait;
 
     /**
      * Plugin name
      */
-    protected $name = 'Ai';
+    protected $name = 'Crustum/Ai';
 
     /**
      * Do bootstrapping or not

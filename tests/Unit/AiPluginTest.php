@@ -5,7 +5,7 @@ namespace Crustum\Ai\Test\Unit;
 
 use Cake\Core\Configure;
 use Cake\Core\Plugin;
-use Crustum\Ai\AiPlugin;
+use Crustum\Ai\Plugin as AiPlugin;
 use Crustum\Ai\Providers\OpenRouterProvider;
 
 /**
@@ -14,11 +14,11 @@ use Crustum\Ai\Providers\OpenRouterProvider;
 test('plugin loads correctly', function (): void {
     $plugin = new AiPlugin();
 
-    expect($plugin->getName())->toBe('Ai');
+    expect($plugin->getName())->toBe('Crustum/Ai');
 });
 
 test('configuration loads', function (): void {
-    $plugin = Plugin::getCollection()->get('Ai');
+    $plugin = Plugin::getCollection()->get('Crustum/Ai');
 
     expect($plugin)->toBeInstanceOf(AiPlugin::class);
     expect(Configure::check('Ai'))->toBeTrue();

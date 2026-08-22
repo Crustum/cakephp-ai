@@ -7,7 +7,7 @@ use Cake\Core\Plugin;
 use Cake\Http\BaseApplication;
 use Cake\Http\MiddlewareQueue;
 use Cake\Routing\RouteBuilder;
-use Crustum\Ai\AiPlugin;
+use Crustum\Ai\Plugin as AiPlugin;
 use Override;
 
 /**

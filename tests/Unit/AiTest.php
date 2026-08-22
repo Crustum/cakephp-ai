@@ -6,7 +6,7 @@ namespace Crustum\Ai\Test\Unit;
 use Cake\Core\Container;
 use Crustum\Ai\Ai;
 use Crustum\Ai\AiManager;
-use Crustum\Ai\AiPlugin;
+use Crustum\Ai\Plugin as AiPlugin;
 use Crustum\Ai\AnonymousAgent;
 use Crustum\Ai\Registry\ProviderRegistry;
 

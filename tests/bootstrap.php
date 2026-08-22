@@ -57,7 +57,7 @@ use Cake\Datasource\ConnectionManager;
 use Cake\Queue\QueueManager;
 use Cake\TestSuite\Fixture\SchemaLoader;
 use Crustum\Ai\Ai;
-use Crustum\Ai\AiPlugin;
+use Crustum\Ai\Plugin as AiPlugin;
 use Crustum\Ai\Providers\ElevenLabsProvider;
 use Crustum\Ai\Providers\OpenAiCompatibleProvider;
 use Crustum\Ai\Providers\OpenRouterProvider;
