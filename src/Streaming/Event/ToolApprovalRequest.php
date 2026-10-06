@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Streaming\Event;
 
+use Cake\Collection\Collection;
 use Cake\Collection\CollectionInterface;
 
 /**
@@ -14,13 +15,13 @@ class ToolApprovalRequest extends StreamEvent
      * @param string $id Event ID
      * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Approvals\PendingApproval> $pendingApprovals Pending approvals
      * @param int $timestamp Unix timestamp
-     * @param array<int, array<string, mixed>> $providerContentBlocks Raw provider replay state for the paused turn; never serialized to clients
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\Step> $steps Replay state for the paused turn; never serialized to clients
      */
     public function __construct(
         public string $id,
         public CollectionInterface $pendingApprovals,
         public int $timestamp,
-        public array $providerContentBlocks = [],
+        public CollectionInterface $steps = new Collection([]),
     ) {
     }
 
@@ -37,20 +38,6 @@ class ToolApprovalRequest extends StreamEvent
                 fn($approval) => $approval->toArray(),
             ))),
             'timestamp' => $this->timestamp,
-        ];
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'tool-approval-request',
-            'approvalId' => $this->id,
-            'approvals' => array_values(iterator_to_array($this->pendingApprovals->map(
-                fn($approval) => $approval->toArray(),
-            ))),
         ];
     }
 }

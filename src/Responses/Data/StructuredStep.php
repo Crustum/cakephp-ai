@@ -21,8 +21,10 @@ class StructuredStep extends Step
      * @param array<int, \Crustum\Ai\Responses\Data\ToolCall> $toolCalls Tool calls made
      * @param array<int, \Crustum\Ai\Responses\Data\ToolResult> $toolResults Tool results
      * @param \Crustum\Ai\Responses\Data\FinishReason $finishReason Reason for finishing
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Token usage
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata
+     * @param string $reasoning Reasoning the step produced
+     * @param array<int, array<string, mixed>> $replayBlocks Replay blocks
      */
     public function __construct(
         string $text,
@@ -30,10 +32,12 @@ class StructuredStep extends Step
         array $toolCalls,
         array $toolResults,
         FinishReason $finishReason,
-        Usage $usage,
+        TextUsage $usage,
         Meta $meta,
+        string $reasoning,
+        array $replayBlocks,
     ) {
-        parent::__construct($text, $toolCalls, $toolResults, $finishReason, $usage, $meta);
+        parent::__construct($text, $toolCalls, $toolResults, $finishReason, $usage, $meta, $reasoning, $replayBlocks);
     }
 
     /**

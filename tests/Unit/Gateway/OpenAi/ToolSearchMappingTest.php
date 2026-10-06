@@ -28,6 +28,7 @@ function openAiToolSearchProvider(): Provider
     {
         public function __construct()
         {
+            $this->config = ['driver' => 'openai'];
         }
 
         public function name(): string

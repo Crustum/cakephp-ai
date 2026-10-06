@@ -14,13 +14,16 @@ use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
 use Crustum\Ai\Contracts\Providers\StoreProvider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsFileSearch;
+use Crustum\Ai\Contracts\Providers\SupportsToolSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\AzureOpenAi\AzureOpenAiFileGateway;
 use Crustum\Ai\Gateway\AzureOpenAi\AzureOpenAiGateway;
 use Crustum\Ai\Gateway\AzureOpenAi\AzureOpenAiStoreGateway;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Providers\Trait\GeneratesEmbeddingsTrait;
@@ -41,7 +44,7 @@ use Override;
 /**
  * Azure OpenAI text, image, embeddings, files, and stores provider.
  */
-class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsFileSearch, SupportsWebSearch, TextProvider
+class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsCodeExecution, SupportsFileSearch, SupportsToolSearch, SupportsWebSearch, TextProvider
 {
     use GeneratesEmbeddingsTrait;
     use GeneratesImagesTrait;
@@ -87,19 +90,6 @@ class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FilePro
         $this->config['name'] ??= 'azure';
         $this->config['driver'] ??= 'azure';
         $this->config['key'] ??= $this->config['apiKey'] ?? null;
-    }
-
-    /**
-     * Get the credentials for the AI provider.
-     *
-     * @return array<string, mixed>
-     */
-    #[Override]
-    public function providerCredentials(): array
-    {
-        return [
-            'key' => $this->config['key'],
-        ];
     }
 
     /**
@@ -193,7 +183,7 @@ class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FilePro
      */
     public function defaultTextModel(): string
     {
-        return $this->config['deployment'] ?? 'gpt-4o';
+        return $this->config['deployment'] ?? 'gpt-6-sol';
     }
 
     /**
@@ -203,7 +193,7 @@ class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FilePro
      */
     public function cheapestTextModel(): string
     {
-        return $this->config['deployment'] ?? 'gpt-4o-mini';
+        return $this->config['deployment'] ?? 'gpt-6-luna';
     }
 
     /**
@@ -213,7 +203,7 @@ class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FilePro
      */
     public function smartestTextModel(): string
     {
-        return $this->config['deployment'] ?? 'gpt-4o';
+        return $this->config['deployment'] ?? 'gpt-6-astra';
     }
 
     /**
@@ -223,7 +213,7 @@ class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FilePro
      */
     public function defaultImageModel(): string
     {
-        return $this->config['image_deployment'] ?? 'gpt-image-1';
+        return $this->config['image_deployment'] ?? 'gpt-image-2.5-flare';
     }
 
     /**
@@ -281,6 +271,19 @@ class AzureOpenAiProvider extends Provider implements EmbeddingProvider, FilePro
         return array_filter([
             'vector_store_ids' => $search->ids(),
         ]);
+    }
+
+    /**
+     * Get the code execution tool options for the provider.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $codeExecution Code execution tool
+     * @return array<string, mixed>
+     */
+    public function codeExecutionToolOptions(CodeExecution $codeExecution): array
+    {
+        return $codeExecution->providerOptions(Lab::Azure) + [
+            'container' => ['type' => 'auto'],
+        ];
     }
 
     /**

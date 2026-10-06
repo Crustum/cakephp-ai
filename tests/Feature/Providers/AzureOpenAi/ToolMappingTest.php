@@ -4,7 +4,10 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Cake\Utility\Hash;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Providers\Tools\CodeExecution;
+use Crustum\Ai\Providers\Tools\ToolSearch;
 use Crustum\Ai\Providers\Tools\WebSearch;
+use Crustum\Ai\Test\Fixtures\Tools\DeferredTool;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Test\Fixtures\Tools\NamedTool;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
@@ -240,5 +243,36 @@ test('web search tool omits user_location when no location set', function (): vo
         $tool = collect(Hash::get($body, 'tools'))->filter(fn($item): bool => is_array($item) && array_key_exists('type', $item) && $item['type'] === 'web_search')->first();
 
         return ! array_key_exists('user_location', $tool);
+    });
+});
+
+test('code execution tool sends type code_interpreter with auto container', function (): void {
+    aiHttpFake([
+        '*' => fakeAzureResponse('result'),
+    ]);
+
+    agent(tools: [new CodeExecution()])->prompt('Run some code', provider: 'azure');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $tool = collect(Hash::get($body, 'tools'))->filter(fn($item): bool => is_array($item) && ($item['type'] ?? null) === 'code_interpreter')->first();
+
+        return Hash::get($tool, 'container') === ['type' => 'auto'];
+    });
+});
+
+test('tool search emits a tool_search entry with azure options and defers its nested tools', function (): void {
+    aiHttpFake(['*' => fakeAzureResponse('ok')]);
+
+    $search = (new ToolSearch(tools: [new DeferredTool()]))
+        ->withProviderOptions(fn(Lab|string $lab): array => $lab === Lab::Azure ? ['execution' => 'client'] : []);
+
+    agent(tools: [$search])->prompt('Hi', provider: 'azure');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $tools = collect(Hash::get(json_decode($request->body(), true), 'tools'));
+
+        return $tools->filter(fn($tool): bool => ($tool['type'] ?? null) === 'tool_search')->first() === ['type' => 'tool_search', 'execution' => 'client']
+            && ($tools->filter(fn($tool): bool => ($tool['name'] ?? null) === 'DeferredTool')->first()['defer_loading'] ?? false) === true;
     });
 });

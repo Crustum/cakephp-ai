@@ -6,8 +6,8 @@ namespace Crustum\Ai\Responses;
 use Cake\Collection\CollectionInterface;
 use Countable;
 use Crustum\Ai\Responses\Data\GeneratedImage;
+use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
 use RuntimeException;
 use Stringable;
 
@@ -24,12 +24,12 @@ class ImageResponse implements Countable, Stringable
      * Constructor
      *
      * @param \Crustum\Ai\Responses\ImageList|\Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\GeneratedImage>|array<int, \Crustum\Ai\Responses\Data\GeneratedImage> $images The generated images
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage information
+     * @param \Crustum\Ai\Responses\Data\ImageUsage $usage Token usage information
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata about the response
      */
     public function __construct(
         ImageList|array|CollectionInterface $images,
-        public Usage $usage,
+        public ImageUsage $usage,
         public Meta $meta,
     ) {
         $this->images = match (true) {

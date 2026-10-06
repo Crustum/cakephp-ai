@@ -18,6 +18,7 @@ use Crustum\Ai\Files\RemoteDocument;
 use Crustum\Ai\Files\RemoteImage;
 use Crustum\Ai\Files\StoredDocument;
 use Crustum\Ai\Files\StoredImage;
+use Crustum\Ai\Gateway\Trait\ResolvesDocumentFilenamesTrait;
 use InvalidArgumentException;
 use Laminas\Diactoros\UploadedFile;
 
@@ -26,6 +27,8 @@ use Laminas\Diactoros\UploadedFile;
  */
 trait MapsAttachmentsTrait
 {
+    use ResolvesDocumentFilenamesTrait;
+
     /**
      * Map the given attachments to OpenAI Responses API content parts.
      *
@@ -135,24 +138,5 @@ trait MapsAttachmentsTrait
             'image/gif',
             'image/webp',
         ], true);
-    }
-
-    /**
-     * Get a fallback filename for the given MIME type.
-     *
-     * @param string|null $mimeType MIME type
-     * @return string
-     */
-    protected function fallbackFilename(?string $mimeType): string
-    {
-        return 'document' . match ($mimeType) {
-            'text/plain' => '.txt',
-            'text/markdown' => '.md',
-            'text/csv' => '.csv',
-            'text/html' => '.html',
-            'application/pdf' => '.pdf',
-            'application/json' => '.json',
-            default => '',
-        };
     }
 }

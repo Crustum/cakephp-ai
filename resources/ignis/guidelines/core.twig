@@ -1,0 +1,26 @@
+# CakePHP AI
+
+Prefer `docs/migration-plans/` + the `ai-sdk-development` skill. **Alpha** (`Crustum\Ai\*`).
+
+@scoped(['config/ai.php'])
+## AI config
+- Configure providers and defaults via env/Configure — never commit secrets.
+- Enable only drivers that exist in this package version.
+@endscoped
+
+@scoped(['src/Ai/Agents/**'])
+## Agents
+- Bake with `bake agent`; implement Agent + `PromptableTrait`; add tools via `HasTools` when needed.
+- Prefer `prompt` / stream / queue APIs that exist in the package; use `Agent::make()` for DI.
+@endscoped
+
+@scoped(['src/Ai/Tools/**', 'src/Ai/Middleware/**'])
+## Tools & middleware
+- Bake tools/middleware; keep `description` / `schema` / `handle` aligned with MCP-style contracts where shared.
+- MCP-backed tools need a working `crustum/mcp` server registration.
+@endscoped
+
+@scoped(['tests/**'])
+## AI tests
+- Prefer package fakes (`::fake`, `assertPrompted`, prevent stray calls) when available.
+@endscoped

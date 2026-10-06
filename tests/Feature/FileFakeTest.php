@@ -4,9 +4,11 @@ declare(strict_types=1);
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files;
 use Crustum\Ai\Files\Document;
+use Crustum\Ai\Files\LocalDocument;
 use Crustum\Ai\Responses\FileResponse;
 use Crustum\Ai\Test\Support\Storage\LocalDisk;
 use Crustum\Ai\Test\Support\TestFile;
+use Laminas\Diactoros\UploadedFile;
 
 test('files can be faked', function (): void {
     Files::fake([
@@ -83,6 +85,41 @@ test('can assert no files were stored', function (): void {
     Files::fake();
 
     Files::assertNothingStored();
+});
+
+test('can store an uploaded file from its path', function (): void {
+    Files::fake();
+
+    Files::put(TestFile::upload(__DIR__ . '/../Fixtures/report.txt', 'report.txt', 'text/plain'));
+
+        Files::assertStored(fn(StorableFile $file): bool => $file instanceof LocalDocument);
+        Files::assertStored(fn(StorableFile $file): bool => $file->name() === 'report.txt');
+        Files::assertStored(fn(StorableFile $file): bool => $file->mimeType() === 'text/plain');
+        Files::assertStored(fn(StorableFile $file): bool => trim((string)$file) === 'I am an expense report.');
+});
+
+test('cannot store an uploaded file that failed to upload', function (): void {
+    Files::fake();
+
+    Files::put(new UploadedFile('', 0, UPLOAD_ERR_NO_TMP_DIR, 'report.txt', 'text/plain'));
+})->throws(InvalidArgumentException::class);
+
+test('a stored fake upload can still be read after the upload object is gone', function (): void {
+    Files::fake();
+
+    Files::put(TestFile::upload(__DIR__ . '/../Fixtures/report.txt', 'report.txt', 'text/plain'));
+
+    Files::assertStored(fn(StorableFile $file): bool => trim((string)$file) === 'I am an expense report.');
+});
+
+test('storing an uploaded file does not copy it to another temporary path', function (): void {
+    Files::fake();
+
+    $upload = TestFile::upload(__DIR__ . '/../Fixtures/report.txt', 'report.txt', 'text/plain');
+
+    Files::put($upload);
+
+    Files::assertStored(fn(StorableFile $file): bool => $file->path === $upload->getStream()->getMetadata('uri'));
 });
 
 test('can override the filename when storing files from each document constructor', function (): void {

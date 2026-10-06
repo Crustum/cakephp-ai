@@ -6,6 +6,7 @@ use Cake\Utility\Hash;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeToolChoiceAgent;
+use Crustum\Ai\Test\Fixtures\Agents\NestedStructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolChoiceAgent;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
@@ -151,6 +152,20 @@ test('structured output includes json schema response format', function (): void
     });
 });
 
+test('structured output without Strict attribute sends strict false in response format', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('{"elements": []}')]);
+
+    (new NestedStructuredAgent())->prompt('List elements.', provider: 'mistral');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $format = Hash::get($body, 'response_format');
+
+        return $format['type'] === 'json_schema'
+            && $format['json_schema']['strict'] === false;
+    });
+});
+
 test('streaming request includes stream options', function (): void {
     aiHttpFake(['*' => aiHttpResponse("data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hi\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\ndata: [DONE]\n\n")]);
 
@@ -202,8 +217,30 @@ test('response usage is correctly parsed', function (): void {
 
     $response = agent()->prompt('Hello', provider: 'mistral');
 
-    expect($response->usage->promptTokens)->toBe(10)
-        ->and($response->usage->completionTokens)->toBe(5);
+    expect($response->usage->inputTokens)->toBe(10)
+        ->and($response->usage->outputTokens)->toBe(5);
+});
+
+test('response usage reports cached prompt tokens', function (): void {
+    aiHttpFake(['*' => aiHttpResponse([
+        'model' => 'mistral-medium-latest',
+        'choices' => [[
+            'index' => 0,
+            'message' => ['role' => 'assistant', 'content' => 'Hello'],
+            'finish_reason' => 'stop',
+        ]],
+        'usage' => [
+            'prompt_tokens' => 1013,
+            'completion_tokens' => 30,
+            'prompt_tokens_details' => ['cached_tokens' => 1008],
+        ],
+    ])]);
+
+    $response = agent()->prompt('Hello', provider: 'mistral');
+
+    expect($response->usage->inputTokens)->toBe(1013)
+        ->and($response->usage->cacheReadInputTokens)->toBe(1008)
+        ->and($response->usage->uncachedInputTokens())->toBe(5);
 });
 
 test('structured response is correctly parsed', function (): void {

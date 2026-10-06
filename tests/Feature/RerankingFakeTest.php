@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use Cake\Collection\Collection;
 use Cake\Core\Configure;
+use Crustum\Ai\Collections;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Prompts\RerankingPrompt;
 use Crustum\Ai\Reranking;
@@ -187,4 +188,33 @@ test('prompt records limit', function (): void {
     Reranking::of(['Doc A', 'Doc B', 'Doc C'])->limit(2)->rerank('query');
 
     Reranking::assertReranked(fn(RerankingPrompt $prompt): bool => $prompt->limit === 2 && $prompt->count() === 3);
+});
+
+test('prompt records timeout', function (): void {
+    Reranking::fake();
+
+    Reranking::of(['Doc A'])->timeout(45)->rerank('query');
+
+    Reranking::assertReranked(fn(RerankingPrompt $prompt): bool => $prompt->timeout === 45);
+});
+
+test('collection rerank records timeout', function (): void {
+    Reranking::fake();
+
+    Collections::of([['body' => 'Doc A']])->rerank(query: 'query', by: 'body', timeout: 45);
+
+    Reranking::assertReranked(fn(RerankingPrompt $prompt): bool => $prompt->timeout === 45);
+});
+
+test('collection rerank returns items in reranked order', function (): void {
+    Reranking::fake([
+        [
+            new RankedDocument(index: 1, document: 'Second', score: 0.9),
+            new RankedDocument(index: 0, document: 'First', score: 0.5),
+        ],
+    ]);
+
+    $reranked = Collections::of(['First', 'Second'])->rerank(query: 'query');
+
+    expect($reranked->toList())->toEqual(['Second', 'First']);
 });

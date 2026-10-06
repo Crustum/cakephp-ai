@@ -4,9 +4,8 @@ declare(strict_types=1);
 namespace Crustum\Ai\Responses;
 
 use Cake\Collection\CollectionInterface;
-use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TextUsage;
 
 /**
  * Agent Response
@@ -31,14 +30,24 @@ class AgentResponse extends TextResponse
     public ?object $conversationUser = null;
 
     /**
+     * Persisted user message row this turn wrote, if any.
+     */
+    public ?string $userMessageId = null;
+
+    /**
+     * Persisted assistant message row this turn wrote, if any.
+     */
+    public ?string $assistantMessageId = null;
+
+    /**
      * Constructor
      *
      * @param string $invocationId The unique invocation identifier
      * @param string $text The generated text
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage information
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Token usage information
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata about the response
      */
-    public function __construct(string $invocationId, string $text, Usage $usage, Meta $meta)
+    public function __construct(string $invocationId, string $text, TextUsage $usage, Meta $meta)
     {
         $this->invocationId = $invocationId;
 
@@ -46,15 +55,29 @@ class AgentResponse extends TextResponse
     }
 
     /**
+     * Create a fake response that reasoned before answering.
+     *
+     * @param string $reasoning Reasoning that preceded the answer
+     * @param string $text Answer text
+     */
+    public static function fakeWithReasoning(string $reasoning, string $text = ''): self
+    {
+        $response = new self('fake-invocation', $text, new TextUsage(), new Meta());
+        $response->reasoning = $reasoning;
+
+        return $response;
+    }
+
+    /**
      * Create a fake response with tool calls pending approval.
      *
-     * @param \Cake\Collection\CollectionInterface|array<int, \Crustum\Ai\Approvals\PendingApproval> $pendingApprovals Pending approvals
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Approvals\PendingApproval>|array<int, \Crustum\Ai\Approvals\PendingApproval> $pendingApprovals Pending approvals
      */
     public static function fakeWithPendingApprovals(CollectionInterface|array $pendingApprovals): self
     {
         $pendingApprovals = is_array($pendingApprovals) ? $pendingApprovals : $pendingApprovals->toList();
 
-        return (new self('fake-invocation', '', new Usage(), new Meta()))
+        return (new self('fake-invocation', '', new TextUsage(), new Meta()))
             ->withPendingApprovals(collection($pendingApprovals));
     }
 
@@ -73,6 +96,20 @@ class AgentResponse extends TextResponse
     }
 
     /**
+     * Set the conversation message rows this turn wrote.
+     *
+     * @param string|null $userMessageId Persisted user message row id
+     * @param string|null $assistantMessageId Persisted assistant message row id
+     */
+    public function withStoredMessages(?string $userMessageId, ?string $assistantMessageId): static
+    {
+        $this->userMessageId = $userMessageId;
+        $this->assistantMessageId = $assistantMessageId;
+
+        return $this;
+    }
+
+    /**
      * Execute a callback with this response.
      *
      * @param callable $callback The callback to execute
@@ -82,28 +119,5 @@ class AgentResponse extends TextResponse
         $callback($this);
 
         return $this;
-    }
-
-    /**
-     * Get the raw provider replay state for the paused assistant turn, if any.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    public function pausedProviderContentBlocks(): array
-    {
-        if (!$this->hasPendingApprovals()) {
-            return [];
-        }
-
-        /** @var \Crustum\Ai\Messages\AssistantMessage|null $last */
-        $last = $this->messages
-            ->filter(fn($message): bool => $message instanceof AssistantMessage)
-            ->last();
-
-        if (!$last instanceof AssistantMessage) {
-            return [];
-        }
-
-        return $last->providerContentBlocks;
     }
 }

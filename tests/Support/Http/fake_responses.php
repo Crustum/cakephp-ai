@@ -53,6 +53,119 @@ if (!function_exists('fakeOpenAiToolCallResponse')) {
     }
 }
 
+if (!function_exists('openAiReasoningItem')) {
+    /**
+     * Build an OpenAI reasoning output item with summary entries.
+     *
+     * @param string $id Reasoning item ID
+     * @param string ...$summaries Summary texts
+     * @return array<string, mixed>
+     */
+    function openAiReasoningItem(string $id, string ...$summaries): array
+    {
+        return [
+            'type' => 'reasoning',
+            'id' => $id,
+            'summary' => array_map(fn(string $text): array => ['type' => 'summary_text', 'text' => $text], $summaries),
+        ];
+    }
+}
+
+if (!function_exists('openAiReasoningTextItem')) {
+    /**
+     * Build an OpenAI reasoning output item with content entries.
+     *
+     * @param string $id Reasoning item ID
+     * @param string ...$texts Reasoning texts
+     * @return array<string, mixed>
+     */
+    function openAiReasoningTextItem(string $id, string ...$texts): array
+    {
+        return [
+            'type' => 'reasoning',
+            'id' => $id,
+            'summary' => [],
+            'content' => array_map(fn(string $text): array => ['type' => 'reasoning_text', 'text' => $text], $texts),
+        ];
+    }
+}
+
+if (!function_exists('openAiReasoningItemWithBoth')) {
+    /**
+     * Build an OpenAI reasoning output item with both summary and content.
+     *
+     * @param string $id Reasoning item ID
+     * @param string $summary Summary text
+     * @param string $text Reasoning text
+     * @return array<string, mixed>
+     */
+    function openAiReasoningItemWithBoth(string $id, string $summary, string $text): array
+    {
+        return [
+            'type' => 'reasoning',
+            'id' => $id,
+            'summary' => [['type' => 'summary_text', 'text' => $summary]],
+            'content' => [['type' => 'reasoning_text', 'text' => $text]],
+        ];
+    }
+}
+
+if (!function_exists('fakeOpenAiReasonedResponse')) {
+    /**
+     * Build a fake OpenAI text response preceded by reasoning items.
+     *
+     * @param array<int, array<string, mixed>> $reasoningItems Reasoning items
+     * @param string $text Response text
+     * @return \Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition
+     */
+    function fakeOpenAiReasonedResponse(array $reasoningItems, string $text = 'Hello'): AiHttpResponseDefinition
+    {
+        return aiHttpResponse([
+            'id' => 'resp_123',
+            'status' => 'completed',
+            'model' => 'gpt-5.4',
+            'output' => [...$reasoningItems, [
+                'type' => 'message',
+                'status' => 'completed',
+                'content' => [['type' => 'output_text', 'text' => $text]],
+            ]],
+            'usage' => [
+                'input_tokens' => 1,
+                'output_tokens' => 1,
+            ],
+        ]);
+    }
+}
+
+if (!function_exists('fakeOpenAiReasonedToolCallResponse')) {
+    /**
+     * Build a fake OpenAI tool call response preceded by reasoning items.
+     *
+     * @param array<int, array<string, mixed>> $reasoningItems Reasoning items
+     * @return \Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition
+     */
+    function fakeOpenAiReasonedToolCallResponse(array $reasoningItems): AiHttpResponseDefinition
+    {
+        return aiHttpResponse([
+            'id' => 'resp_tool_123',
+            'status' => 'completed',
+            'model' => 'gpt-5.4',
+            'output' => [...$reasoningItems, [
+                'type' => 'function_call',
+                'id' => 'fc_123',
+                'call_id' => 'call_123',
+                'name' => 'FixedNumberGenerator',
+                'arguments' => '{}',
+                'status' => 'completed',
+            ]],
+            'usage' => [
+                'input_tokens' => 10,
+                'output_tokens' => 5,
+            ],
+        ]);
+    }
+}
+
 if (!function_exists('fakeOpenRouterResponse')) {
     /**
      * Build a fake OpenRouter text response.

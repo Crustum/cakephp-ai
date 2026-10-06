@@ -25,6 +25,7 @@
 
     <extensions>
         <bootstrap class="Boundwize\StructArmed\PHPUnit\StructArmedExtension"/>
+        <bootstrap class="Cake\TestSuite\Fixture\Extension\PHPUnitExtension"/>
     </extensions>
 
     <php>

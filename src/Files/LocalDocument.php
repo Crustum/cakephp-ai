@@ -5,10 +5,10 @@ namespace Crustum\Ai\Files;
 
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files\Trait\CanBeUploadedToProviderTrait;
+use Crustum\Ai\Files\Trait\HasLocalContentTrait;
 use InvalidArgumentException;
 use JsonSerializable;
-use Override;
-use RuntimeException;
+use Laminas\Diactoros\UploadedFile;
 
 /**
  * Local document file.
@@ -18,6 +18,7 @@ use RuntimeException;
 class LocalDocument extends Document implements JsonSerializable, StorableFile
 {
     use CanBeUploadedToProviderTrait;
+    use HasLocalContentTrait;
 
     /**
      * Constructor.
@@ -26,7 +27,7 @@ class LocalDocument extends Document implements JsonSerializable, StorableFile
      * @param string|null $mimeType MIME type
      * @throws \InvalidArgumentException
      */
-    public function __construct(public string $path, ?string $mimeType = null)
+    public function __construct(public string $path, ?string $mimeType = null, protected ?UploadedFile $upload = null)
     {
         if (empty(trim($path))) {
             throw new InvalidArgumentException('Document file path cannot be empty.');
@@ -36,54 +37,24 @@ class LocalDocument extends Document implements JsonSerializable, StorableFile
     }
 
     /**
-     * Get the raw representation of the file.
+     * Create a document from an uploaded file, holding the upload so its temporary file is not discarded.
      *
-     * @return string
-     * @throws \RuntimeException if the file does not exist at the configured path.
+     * @param \Laminas\Diactoros\UploadedFile $file Uploaded file
+     * @throws \InvalidArgumentException if the upload has no temporary path
      */
-    public function content(): string
+    public static function fromUploadedFile(UploadedFile $file): self
     {
-        $content = file_get_contents($this->path);
-
-        if ($content === false) {
-            throw new RuntimeException(sprintf('File does not exist at path [%s]', $this->path));
+        if ($file->getError() !== UPLOAD_ERR_OK) {
+            throw new InvalidArgumentException('Cannot store an uploaded file that failed to upload.');
         }
 
-        return $content;
-    }
+        $source = $file->getStream()->getMetadata('uri');
 
-    /**
-     * Get the displayable name of the file.
-     */
-    #[Override]
-    public function name(): ?string
-    {
-        return $this->name ?? basename($this->path);
-    }
-
-    /**
-     * Get the file's MIME type.
-     */
-    #[Override]
-    public function mimeType(): ?string
-    {
-        if ($this->mime !== null) {
-            return $this->mime;
+        if (!is_string($source) || trim($source) === '') {
+            throw new InvalidArgumentException('Document file path cannot be empty.');
         }
 
-        if (!file_exists($this->path)) {
-            return null;
-        }
-
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        if ($finfo === false) {
-            return null;
-        }
-
-        $mimeType = finfo_file($finfo, $this->path);
-        unset($finfo);
-
-        return $mimeType !== false ? $mimeType : null;
+        return (new self($source, $file->getClientMediaType(), $file))->as($file->getClientFilename());
     }
 
     /**
@@ -102,22 +73,29 @@ class LocalDocument extends Document implements JsonSerializable, StorableFile
     }
 
     /**
-     * Get the JSON serializable representation of the instance.
+     * Get the serializable representation, excluding the held upload.
      *
      * @return array<string, mixed>
      */
-    public function jsonSerialize(): mixed
+    public function __serialize(): array
     {
-        return $this->toArray();
+        $data = get_object_vars($this);
+
+        unset($data['upload']);
+
+        return $data;
     }
 
     /**
-     * Convert the file to a string.
+     * Restore the instance from its serialized representation.
      *
-     * @return string
+     * @param array<string, mixed> $data Serialized data
+     * @return void
      */
-    public function __toString(): string
+    public function __unserialize(array $data): void
     {
-        return $this->content();
+        foreach ($data as $key => $value) {
+            $this->{$key} = $value;
+        }
     }
 }

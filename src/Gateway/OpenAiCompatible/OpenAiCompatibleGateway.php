@@ -28,6 +28,7 @@ use Crustum\Ai\Gateway\Trait\ResolvesAudioFilenamesTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TranscriptionSegment;
+use Crustum\Ai\Responses\Data\TranscriptionUsage;
 use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\EmbeddingsResponse;
 use Crustum\Ai\Responses\TranscriptionResponse;
@@ -99,7 +100,7 @@ class OpenAiCompatibleGateway implements EmbeddingGateway, StepTextGateway, Tran
 
         return new EmbeddingsResponse(
             $this->parseEmbeddings($data, count($inputs)),
-            $data['usage']['prompt_tokens'] ?? 0,
+            new Usage($data['usage']['prompt_tokens'] ?? 0),
             new Meta($provider->name(), $model),
         );
     }
@@ -173,9 +174,10 @@ class OpenAiCompatibleGateway implements EmbeddingGateway, StepTextGateway, Tran
                 ),
                 $data['segments'] ?? [],
             )),
-            new Usage(
-                (int)(Hash::get($data, 'usage.input_tokens') ?? Hash::get($data, 'usage.prompt_tokens', 0)),
-                (int)(Hash::get($data, 'usage.output_tokens') ?? Hash::get($data, 'usage.completion_tokens', 0)),
+            new TranscriptionUsage(
+                inputTokens: (int)(Hash::get($data, 'usage.input_tokens') ?? Hash::get($data, 'usage.prompt_tokens', 0)),
+                outputTokens: (int)(Hash::get($data, 'usage.output_tokens') ?? Hash::get($data, 'usage.completion_tokens', 0)),
+                audioSeconds: Hash::get($data, 'usage.seconds') ?? Hash::get($data, 'duration'),
             ),
             new Meta($provider->name(), $model),
         );

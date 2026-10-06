@@ -45,4 +45,18 @@ class ImageList extends ArrayObject
 
         return $this[0];
     }
+
+    /**
+     * Get the last image in the list.
+     *
+     * @return \Crustum\Ai\Responses\Data\GeneratedImage
+     */
+    public function last(): GeneratedImage
+    {
+        if ($this->isEmpty()) {
+            throw new RuntimeException('The image response does not contain any images.');
+        }
+
+        return $this[$this->count() - 1];
+    }
 }

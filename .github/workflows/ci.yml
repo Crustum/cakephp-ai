@@ -94,7 +94,7 @@ jobs:
         export REDIS_PORT=6379
         if [[ "${{ matrix.db-type }}" == 'mysql' ]]; then export db_dsn='mysql://root:root@127.0.0.1:3306/ai_test?encoding=utf8mb4&timezone=UTC&cacheMetadata=true&quoteIdentifiers=true&persistent=false'; fi
         if [[ "${{ matrix.db-type }}" == 'pgsql' ]]; then export db_dsn='postgres://postgres:postgres@127.0.0.1:5432/rhythm_test?encoding=utf8&timezone=UTC&cacheMetadata=true&quoteIdentifiers=true&persistent=false'; fi
-        vendor/bin/pest --configuration=phpunit.xml.dist --coverage-clover=coverage.xml
+        vendor/bin/pest --compact --configuration=phpunit.xml.dist --coverage-clover=coverage.xml
 
     - name: Run Pest without coverage
       if: matrix.db-type != 'mysql' || matrix.dependencies != 'highest'
@@ -103,7 +103,7 @@ jobs:
         export REDIS_PORT=6379
         if [[ "${{ matrix.db-type }}" == 'mysql' ]]; then export db_dsn='mysql://root:root@127.0.0.1:3306/ai_test?encoding=utf8mb4&timezone=UTC&cacheMetadata=true&quoteIdentifiers=true&persistent=false'; fi
         if [[ "${{ matrix.db-type }}" == 'pgsql' ]]; then export db_dsn='postgres://postgres:postgres@127.0.0.1:5432/rhythm_test?encoding=utf8&timezone=UTC&cacheMetadata=true&quoteIdentifiers=true&persistent=false'; fi
-        vendor/bin/pest --configuration=phpunit.xml.dist
+        vendor/bin/pest --compact --configuration=phpunit.xml.dist
 
     - name: Submit code coverage
       if: matrix.db-type == 'mysql' && matrix.dependencies == 'highest'

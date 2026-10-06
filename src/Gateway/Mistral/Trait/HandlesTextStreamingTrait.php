@@ -7,9 +7,12 @@ use Cake\Utility\Text;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Streaming\Event\Error;
+use Crustum\Ai\Streaming\Event\ReasoningDelta;
+use Crustum\Ai\Streaming\Event\ReasoningEnd;
+use Crustum\Ai\Streaming\Event\ReasoningStart;
 use Crustum\Ai\Streaming\Event\StreamStart;
 use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Streaming\Event\TextEnd;
@@ -39,6 +42,7 @@ trait HandlesTextStreamingTrait
         object $streamBody,
     ): Generator {
         $messageId = $this->generateEventId();
+        $reasoningId = null;
         $streamStartEmitted = false;
         $textStartEmitted = false;
         $currentText = '';
@@ -85,7 +89,37 @@ trait HandlesTextStreamingTrait
                 ))->withInvocationId($invocationId);
             }
 
+            $thinking = $this->extractStreamedThinking($delta['content'] ?? '');
             $content = $this->extractContentText($delta['content'] ?? '');
+
+            if ($thinking !== '') {
+                if ($reasoningId === null) {
+                    $reasoningId = $this->generateEventId();
+
+                    yield (new ReasoningStart(
+                        $this->generateEventId(),
+                        $reasoningId,
+                        time(),
+                    ))->withInvocationId($invocationId);
+                }
+
+                yield (new ReasoningDelta(
+                    $this->generateEventId(),
+                    $reasoningId,
+                    $thinking,
+                    time(),
+                ))->withInvocationId($invocationId);
+            }
+
+            if ($reasoningId !== null && ($content !== '' || isset($delta['tool_calls']))) {
+                yield (new ReasoningEnd(
+                    $this->generateEventId(),
+                    $reasoningId,
+                    time(),
+                ))->withInvocationId($invocationId);
+
+                $reasoningId = null;
+            }
 
             if ($content !== '') {
                 if (!$textStartEmitted) {
@@ -112,13 +146,11 @@ trait HandlesTextStreamingTrait
                 foreach ($delta['tool_calls'] as $tcDelta) {
                     $idx = $tcDelta['index'];
 
-                    if (!isset($pendingToolCalls[$idx])) {
-                        $pendingToolCalls[$idx] = [
-                            'id' => $tcDelta['id'] ?? '',
-                            'name' => $tcDelta['function']['name'] ?? '',
-                            'arguments' => '',
-                        ];
-                    }
+                    $pendingToolCalls[$idx] ??= [
+                        'id' => $tcDelta['id'] ?? '',
+                        'name' => $tcDelta['function']['name'] ?? '',
+                        'arguments' => '',
+                    ];
 
                     if (isset($tcDelta['function']['arguments'])) {
                         $pendingToolCalls[$idx]['arguments'] .= $tcDelta['function']['arguments'];
@@ -133,6 +165,14 @@ trait HandlesTextStreamingTrait
             if (isset($data['usage'])) {
                 $usage = $this->extractUsage($data);
             }
+        }
+
+        if ($reasoningId !== null) {
+            yield (new ReasoningEnd(
+                $this->generateEventId(),
+                $reasoningId,
+                time(),
+            ))->withInvocationId($invocationId);
         }
 
         if ($textStartEmitted) {
@@ -159,7 +199,7 @@ trait HandlesTextStreamingTrait
             text: $currentText,
             toolCalls: $toolCalls,
             finishReason: $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
-            usage: $usage ?? new Usage(0, 0),
+            usage: $usage ?? new TextUsage(0, 0),
             meta: new Meta($provider->name(), $responseModel),
         );
     }
@@ -181,6 +221,25 @@ trait HandlesTextStreamingTrait
             ),
             array_values($toolCalls),
         );
+    }
+
+    /**
+     * Extract the thinking text from a streamed content delta.
+     *
+     * @param mixed $content Content delta
+     */
+    protected function extractStreamedThinking(mixed $content): string
+    {
+        if (!is_array($content)) {
+            return '';
+        }
+
+        /** @var \Cake\Collection\CollectionInterface<int, string> $thinking */
+        $thinking = collection($content)
+            ->filter(fn(mixed $chunk): bool => is_array($chunk) && ($chunk['type'] ?? '') === 'thinking')
+            ->map(fn(array $chunk): string => $this->extractContentText($chunk['thinking'] ?? []));
+
+        return implode('', $thinking->toList());
     }
 
     /**

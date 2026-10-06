@@ -7,6 +7,7 @@ use Cake\Collection\CollectionInterface;
 use Countable;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\RankedDocument;
+use Crustum\Ai\Responses\Data\RerankingUsage;
 use IteratorAggregate;
 use JsonSerializable;
 use Traversable;
@@ -24,10 +25,12 @@ class RerankingResponse implements Countable, IteratorAggregate, JsonSerializabl
      * Create a new reranking response instance.
      *
      * @param array<int, \Crustum\Ai\Responses\Data\RankedDocument> $results The reranked results
+     * @param \Crustum\Ai\Responses\Data\RerankingUsage $usage Token usage information
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata about the response
      */
     public function __construct(
         public readonly array $results,
+        public readonly RerankingUsage $usage,
         public readonly Meta $meta,
     ) {
     }
@@ -82,6 +85,7 @@ class RerankingResponse implements Countable, IteratorAggregate, JsonSerializabl
     {
         return [
             'results' => $this->results,
+            'usage' => $this->usage,
             'meta' => $this->meta,
         ];
     }

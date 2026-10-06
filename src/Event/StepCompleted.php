@@ -9,6 +9,8 @@ use Crustum\Ai\Gateway\StepResponse;
 
 /**
  * Dispatched after a generation step returns a response.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Contracts\Agent>
  */
 class StepCompleted extends AiEvent
 {
@@ -43,6 +45,6 @@ class StepCompleted extends AiEvent
             'isFinalStep' => $isFinalStep,
             'response' => $response,
             'time' => $time,
-        ]);
+        ], $agent);
     }
 }

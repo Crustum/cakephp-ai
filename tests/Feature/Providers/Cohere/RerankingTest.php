@@ -2,8 +2,11 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Crustum\Ai\Ai;
+use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
+use Crustum\Ai\Gateway\CohereGateway;
 use Crustum\Ai\Reranking;
 use Crustum\Ai\Responses\Data\RankedDocument;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
@@ -45,6 +48,30 @@ test('reranking request includes top_n when limit set', function (): void {
     aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['top_n'] === 2);
 });
 
+test('reranking request uses the configured timeout', function (): void {
+    aiHttpFake(['*' => fakeCohereRerankingResponse()]);
+
+    $spy = new class extends CohereGateway {
+        /**
+         * @var array<int, int>
+         */
+        public array $timeouts = [];
+
+        protected function client(Provider $provider, int $timeout = 30): static
+        {
+            $this->timeouts[] = $timeout;
+
+            return parent::client($provider, $timeout);
+        }
+    };
+
+    Ai::manager()->rerankingProvider('cohere')->useRerankingGateway($spy);
+
+    Reranking::of(['Doc A', 'Doc B'])->timeout(45)->rerank('query', provider: 'cohere', model: 'rerank-v3.5');
+
+    expect($spy->timeouts)->toBe([45]);
+});
+
 test('reranking response is correctly parsed into RankedDocuments', function (): void {
     aiHttpFake(['*' => fakeCohereRerankingResponse()]);
 
@@ -73,7 +100,7 @@ test('reranking uses default model when none specified', function (): void {
 
     Reranking::of(['Doc A', 'Doc B'])->rerank('query', provider: 'cohere');
 
-    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'rerank-v3.5');
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'rerank-v4.0-pro');
 });
 
 test('reranking maps documents by index when results are returned out of order', function (): void {
@@ -124,3 +151,29 @@ function fakeCohereRerankingResponse(): AiHttpResponseDefinition
         ],
     ]);
 }
+
+test('reranking response reports the billed units', function (): void {
+    aiHttpFake(['*' => aiHttpResponse([
+        'results' => [['index' => 0, 'relevance_score' => 0.95]],
+        'meta' => [
+            'billed_units' => ['input_tokens' => 320, 'search_units' => 2.0],
+            'tokens' => ['input_tokens' => 298],
+        ],
+    ])]);
+
+    $response = Reranking::of(IntegrationPrompts::documents('rerank'))
+        ->rerank(IntegrationPrompts::question('rerank'), provider: 'cohere', model: 'rerank-v3.5');
+
+    expect($response->usage->inputTokens)->toBe(320)
+        ->and($response->usage->searchUnits)->toBe(2.0);
+});
+
+test('reranking response leaves the search units null when cohere omits the meta', function (): void {
+    aiHttpFake(['*' => fakeCohereRerankingResponse()]);
+
+    $response = Reranking::of(IntegrationPrompts::documents('rerank'))
+        ->rerank(IntegrationPrompts::question('rerank'), provider: 'cohere', model: 'rerank-v3.5');
+
+    expect($response->usage->inputTokens)->toBe(0)
+        ->and($response->usage->searchUnits)->toBeNull();
+});

@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\TestSuite\Constraint\Event;
 
+use Crustum\Ai\Event\AiEvent;
 use Crustum\Ai\TestSuite\Capture\EventCapture;
+use InvalidArgumentException;
 use PHPUnit\Framework\Constraint\Constraint;
 
 /**
@@ -14,10 +16,15 @@ use PHPUnit\Framework\Constraint\Constraint;
 class AiEventsInOrder extends Constraint
 {
     /**
-     * @param list<class-string<\Crustum\Ai\Event\AiEvent>> $eventClasses Ordered event classes
+     * @param list<class-string> $eventClasses Ordered event classes
      */
     public function __construct(protected array $eventClasses)
     {
+        foreach ($eventClasses as $eventClass) {
+            if (!is_subclass_of($eventClass, AiEvent::class)) {
+                throw new InvalidArgumentException(sprintf('Expected an Ai event class name, got [%s].', $eventClass));
+            }
+        }
     }
 
     /**

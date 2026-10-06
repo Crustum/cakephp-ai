@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Files\Trait;
 
+use Crustum\Ai\Files\UntrustedUrl;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
-use Crustum\Ai\Http\HttpClientFactory;
+use RuntimeException;
 
 /**
  * Has remote content trait.
@@ -47,7 +48,7 @@ trait HasRemoteContentTrait
         $contentType = $this->response()->getHeaderLine('Content-Type');
         $parts = explode(';', (string)$contentType);
 
-        return trim($parts[0]);
+        return trim($parts[0]) ?: null;
     }
 
     /**
@@ -68,8 +69,17 @@ trait HasRemoteContentTrait
     protected function response(): HttpResponseInterface
     {
         if ($this->response === null) {
-            $http = HttpClientFactory::create();
-            $this->response = $http->get($this->url);
+            $response = UntrustedUrl::fetch($this->url);
+
+            if (!$response->isOk()) {
+                throw new RuntimeException(sprintf(
+                    'Failed to fetch remote file [%s]: HTTP %d',
+                    $this->url,
+                    $response->getStatusCode(),
+                ));
+            }
+
+            $this->response = $response;
         }
 
         return $this->response;

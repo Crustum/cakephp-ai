@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Crustum\Ai\Files\Base64Document;
 use Crustum\Ai\Files\Base64Image;
 use Crustum\Ai\Files\LocalImage;
 use Crustum\Ai\Files\RemoteDocument;
@@ -149,6 +150,27 @@ test('remote document maps to input file', function (): void {
 
         return $fileBlock !== null
             && $fileBlock['file_url'] === 'https://example.com/report.pdf';
+    });
+});
+
+test('base64 document without an explicit name falls back to a mime-based filename', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('I see a document')]);
+
+    $document = new Base64Document(base64_encode('fake-pdf-data'), 'application/pdf');
+
+    agent('You are helpful.')->prompt(
+        'What is in this document?',
+        attachments: [$document],
+        provider: 'xai',
+    );
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $userMsg = collect($body['input'])->filter(fn($m): bool => ($m['role'] ?? null) === 'user')->first();
+        $fileBlock = collect($userMsg['content'])->filter(fn($m): bool => ($m['type'] ?? null) === 'input_file')->first();
+
+        return $fileBlock !== null
+            && $fileBlock['filename'] === 'document.pdf';
     });
 });
 

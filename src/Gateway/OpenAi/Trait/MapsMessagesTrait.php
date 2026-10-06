@@ -9,6 +9,7 @@ use Crustum\Ai\Messages\Message;
 use Crustum\Ai\Messages\MessageRole;
 use Crustum\Ai\Messages\ToolResultMessage;
 use Crustum\Ai\Messages\UserMessage;
+use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Utility\Value;
 
 /**
@@ -40,7 +41,7 @@ trait MapsMessagesTrait
 
             match ($message->role) {
                 MessageRole::User => $this->mapUserMessage($message, $input, $provider),
-                MessageRole::Assistant => $this->mapAssistantMessage($message, $input),
+                MessageRole::Assistant => $this->mapAssistantMessage($message, $input, $provider),
                 MessageRole::ToolResult => $this->mapToolResultMessage($message, $input),
             };
         }
@@ -77,12 +78,17 @@ trait MapsMessagesTrait
      *
      * @param \Crustum\Ai\Messages\AssistantMessage|\Crustum\Ai\Messages\Message $message Assistant message
      * @param array<int, mixed> $input Input messages
+     * @param \Crustum\Ai\Contracts\Providers\Provider $provider Provider instance
      * @return void
      */
-    protected function mapAssistantMessage(AssistantMessage|Message $message, array &$input): void
+    protected function mapAssistantMessage(AssistantMessage|Message $message, array &$input, Provider $provider): void
     {
-        if ($message instanceof AssistantMessage && filled($message->providerContentBlocks)) {
-            foreach ($message->providerContentBlocks as $block) {
+        if ($message instanceof AssistantMessage && filled($message->replayBlocks)) {
+            $blocks = $this->isStateless($provider)
+                ? $this->withoutStoredOnlyItems($message->replayBlocks)
+                : $message->replayBlocks;
+
+            foreach ($blocks as $block) {
                 $input[] = $block;
             }
 
@@ -120,24 +126,12 @@ trait MapsMessagesTrait
                         fn($toolCall): bool => ($toolCall->reasoningId ?? null) === ($reasoningBlock['id'] ?? null),
                     ) as $toolCall
                 ) {
-                    $input[] = [
-                        'id' => $toolCall->id,
-                        'call_id' => $toolCall->resultId,
-                        'type' => 'function_call',
-                        'name' => $toolCall->name,
-                        'arguments' => json_encode($toolCall->arguments ?: (object)[]),
-                    ];
+                    $input[] = $this->functionCallItem($toolCall);
                 }
             }
 
             foreach ($message->toolCalls->filter(fn($toolCall): bool => !Value::filled($toolCall->reasoningId)) as $toolCall) {
-                $input[] = [
-                    'id' => $toolCall->id,
-                    'call_id' => $toolCall->resultId,
-                    'type' => 'function_call',
-                    'name' => $toolCall->name,
-                    'arguments' => json_encode($toolCall->arguments ?: (object)[]),
-                ];
+                $input[] = $this->functionCallItem($toolCall);
             }
         }
 
@@ -152,6 +146,38 @@ trait MapsMessagesTrait
                 ],
             ];
         }
+    }
+
+    /**
+     * Remove file_search_call items, which the API resolves by id and so rejects when store is false.
+     *
+     * @param array<int, array<string, mixed>> $blocks Replay blocks
+     * @return array<int, array<string, mixed>>
+     */
+    protected function withoutStoredOnlyItems(array $blocks): array
+    {
+        return array_values(array_filter(
+            $blocks,
+            fn(array $block): bool => ($block['type'] ?? null) !== 'file_search_call',
+        ));
+    }
+
+    /**
+     * Map a tool call to a function_call input item, keeping the item id only when OpenAI issued it and its reasoning survived.
+     *
+     * @param \Crustum\Ai\Responses\Data\ToolCall $toolCall Tool call
+     * @return array<string, mixed>
+     */
+    protected function functionCallItem(ToolCall $toolCall): array
+    {
+        // A replayed call whose reasoning was dropped cannot carry its item id, as the API rejects an fc_ item with no reasoning item before it.
+        return array_filter([
+            'id' => $toolCall->reasoningId !== null && str_starts_with($toolCall->id, 'fc_') ? $toolCall->id : null,
+            'call_id' => $toolCall->resultId,
+            'type' => 'function_call',
+            'name' => $toolCall->name,
+            'arguments' => json_encode($toolCall->arguments ?: (object)[]),
+        ], fn(mixed $value): bool => $value !== null);
     }
 
     /**
@@ -171,7 +197,7 @@ trait MapsMessagesTrait
             $input[] = [
                 'type' => 'function_call_output',
                 'call_id' => $toolResult->resultId,
-                'output' => $this->serializeToolResultOutput($toolResult->result),
+                'output' => $toolResult->text(),
             ];
         }
     }

@@ -168,6 +168,12 @@ describe('request structure', function (): void {
     });
 
     test('request omits the api key header when no key is configured', function (): void {
+        Configure::write('Ai.providers.anthropic', [
+
+            ...(array)Configure::read('Ai.providers.anthropic'),
+            'key' => null,
+        ]);
+
         aiHttpFake([
             'api.anthropic.com/*' => $this->fakeTextResponse(),
         ]);
@@ -185,11 +191,11 @@ describe('request structure', function (): void {
 describe('structured output', function (): void {
     test('structured output uses native output_config by default', function (): void {
         aiHttpFake([
-            'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Taylor', 'age' => 30]),
+            'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Larry', 'age' => 30]),
         ]);
 
         (new StructuredAgent())->prompt(
-            'Tell me about Taylor',
+            'Tell me about Larry',
             provider: 'anthropic',
         );
 
@@ -248,7 +254,7 @@ describe('structured output', function (): void {
         ]);
 
         (new StructuredAgent())->prompt(
-            'Tell me about Taylor',
+            'Tell me about Larry',
             provider: 'anthropic',
         );
 
@@ -281,7 +287,7 @@ describe('structured output', function (): void {
         ]);
 
         (new StructuredWithThinkingAgent())->prompt(
-            'Tell me about Taylor',
+            'Tell me about Larry',
             provider: 'anthropic',
         );
 
@@ -304,14 +310,14 @@ describe('structured output', function (): void {
 
     test('native structured response is correctly parsed', function (): void {
         aiHttpFake([
-            'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Taylor', 'age' => 30]),
+            'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Larry', 'age' => 30]),
         ]);
 
         $response = (new StructuredAgent())->prompt(
-            'Tell me about Taylor',
+            'Tell me about Larry',
             provider: 'anthropic',
         );
-        expect($response->structured)->toMatchArray(['name' => 'Taylor', 'age' => 30]);
+        expect($response->structured)->toMatchArray(['name' => 'Larry', 'age' => 30]);
     });
 
     test('synthetic tool structured response is correctly parsed when native structured output is disabled', function (): void {
@@ -322,14 +328,14 @@ describe('structured output', function (): void {
         ]);
 
         aiHttpFake([
-            'api.anthropic.com/*' => $this->fakeSyntheticStructuredResponse(['name' => 'Taylor', 'age' => 30]),
+            'api.anthropic.com/*' => $this->fakeSyntheticStructuredResponse(['name' => 'Larry', 'age' => 30]),
         ]);
 
         $response = (new StructuredAgent())->prompt(
-            'Tell me about Taylor',
+            'Tell me about Larry',
             provider: 'anthropic',
         );
-        expect($response->structured)->toMatchArray(['name' => 'Taylor', 'age' => 30]);
+        expect($response->structured)->toMatchArray(['name' => 'Larry', 'age' => 30]);
     });
 });
 
@@ -361,6 +367,7 @@ describe('response parsing', function (): void {
                     'output_tokens' => 15,
                     'cache_creation_input_tokens' => 5,
                     'cache_read_input_tokens' => 3,
+                    'output_tokens_details' => ['thinking_tokens' => 9],
                 ],
             ]),
         ]);
@@ -371,8 +378,38 @@ describe('response parsing', function (): void {
         );
 
         expect($response->usage)
-            ->promptTokens->toBe(25)
-            ->completionTokens->toBe(15);
+            ->inputTokens->toBe(33)
+            ->uncachedInputTokens()->toBe(25)
+            ->outputTokens->toBe(15)
+            ->cacheWriteInputTokens->toBe(5)
+            ->cacheReadInputTokens->toBe(3)
+            ->reasoningTokens->toBe(9);
+    });
+
+    test('reports no reasoning tokens when the response omits the breakdown', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpResponse([
+                'id' => 'msg_123',
+                'type' => 'message',
+                'role' => 'assistant',
+                'model' => 'claude-sonnet-4-6',
+                'content' => [['type' => 'text', 'text' => 'Hello']],
+                'stop_reason' => 'end_turn',
+                'usage' => [
+                    'input_tokens' => 25,
+                    'output_tokens' => 15,
+                ],
+            ]),
+        ]);
+
+        $response = (new AssistantAgent())->prompt(
+            'Hi',
+            provider: 'anthropic',
+        );
+
+        expect($response->usage)
+            ->outputTokens->toBe(15)
+            ->reasoningTokens->toBeNull();
     });
 });
 

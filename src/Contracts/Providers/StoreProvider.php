@@ -29,7 +29,7 @@ interface StoreProvider extends Provider
      *
      * @param string $name Store name
      * @param string|null $description Store description
-     * @param \Cake\Collection\CollectionInterface|null $fileIds Collection of file IDs
+     * @param \Cake\Collection\CollectionInterface<int, string>|null $fileIds Collection of file IDs
      * @param \DateInterval|null $expiresWhenIdleFor Idle expiration interval
      * @return \Crustum\Ai\Store
      */

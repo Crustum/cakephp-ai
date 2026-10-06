@@ -8,6 +8,8 @@ use Crustum\Ai\Contracts\Tool;
 
 /**
  * Dispatched before a tool is invoked.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Contracts\Agent>
  */
 class InvokingTool extends AiEvent
 {
@@ -33,6 +35,6 @@ class InvokingTool extends AiEvent
             'agent' => $agent,
             'tool' => $tool,
             'arguments' => $arguments,
-        ]);
+        ], $agent);
     }
 }

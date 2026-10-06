@@ -4,12 +4,15 @@ declare(strict_types=1);
 namespace Crustum\Ai\Gateway\Mistral\Trait;
 
 use Cake\Collection\CollectionInterface;
+use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files\Base64Image;
+use Crustum\Ai\Files\Document;
 use Crustum\Ai\Files\File;
 use Crustum\Ai\Files\LocalImage;
 use Crustum\Ai\Files\RemoteDocument;
 use Crustum\Ai\Files\RemoteImage;
 use Crustum\Ai\Files\StoredImage;
+use Crustum\Ai\Gateway\Trait\ResolvesDocumentFilenamesTrait;
 use InvalidArgumentException;
 use Laminas\Diactoros\UploadedFile;
 
@@ -18,6 +21,8 @@ use Laminas\Diactoros\UploadedFile;
  */
 trait MapsAttachmentsTrait
 {
+    use ResolvesDocumentFilenamesTrait;
+
     /**
      * Map the given attachments to Chat Completions content parts.
      *
@@ -62,10 +67,22 @@ trait MapsAttachmentsTrait
             $attachment instanceof RemoteDocument => [
                 'type' => 'document_url',
                 'document_url' => $attachment->url,
-                'document_name' => $attachment->name ?? basename($attachment->url),
+                'document_name' => $attachment->name(),
+            ],
+            $attachment instanceof Document && $attachment instanceof StorableFile => [
+                'type' => 'document_url',
+                'document_url' => 'data:' . ($attachment->mimeType() ?? 'application/pdf') . ';base64,' . base64_encode($attachment->content()),
+                'document_name' => $attachment->name() ?? $this->fallbackFilename($attachment->mimeType()),
+            ],
+            $attachment instanceof UploadedFile => [
+                'type' => 'document_url',
+                'document_url' => 'data:' . $attachment->getClientMediaType() . ';base64,' . base64_encode(
+                    $attachment->getStream()->getContents(),
+                ),
+                'document_name' => $attachment->getClientFilename(),
             ],
             default => throw new InvalidArgumentException(
-                'Mistral only supports image attachments and remote document URLs. Unsupported attachment type [' . $attachment::class . '].',
+                'Mistral only supports image and document attachments. Unsupported attachment type [' . $attachment::class . '].',
             ),
         })->toList();
     }
@@ -83,6 +100,7 @@ trait MapsAttachmentsTrait
             'image/png',
             'image/gif',
             'image/webp',
+            'image/avif',
         ], true);
     }
 }

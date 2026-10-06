@@ -23,6 +23,7 @@ trait GeneratesAudioTrait
      * @param string|null $instructions Optional voice instructions
      * @param string|null $model Model name
      * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\AudioResponse
      */
     public function audio(
@@ -31,12 +32,13 @@ trait GeneratesAudioTrait
         ?string $instructions = null,
         ?string $model = null,
         int $timeout = 30,
+        array $providerOptions = [],
     ): AudioResponse {
         $invocationId = Text::uuid();
 
         $model ??= $this->defaultAudioModel();
 
-        $prompt = new AudioPrompt($text, $voice, $instructions, $this, $model, $timeout);
+        $prompt = new AudioPrompt($text, $voice, $instructions, $this, $model, $timeout, $providerOptions);
 
         if (Ai::manager()->audioIsFaked()) {
             Ai::manager()->recordAudioGeneration($prompt);
@@ -56,6 +58,7 @@ trait GeneratesAudioTrait
             $prompt->voice,
             $prompt->instructions,
             $timeout,
+            $prompt->providerOptions,
         );
 
         $this->events->dispatch(new AudioGenerated(

@@ -11,6 +11,13 @@ namespace Crustum\Ai\Files;
 abstract class Audio extends File
 {
     /**
+     * Get the raw representation of the file.
+     *
+     * @return string
+     */
+    abstract public function content(): string;
+
+    /**
      * Create a new audio from Base64 data.
      *
      * @param string $base64 Base64-encoded content

@@ -8,6 +8,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched before documents are reranked.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class Reranking extends AiEvent
 {
@@ -30,6 +32,6 @@ class Reranking extends AiEvent
             'provider' => $provider,
             'model' => $model,
             'prompt' => $prompt,
-        ]);
+        ], $provider);
     }
 }

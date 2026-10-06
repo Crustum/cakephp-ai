@@ -1,17 +1,14 @@
 <?php
 declare(strict_types=1);
 
-use Cake\Event\EventManagerInterface;
+use Cake\Event\EventManager;
 use Crustum\Ai\Gateway\Bedrock\BedrockImageGateway;
+use Crustum\Ai\Gateway\Bedrock\BedrockRerankingGateway;
 use Crustum\Ai\Gateway\Bedrock\BedrockTextGateway;
 use Crustum\Ai\Providers\BedrockProvider;
 
 beforeEach(function (): void {
-    $this->dispatcher = Mockery::mock(EventManagerInterface::class);
-});
-
-afterEach(function (): void {
-    Mockery::close();
+    $this->dispatcher = new EventManager();
 });
 
 test('can be instantiated with config', function (): void {
@@ -124,24 +121,6 @@ test('defaults to us east 1 region when not specified', function (): void {
 
     expect($additionalConfig)->toHaveKey('region')
         ->and($additionalConfig['region'])->toBe('us-east-1');
-});
-
-test('returns default text model', function (): void {
-    $provider = new BedrockProvider([], $this->dispatcher);
-
-    expect($provider->defaultTextModel())->toBe('us.anthropic.claude-sonnet-4-5-20250929-v1:0');
-});
-
-test('returns cheapest text model', function (): void {
-    $provider = new BedrockProvider([], $this->dispatcher);
-
-    expect($provider->cheapestTextModel())->toBe('us.anthropic.claude-haiku-4-5-20251001-v1:0');
-});
-
-test('returns smartest text model', function (): void {
-    $provider = new BedrockProvider([], $this->dispatcher);
-
-    expect($provider->smartestTextModel())->toBe('us.anthropic.claude-opus-4-6-v1');
 });
 
 test('allows custom text models in config', function (): void {
@@ -285,4 +264,35 @@ test('assume role configuration defaults to null when not set', function (): voi
         'duration_seconds' => null,
         'external_id' => null,
     ]);
+});
+
+test('creates reranking gateway', function (): void {
+    $provider = new BedrockProvider([], $this->dispatcher);
+
+    expect($provider->rerankingGateway())->toBeInstanceOf(BedrockRerankingGateway::class);
+});
+
+test('returns default reranking model', function (): void {
+    $provider = new BedrockProvider([], $this->dispatcher);
+
+    expect($provider->defaultRerankingModel())->toBe('cohere.rerank-v3-5:0');
+});
+
+test('returns configured reranking model', function (): void {
+    $provider = new BedrockProvider([
+        'models' => [
+            'reranking' => ['default' => 'amazon.rerank-v1:0'],
+        ],
+    ], $this->dispatcher);
+
+    expect($provider->defaultRerankingModel())->toBe('amazon.rerank-v1:0');
+});
+
+test('reuses reranking gateway instance', function (): void {
+    $provider = new BedrockProvider([], $this->dispatcher);
+
+    $gateway1 = $provider->rerankingGateway();
+    $gateway2 = $provider->rerankingGateway();
+
+    expect($gateway1)->toBe($gateway2);
 });

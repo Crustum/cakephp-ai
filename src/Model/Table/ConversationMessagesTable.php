@@ -6,9 +6,11 @@ namespace Crustum\Ai\Model\Table;
 use ArrayObject;
 use Cake\Core\Configure;
 use Cake\Database\Schema\TableSchemaInterface;
+use Cake\Database\Type\EnumType;
 use Cake\Event\EventInterface;
 use Cake\ORM\Table;
 use Cake\Validation\Validator;
+use Crustum\Ai\Enums\MessageStatus;
 use Crustum\Ai\Model\Entity\ConversationMessage;
 use Override;
 
@@ -50,10 +52,14 @@ class ConversationMessagesTable extends Table
 
         $schema = $this->getSchema();
 
-        foreach (['attachments', 'tool_calls', 'tool_results', 'usage_data', 'meta'] as $field) {
+        foreach (['attachments', 'steps', 'usage_data', 'meta'] as $field) {
             if ($schema->hasColumn($field)) {
                 $schema->setColumnType($field, 'json');
             }
+        }
+
+        if ($schema->hasColumn('status')) {
+            $schema->setColumnType('status', EnumType::from(MessageStatus::class));
         }
     }
 
@@ -87,17 +93,15 @@ class ConversationMessagesTable extends Table
     }
 
     /**
-     * @param \Cake\Event\EventInterface $event Event instance.
+     * @param \Cake\Event\EventInterface<\Crustum\Ai\Model\Table\ConversationMessagesTable> $event Event instance.
      * @param \ArrayObject<string, mixed> $data Entity data.
      * @param \ArrayObject<string, mixed> $options Options.
      * @return void
      */
     public function beforeMarshal(EventInterface $event, ArrayObject $data, ArrayObject $options): void
     {
-        foreach (['attachments', 'tool_calls', 'tool_results', 'usage_data', 'meta'] as $field) {
-            if (!isset($data[$field])) {
-                $data[$field] = [];
-            }
+        foreach (['attachments', 'steps', 'usage_data', 'meta'] as $field) {
+            $data[$field] ??= [];
         }
     }
 
@@ -108,10 +112,10 @@ class ConversationMessagesTable extends Table
     protected function _initializeSchema(TableSchemaInterface $schema): TableSchemaInterface
     {
         $schema->setColumnType('attachments', 'json');
-        $schema->setColumnType('tool_calls', 'json');
-        $schema->setColumnType('tool_results', 'json');
+        $schema->setColumnType('steps', 'json');
         $schema->setColumnType('usage_data', 'json');
         $schema->setColumnType('meta', 'json');
+        $schema->setColumnType('status', EnumType::from(MessageStatus::class));
 
         return $schema;
     }

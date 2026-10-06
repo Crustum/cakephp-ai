@@ -6,8 +6,6 @@ use Migrations\BaseMigration;
 
 /**
  * Create agent conversation tables.
- *
- * Includes polymorphic participants and approval_state (pre-release compact schema).
  */
 class CreateAgentConversations extends BaseMigration
 {
@@ -44,11 +42,10 @@ class CreateAgentConversations extends BaseMigration
             ->addColumn('role', 'string', ['limit' => 25, 'null' => false])
             ->addColumn('content', 'text', ['null' => false])
             ->addColumn('attachments', 'text', ['null' => false])
-            ->addColumn('tool_calls', 'text', ['null' => false])
-            ->addColumn('tool_results', 'text', ['null' => false])
+            ->addColumn('steps', 'text', ['null' => false])
             ->addColumn('usage_data', 'text', ['null' => false])
             ->addColumn('meta', 'text', ['null' => false])
-            ->addColumn('approval_state', 'text', ['null' => true, 'default' => null])
+            ->addColumn('status', 'string', ['limit' => 25, 'null' => false])
             ->addColumn('created', 'datetime', ['null' => true, 'default' => null])
             ->addColumn('modified', 'datetime', ['null' => true, 'default' => null])
             ->addIndex(['conversation_id'])
@@ -56,7 +53,7 @@ class CreateAgentConversations extends BaseMigration
                 ['conversation_id', 'participant_type', 'participant_id', 'modified'],
                 ['name' => 'conversation_index'],
             )
-            ->addIndex(['participant_type', 'participant_id'])
+            ->addIndex(['participant_type', 'participant_id', 'agent'])
             ->create();
     }
 }

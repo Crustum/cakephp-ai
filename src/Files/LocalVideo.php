@@ -5,10 +5,9 @@ namespace Crustum\Ai\Files;
 
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files\Trait\CanBeUploadedToProviderTrait;
+use Crustum\Ai\Files\Trait\HasLocalContentTrait;
 use InvalidArgumentException;
 use JsonSerializable;
-use Override;
-use RuntimeException;
 
 /**
  * Local video file.
@@ -18,6 +17,7 @@ use RuntimeException;
 class LocalVideo extends Video implements JsonSerializable, StorableFile
 {
     use CanBeUploadedToProviderTrait;
+    use HasLocalContentTrait;
 
     /**
      * Constructor.
@@ -33,55 +33,6 @@ class LocalVideo extends Video implements JsonSerializable, StorableFile
         }
 
         $this->mime = $mimeType;
-    }
-
-    /**
-     * Get the raw representation of the file.
-     *
-     * @return string
-     * @throws \RuntimeException if the file does not exist at the configured path
-     */
-    public function content(): string
-    {
-        $content = file_get_contents($this->path);
-
-        if ($content === false) {
-            throw new RuntimeException(sprintf('File does not exist at path [%s]', $this->path));
-        }
-
-        return $content;
-    }
-
-    /**
-     * Get the displayable name of the file.
-     */
-    #[Override]
-    public function name(): ?string
-    {
-        return $this->name ?? basename($this->path);
-    }
-
-    /**
-     * Get the file's MIME type.
-     */
-    #[Override]
-    public function mimeType(): ?string
-    {
-        if ($this->mime !== null) {
-            return $this->mime;
-        }
-
-        if (file_exists($this->path)) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            if ($finfo !== false) {
-                $mimeType = finfo_file($finfo, $this->path);
-                unset($finfo);
-
-                return $mimeType !== false ? $mimeType : null;
-            }
-        }
-
-        return null;
     }
 
     /**

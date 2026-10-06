@@ -5,16 +5,22 @@ namespace Crustum\Ai\Gateway;
 
 use Cake\Collection\CollectionInterface;
 use Closure;
+use Crustum\Ai\Approvals\PendingApproval;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Gateway\Fake\SchemaDataGenerator;
 use Crustum\Ai\Messages\UserMessage;
+use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\StructuredTextResponse;
 use Crustum\Ai\Responses\TextResponse;
+use Crustum\Ai\Streaming\Event\Citation as CitationEvent;
+use Crustum\Ai\Streaming\Event\ReasoningDelta;
+use Crustum\Ai\Streaming\Event\ReasoningEnd;
+use Crustum\Ai\Streaming\Event\ReasoningStart;
 use Crustum\Ai\Streaming\Event\StreamStart;
 use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Streaming\Event\TextEnd;
@@ -112,6 +118,24 @@ class FakeTextGateway implements StepTextGateway
 
         yield (new StreamStart($this->generateUlid(), $provider->name(), $model, time()))->withInvocationId($invocationId);
 
+        if (!empty($step->reasoning)) {
+            $reasoningId = $this->generateUlid();
+
+            yield (new ReasoningStart($this->generateUlid(), $reasoningId, time()))->withInvocationId($invocationId);
+
+            $words = explode(' ', $step->reasoning);
+            foreach ($words as $index => $word) {
+                yield (new ReasoningDelta(
+                    $this->generateUlid(),
+                    $reasoningId,
+                    $index > 0 ? ' ' . $word : $word,
+                    time(),
+                ))->withInvocationId($invocationId);
+            }
+
+            yield (new ReasoningEnd($this->generateUlid(), $reasoningId, time()))->withInvocationId($invocationId);
+        }
+
         if (!empty($step->text)) {
             yield (new TextStart($this->generateUlid(), $messageId, time()))->withInvocationId($invocationId);
 
@@ -126,6 +150,10 @@ class FakeTextGateway implements StepTextGateway
             }
 
             yield (new TextEnd($this->generateUlid(), $messageId, time()))->withInvocationId($invocationId);
+        }
+
+        foreach ($step->meta->citations as $citation) {
+            yield (new CitationEvent($this->generateUlid(), $messageId, $citation, time()))->withInvocationId($invocationId);
         }
 
         foreach ($step->toolCalls as $toolCall) {
@@ -178,7 +206,7 @@ class FakeTextGateway implements StepTextGateway
                 '',
                 [$response],
                 FinishReason::ToolCalls,
-                new Usage(),
+                new TextUsage(),
                 new Meta($provider->name(), $model),
             );
         }
@@ -195,10 +223,15 @@ class FakeTextGateway implements StepTextGateway
         }
 
         if ($response instanceof TextResponse && $response->hasPendingApprovals()) {
+            /** @var array<int, \Crustum\Ai\Responses\Data\ToolCall> $toolCalls */
+            $toolCalls = $response->pendingApprovals->map(
+                fn(PendingApproval $approval): ToolCall => new ToolCall($approval->id, $approval->tool, $approval->arguments),
+            )->toList();
+
             return new StepResponse(
                 $response->text,
-                [],
-                FinishReason::Stop,
+                $toolCalls,
+                FinishReason::ToolCalls,
                 $response->usage,
                 $response->meta,
                 pendingApprovals: $response->pendingApprovals->toList(),
@@ -211,6 +244,7 @@ class FakeTextGateway implements StepTextGateway
             FinishReason::Stop,
             $response->usage,
             $response->meta,
+            reasoning: $response instanceof AgentResponse ? $response->reasoning : '',
         );
     }
 
@@ -220,7 +254,7 @@ class FakeTextGateway implements StepTextGateway
      * @param \Crustum\Ai\Contracts\Providers\TextProvider $provider The provider
      * @param string $model The model
      * @param string $prompt The prompt
-     * @param \Cake\Collection\CollectionInterface $attachments The attachments
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments The attachments
      * @param array<string, \Crustum\JsonSchema\Types\Type>|null $schema The schema
      */
     protected function nextResponse(
@@ -247,7 +281,7 @@ class FakeTextGateway implements StepTextGateway
      * @param \Crustum\Ai\Contracts\Providers\TextProvider $provider The provider
      * @param string $model The model
      * @param string $prompt The prompt
-     * @param \Cake\Collection\CollectionInterface $attachments The attachments
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments The attachments
      * @param array<string, \Crustum\JsonSchema\Types\Type>|null $schema The schema
      */
     protected function marshalResponse(
@@ -272,11 +306,11 @@ class FakeTextGateway implements StepTextGateway
         return match (true) {
             is_string($response) => new TextResponse(
                 $response,
-                new Usage(), new Meta($provider->name(), $model),
+                new TextUsage(), new Meta($provider->name(), $model),
             ),
             is_array($response) => new StructuredTextResponse(
                 $response,
-                json_encode($response), new Usage(), new Meta($provider->name(), $model),
+                json_encode($response), new TextUsage(), new Meta($provider->name(), $model),
             ),
             $response instanceof Closure => $this->marshalResponse(
                 $response($prompt, $attachments, $provider, $model),

@@ -21,6 +21,7 @@ class AudioPrompt
      * @param \Crustum\Ai\Contracts\Providers\AudioProvider $provider The audio provider
      * @param string $model The model identifier
      * @param int $timeout The timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      */
     public function __construct(
         public readonly string $text,
@@ -29,6 +30,7 @@ class AudioPrompt
         public readonly AudioProvider $provider,
         public readonly string $model,
         public readonly int $timeout = 30,
+        public readonly array $providerOptions = [],
     ) {
     }
 

@@ -23,16 +23,22 @@ class Step implements JsonSerializable
      * @param array<int, \Crustum\Ai\Responses\Data\ToolCall> $toolCalls Tool calls made
      * @param array<int, \Crustum\Ai\Responses\Data\ToolResult> $toolResults Tool results
      * @param \Crustum\Ai\Responses\Data\FinishReason $finishReason Reason for finishing
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Token usage
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata
+     * @param string $reasoning Reasoning the step produced
+     * @param array<int, array<string, mixed>> $replayBlocks Replay blocks
+     * @param array<int, \Crustum\Ai\Responses\Data\ProviderToolCall> $providerToolCalls Provider-hosted tool calls
      */
     public function __construct(
         public string $text,
         public array $toolCalls,
         public array $toolResults,
         public FinishReason $finishReason,
-        public Usage $usage,
+        public TextUsage $usage,
         public Meta $meta,
+        public string $reasoning,
+        public array $replayBlocks,
+        public array $providerToolCalls = [],
     ) {
     }
 
@@ -50,6 +56,9 @@ class Step implements JsonSerializable
             'finish_reason' => $this->finishReason->value,
             'usage' => $this->usage,
             'meta' => $this->meta,
+            'reasoning' => $this->reasoning,
+            'replay_blocks' => $this->replayBlocks,
+            'provider_tool_calls' => $this->providerToolCalls,
         ];
     }
 

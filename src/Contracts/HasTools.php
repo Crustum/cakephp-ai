@@ -19,7 +19,7 @@ interface HasTools
      * The AI agent will have access to these tools and can choose to invoke them
      * based on the user's prompt and the tools' descriptions.
      *
-     * @return iterable<\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> The available tools.
+     * @return list<\Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> The available tools.
      */
     public function tools(): iterable;
 }

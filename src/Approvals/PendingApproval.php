@@ -23,6 +23,26 @@ class PendingApproval
     }
 
     /**
+     * Determine whether a stored tool call is still awaiting an approval decision.
+     *
+     * @param array<string, mixed> $toolCall Stored tool call
+     */
+    public static function isPending(array $toolCall): bool
+    {
+        return array_key_exists('approval_reason', $toolCall) && !static::isAnswered($toolCall);
+    }
+
+    /**
+     * Determine whether a stored tool call has been answered by its tool.
+     *
+     * @param array<string, mixed> $toolCall Stored tool call
+     */
+    public static function isAnswered(array $toolCall): bool
+    {
+        return array_key_exists('result', $toolCall);
+    }
+
+    /**
      * Get the instance as an array.
      *
      * @return array{id: string, tool: string, arguments: array<string, mixed>, reason: string|null}

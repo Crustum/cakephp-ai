@@ -37,15 +37,4 @@ class ReasoningStart extends StreamEvent
             'timestamp' => $this->timestamp,
         ];
     }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'reasoning-start',
-            'id' => $this->reasoningId,
-        ];
-    }
 }

@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Trait;
 
+use Cake\Core\Configure;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\FilesystemOperator;
+
 /**
  * Trait for storable content.
  *
@@ -30,7 +34,7 @@ trait StorableTrait
     }
 
     /**
-     * Store content with public visibility (CakePHP doesn't have visibility, but kept for API compatibility).
+     * Store content with public visibility.
      *
      * @param string $path Directory path
      * @param string|null $disk Disk name
@@ -67,21 +71,45 @@ trait StorableTrait
     /**
      * Store content with specific name.
      *
+     * When $disk names a filesystem operator instance configured at
+     * `Ai.filesystem.named.<disk>`, the write goes through that operator
+     * (honoring the visibility option); otherwise the bytes are written to
+     * the local path and visibility is applied best-effort via chmod.
+     *
      * @param string $path Directory path or filename
      * @param string|null $name Optional filename
-     * @param string|null $disk Disk name (unused in CakePHP)
+     * @param string|null $disk Disk name
      * @param array<string, mixed> $options Additional options
      * @return string|false File path on success, false on failure
      */
     public function storeAs(string $path, ?string $name = null, ?string $disk = null, array $options = []): string|false
     {
         if ($name === null) {
-            $name = $path;
-            $path = '';
+            [$path, $name] = ['', $path];
         }
 
-        $fullPath = $path === '' ? $name : $path . '/' . $name;
-        $fullPath = rtrim(preg_replace('#/+#', '/', $fullPath), '/');
+        if ($path === '') {
+            $fullPath = $name;
+        } else {
+            $fullPath = rtrim($path, '/\\') . '/' . ltrim($name, '/\\');
+        }
+
+        $visibility = $options['visibility'] ?? null;
+        $operator = $this->diskOperator($disk);
+
+        if ($operator !== null) {
+            try {
+                $operator->write(
+                    $fullPath,
+                    $this->content(),
+                    $visibility === null ? [] : ['visibility' => $visibility],
+                );
+
+                return $fullPath;
+            } catch (FilesystemException) {
+                return false;
+            }
+        }
 
         $dir = dirname($fullPath);
         if (!is_dir($dir)) {
@@ -90,7 +118,38 @@ trait StorableTrait
 
         $result = file_put_contents($fullPath, $this->content());
 
-        return $result !== false ? $fullPath : false;
+        if ($result === false) {
+            return false;
+        }
+
+        if ($visibility === 'public') {
+            chmod($fullPath, 0644);
+        } elseif ($visibility === 'private') {
+            chmod($fullPath, 0600);
+        }
+
+        return $fullPath;
+    }
+
+    /**
+     * Resolve a named disk to a configured filesystem operator instance, if any.
+     *
+     * Only operator instances configured at `Ai.filesystem.named.<disk>` are
+     * used here; array-root disks stay on the FilesystemRegistry path used by
+     * file tools, keeping this trait free of the Files layer.
+     *
+     * @param string|null $disk Disk name
+     * @return \League\Flysystem\FilesystemOperator|null
+     */
+    protected function diskOperator(?string $disk): ?FilesystemOperator
+    {
+        if ($disk === null) {
+            return null;
+        }
+
+        $configured = Configure::read('Ai.filesystem.named.' . $disk);
+
+        return $configured instanceof FilesystemOperator ? $configured : null;
     }
 
     /**

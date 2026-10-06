@@ -6,13 +6,16 @@ namespace Crustum\Ai\Gateway\Gemini;
 use Cake\Collection\Collection;
 use Cake\Collection\CollectionInterface;
 use Cake\Event\EventManagerInterface;
+use Cake\Utility\Hash;
 use Crustum\Ai\Contracts\Gateway\StoreGateway;
 use Crustum\Ai\Contracts\Providers\StoreProvider;
+use Crustum\Ai\Exception\AiException;
 use Crustum\Ai\Gateway\Gemini\Trait\CreatesGeminiClientTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\Data\StoreFileCounts;
 use Crustum\Ai\Store;
+use Crustum\Ai\Support\Sleeper;
 use DateInterval;
 
 /**
@@ -70,7 +73,7 @@ class GeminiStoreGateway implements StoreGateway
      * @param \Crustum\Ai\Contracts\Providers\StoreProvider $provider Store provider
      * @param string $name Store name
      * @param string|null $description Optional description
-     * @param \Cake\Collection\CollectionInterface|null $fileIds Initial file IDs
+     * @param \Cake\Collection\CollectionInterface<int, string>|null $fileIds Initial file IDs
      * @param \DateInterval|null $expiresWhenIdleFor Expiration time when idle
      * @return \Crustum\Ai\Store
      */
@@ -125,9 +128,56 @@ class GeminiStoreGateway implements StoreGateway
             ])),
         );
 
-        $data = $response->getJson() ?? [];
+        $operation = $this->waitForImportOperation($provider, $response);
 
-        return basename((string)($data['name'] ?? ''));
+        $data = $operation->getJson() ?? [];
+
+        if (($data['error'] ?? null) !== null) {
+            throw new AiException(sprintf(
+                'Gemini Error: [%s] %s',
+                Hash::get($data, 'error.code', 'unknown'),
+                Hash::get($data, 'error.message', 'Unknown Gemini error.'),
+            ));
+        }
+
+        $documentName = Hash::get($data, 'response.documentName');
+
+        if (!is_string($documentName) || $documentName === '') {
+            throw new AiException('Gemini Error: [invalid_response] File import completed without a document name.');
+        }
+
+        return basename($documentName);
+    }
+
+    /**
+     * Wait for a Gemini file import operation to complete.
+     *
+     * @param \Crustum\Ai\Contracts\Providers\StoreProvider $provider Store provider
+     * @param \Crustum\Ai\Http\Contract\HttpResponseInterface $operation Import operation response
+     * @return \Crustum\Ai\Http\Contract\HttpResponseInterface
+     */
+    protected function waitForImportOperation(StoreProvider $provider, HttpResponseInterface $operation): HttpResponseInterface
+    {
+        $data = $operation->getJson() ?? [];
+        $operationName = (string)($data['name'] ?? '');
+        $done = (bool)($data['done'] ?? false);
+
+        for ($attempt = 0; !$done; $attempt++) {
+            if ($attempt >= 60) {
+                throw new AiException('Gemini Error: [timeout] File import operation did not complete.');
+            }
+
+            Sleeper::for(5)->seconds();
+
+            $operation = $this->withErrorHandling(
+                $provider->name(),
+                fn(): HttpResponseInterface => $this->client($provider)->get($operationName),
+            );
+
+            $done = (bool)(($operation->getJson() ?? [])['done'] ?? false);
+        }
+
+        return $operation;
     }
 
     /**
@@ -158,11 +208,10 @@ class GeminiStoreGateway implements StoreGateway
         $storeId = $this->normalizeStoreId($storeId);
         $documentId = $this->normalizeDocumentId($storeId, $documentId);
 
+        // Gemini only accepts force as a query parameter, and refuses to delete a document that still has chunks without it.
         $this->withErrorHandling(
             $provider->name(),
-            fn(): HttpResponseInterface => $this->client($provider)->delete($documentId, [
-                'force' => true,
-            ]),
+            fn(): HttpResponseInterface => $this->client($provider)->delete("{$documentId}?force=true"),
         );
 
         return true;
@@ -181,7 +230,7 @@ class GeminiStoreGateway implements StoreGateway
 
         $this->withErrorHandling(
             $provider->name(),
-            fn(): HttpResponseInterface => $this->client($provider)->delete($storeId),
+            fn(): HttpResponseInterface => $this->client($provider)->delete("{$storeId}?force=true"),
         );
 
         return true;

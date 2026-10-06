@@ -9,6 +9,8 @@ use Crustum\Ai\Responses\EmbeddingsResponse;
 
 /**
  * Dispatched after embeddings are generated.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class EmbeddingsGenerated extends AiEvent
 {
@@ -34,6 +36,6 @@ class EmbeddingsGenerated extends AiEvent
             'model' => $model,
             'prompt' => $prompt,
             'response' => $response,
-        ]);
+        ], $provider);
     }
 }

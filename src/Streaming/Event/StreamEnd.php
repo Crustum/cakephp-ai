@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Crustum\Ai\Streaming\Event;
 
 use Cake\Collection\Collection;
-use Crustum\Ai\Responses\Data\Usage;
+use Cake\Collection\CollectionInterface;
+use Crustum\Ai\Responses\Data\TextUsage;
 
 /**
  * Stream end event.
@@ -18,30 +19,32 @@ class StreamEnd extends StreamEvent
      *
      * @param string $id Event ID
      * @param string $reason Completion reason
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Token usage
      * @param int $timestamp Unix timestamp
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\Step> $steps Replay state for the completed turn; never serialized to clients
      */
     public function __construct(
         public string $id,
         public string $reason,
-        public Usage $usage,
+        public TextUsage $usage,
         public int $timestamp,
+        public CollectionInterface $steps = new Collection([]),
     ) {
     }
 
     /**
      * Combine the stream end usages in the given collection of events into a single usage instance.
      *
-     * @param \Cake\Collection\Collection<\Crustum\Ai\Streaming\Event\StreamEvent>|array<\Crustum\Ai\Streaming\Event\StreamEvent> $events Events
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @param \Cake\Collection\Collection<int, \Crustum\Ai\Streaming\Event\StreamEvent>|array<\Crustum\Ai\Streaming\Event\StreamEvent> $events Events
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    public static function combineUsage(Collection|array $events): Usage
+    public static function combineUsage(Collection|array $events): TextUsage
     {
         $events = is_array($events) ? collection($events) : $events;
 
         return $events->filter(fn($event): bool => $event instanceof StreamEnd)
-            ->map(fn(StreamEnd $event): Usage => $event->usage)
-            ->reduce(fn($a, $b) => $a->add($b), new Usage());
+            ->map(fn(StreamEnd $event): TextUsage => $event->usage)
+            ->reduce(fn($a, $b) => $a->add($b), new TextUsage());
     }
 
     /**
@@ -56,34 +59,6 @@ class StreamEnd extends StreamEvent
             'reason' => $this->reason,
             'usage' => $this->usage->toArray(),
             'timestamp' => $this->timestamp,
-        ];
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'finish',
-            'finishReason' => match ($this->reason) {
-                'stop' => 'stop',
-                'tool_calls' => 'tool-calls',
-                'length' => 'length',
-                'content_filter' => 'content-filter',
-                'error' => 'error',
-                'unknown' => 'other',
-                default => 'other',
-            },
-            'messageMetadata' => [
-                'usage' => [
-                    'inputTokens' => $this->usage->promptTokens,
-                    'outputTokens' => $this->usage->completionTokens,
-                    'totalTokens' => $this->usage->promptTokens + $this->usage->completionTokens,
-                    'reasoningTokens' => $this->usage->reasoningTokens,
-                    'cachedInputTokens' => $this->usage->cacheReadInputTokens,
-                ],
-            ],
         ];
     }
 }

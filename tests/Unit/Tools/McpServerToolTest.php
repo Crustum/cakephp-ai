@@ -67,6 +67,13 @@ test('it serializes structured tool responses as json', function (): void {
         ]);
 });
 
+test('it does not escape slashes in structured content json', function (): void {
+    $tool = new McpServerTool(new FakeStructuredMcpServerTool());
+
+    expect($tool->handle(new Request(['city' => 'Paris'])))
+        ->toContain('"url":"https://example.com/report"');
+});
+
 test('it surfaces tool errors with the standard prefix', function (): void {
     $tool = new McpServerTool(new FakeErroringMcpServerTool());
 
@@ -103,4 +110,137 @@ test('lazily yielded responses still resolve the scoped mcp request', function (
     $tool = new McpServerTool($serverTool);
 
     expect($tool->handle(new Request(['city' => 'Paris'])))->toBe('Paris');
+});
+
+test('it includes app resource uri when tool returns text and ui resource link', function (): void {
+    $serverTool = new class extends Tool
+    {
+        public function handle(McpRequest $request): mixed
+        {
+            return Response::make([
+                Response::text('dashboard loaded.'),
+                Response::resourceLink('ui://resources/weather-dashboard-app', 'weather-app'),
+            ]);
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [];
+        }
+    };
+
+    $result = (new McpServerTool($serverTool))->handle(new Request());
+
+    expect($result)->toBeJson()
+        ->and(json_decode($result, true))->toBe([
+            'text' => 'dashboard loaded.',
+            'appResourceUri' => 'ui://resources/weather-dashboard-app',
+        ])
+        ->and($result)->toContain('ui://resources/weather-dashboard-app');
+});
+
+test('it resolves app resource uri regardless of content order', function (): void {
+    $serverTool = new class extends Tool
+    {
+        /**
+         * @return array<int, Response>
+         */
+        public function handle(McpRequest $request): array
+        {
+            return [
+                Response::resourceLink('ui://resources/weather-dashboard-app', 'weather-app'),
+                Response::text('dashboard loaded.'),
+            ];
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [];
+        }
+    };
+
+    $result = (new McpServerTool($serverTool))->handle(new Request());
+
+    expect(json_decode($result, true))->toBe([
+        'text' => 'dashboard loaded.',
+        'appResourceUri' => 'ui://resources/weather-dashboard-app',
+    ]);
+});
+
+test('it ignores notifications when resolving app resource uri', function (): void {
+    $serverTool = new class extends Tool
+    {
+        public function handle(McpRequest $request): Generator
+        {
+            yield Response::notification('processing/progress', ['step' => 1]);
+            yield Response::text('dashboard loaded.');
+            yield Response::resourceLink('ui://resources/weather-dashboard-app', 'weather-app');
+            yield Response::notification('processing/progress', ['step' => 2]);
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [];
+        }
+    };
+
+    $result = (new McpServerTool($serverTool))->handle(new Request());
+
+    expect(json_decode($result, true))->toBe([
+        'text' => 'dashboard loaded.',
+        'appResourceUri' => 'ui://resources/weather-dashboard-app',
+    ]);
+});
+
+test('it ignores non-ui resource links for app rendering', function (): void {
+    $serverTool = new class extends Tool
+    {
+        /**
+         * @return array<int, Response>
+         */
+        public function handle(McpRequest $request): array
+        {
+            return [
+                Response::text('dashboard loaded.'),
+                Response::resourceLink('https://example.com/other', 'other'),
+            ];
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [];
+        }
+    };
+
+    $result = (new McpServerTool($serverTool))->handle(new Request());
+
+    expect($result)->toBe('https://example.com/other');
+});
+
+test('it preserves error prefix when app resource is present', function (): void {
+    $serverTool = new class extends Tool
+    {
+        /**
+         * @return array<int, Response>
+         */
+        public function handle(McpRequest $request): array
+        {
+            return [
+                Response::error('Something went wrong.'),
+                Response::resourceLink('ui://resources/weather-dashboard-app', 'weather-app'),
+            ];
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [];
+        }
+    };
+
+    $result = (new McpServerTool($serverTool))->handle(new Request());
+
+    expect(json_decode($result, true))->toBe([
+        'text' => 'MCP tool error: Something went wrong.',
+        'appResourceUri' => 'ui://resources/weather-dashboard-app',
+    ]);
 });

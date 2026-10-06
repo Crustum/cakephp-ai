@@ -7,12 +7,13 @@ use Cake\Core\Configure;
 use Cake\Event\EventManager;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Enums\Lab;
-use Crustum\Ai\Event\ProviderFailedOverEvent;
+use Crustum\Ai\Event\ProviderFailedOver;
 use Crustum\Ai\Exception\FailoverableException;
 use Crustum\Ai\Files\LocalImage;
 use Crustum\Ai\Files\StoredImage;
 use Crustum\Ai\Job\GenerateImageJob;
 use Crustum\Ai\Job\PendingDispatch;
+use Crustum\Ai\PendingResponses\Trait\ResolvesProviderOptionsTrait;
 use Crustum\Ai\Prompts\QueuedImagePrompt;
 use Crustum\Ai\Providers\Provider;
 use Crustum\Ai\Responses\ImageResponse;
@@ -31,6 +32,7 @@ use LogicException;
 class PendingImageGeneration
 {
     use ConditionableTrait;
+    use ResolvesProviderOptionsTrait;
 
     /**
      * Reference images for the request.
@@ -167,6 +169,10 @@ class PendingImageGeneration
 
             $model ??= $provider->defaultImageModel();
 
+            [$providerOptions, $headers] = $this->resolveProviderOptionsAndHeaders($provider);
+
+            $provider = $provider->withHeaders($headers);
+
             try {
                 return $provider->image(
                     $this->prompt,
@@ -175,11 +181,12 @@ class PendingImageGeneration
                     $this->quality,
                     $model,
                     $this->timeout,
+                    $providerOptions,
                 );
             } catch (FailoverableException $e) {
                 $lastException = $e;
 
-                EventManager::instance()->dispatch(new ProviderFailedOverEvent($provider->name(), $model, $e));
+                EventManager::instance()->dispatch(new ProviderFailedOver($provider->name(), $model, $e, $provider));
 
                 continue;
             }
@@ -209,6 +216,8 @@ class PendingImageGeneration
                     $this->quality,
                     $provider,
                     $model,
+                    $this->timeout,
+                    $this->queuedProviderOptions(),
                 ),
             );
         }

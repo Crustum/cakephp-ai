@@ -24,6 +24,7 @@ trait GeneratesImagesTrait
      * @param 'low'|'medium'|'high'|null $quality Image quality
      * @param string|null $model Model name
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      */
     public function image(
@@ -33,12 +34,13 @@ trait GeneratesImagesTrait
         ?string $quality = null,
         ?string $model = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse {
         $invocationId = Text::uuid();
 
         $model ??= $this->defaultImageModel();
 
-        $prompt = new ImagePrompt($prompt, $attachments, $size, $quality, $this, $model);
+        $prompt = new ImagePrompt($prompt, $attachments, $size, $quality, $this, $model, $timeout, $providerOptions);
 
         if (Ai::manager()->imagesAreFaked()) {
             Ai::manager()->recordImageGeneration($prompt);
@@ -59,6 +61,7 @@ trait GeneratesImagesTrait
             $prompt->size,
             $prompt->quality,
             $timeout,
+            $prompt->providerOptions,
         );
 
         $this->events->dispatch(new ImageGenerated(

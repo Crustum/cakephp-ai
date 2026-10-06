@@ -70,7 +70,9 @@ class GeminiFileGateway implements FileGateway
     ): StoredFileResponse {
         [$content, $mime, $name] = $this->prepareStorableFile($file);
 
-        $providerOptions = $this->resolveProviderOptions($file, Lab::Gemini);
+        [$providerOptions, $headers] = $this->resolveProviderOptionsAndHeaders($file, Lab::Gemini);
+
+        $provider = $provider->withHeaders($headers);
 
         $response = $this->withErrorHandling(
             $provider->name(),

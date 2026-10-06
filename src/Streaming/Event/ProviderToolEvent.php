@@ -19,7 +19,7 @@ class ProviderToolEvent extends StreamEvent
      * @param array<string, mixed> $data Event data
      * @param string $status Status
      * @param int $timestamp Unix timestamp
-     * @param string|null $provider Provider name
+     * @param string $provider Provider name
      */
     public function __construct(
         public string $id,
@@ -28,7 +28,7 @@ class ProviderToolEvent extends StreamEvent
         public array $data,
         public string $status,
         public int $timestamp,
-        public ?string $provider = null,
+        public string $provider,
     ) {
     }
 
@@ -45,26 +45,6 @@ class ProviderToolEvent extends StreamEvent
             'status' => $this->status,
             'timestamp' => $this->timestamp,
             'provider' => $this->provider,
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        $provider = $this->provider ?? 'crustum';
-
-        return [
-            'type' => 'custom',
-            'kind' => $provider . '.' . $this->type,
-            'providerMetadata' => [
-                $provider => [
-                    'itemId' => $this->itemId,
-                    'status' => $this->status,
-                    'data' => $this->data,
-                ],
-            ],
         ];
     }
 }

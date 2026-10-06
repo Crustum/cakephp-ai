@@ -5,7 +5,7 @@ namespace Crustum\Ai\Responses;
 
 use Cake\Collection\CollectionInterface;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TranscriptionUsage;
 use Stringable;
 
 /**
@@ -30,7 +30,7 @@ class TranscriptionResponse implements Stringable
     /**
      * Token usage information
      */
-    public Usage $usage;
+    public TranscriptionUsage $usage;
 
     /**
      * Metadata about the response
@@ -42,13 +42,13 @@ class TranscriptionResponse implements Stringable
      *
      * @param string $text The transcribed text
      * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\TranscriptionSegment> $segments Transcription segments
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage information
+     * @param \Crustum\Ai\Responses\Data\TranscriptionUsage $usage Token usage information
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata about the response
      */
     public function __construct(
         string $text,
         CollectionInterface $segments,
-        Usage $usage,
+        TranscriptionUsage $usage,
         Meta $meta,
     ) {
         $this->text = $text;

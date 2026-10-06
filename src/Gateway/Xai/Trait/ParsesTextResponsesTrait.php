@@ -9,9 +9,11 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\ProviderToolCall;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\UrlCitation;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Trait\JoinsReasoningTrait;
 
 /**
  * Parses xAI Responses API text responses.
@@ -19,6 +21,7 @@ use Crustum\Ai\Responses\Data\Usage;
 trait ParsesTextResponsesTrait
 {
     use DecodesStructuredOutputTrait;
+    use JoinsReasoningTrait;
 
     /**
      * Validate the xAI response data.
@@ -79,6 +82,8 @@ trait ParsesTextResponsesTrait
             meta: new Meta($provider->name(), $model, $citations),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
             continuationToken: $data['id'] ?? null,
+            reasoning: $this->extractReasoning($output),
+            providerToolCalls: $this->extractProviderToolCalls($output),
         );
     }
 
@@ -90,13 +95,14 @@ trait ParsesTextResponsesTrait
      */
     protected function extractText(array $output): string
     {
-        $lastOutput = end($output);
+        /** @var array<int, array<string, mixed>> $messages */
+        $messages = collection($output)
+            ->filter(fn(mixed $item): bool => is_array($item) && ($item['type'] ?? '') === 'message')
+            ->toList();
 
-        if (is_array($lastOutput)) {
-            return $lastOutput['content'][0]['text'] ?? '';
-        }
+        $message = end($messages);
 
-        return '';
+        return is_array($message) ? ($message['content'][0]['text'] ?? '') : '';
     }
 
     /**
@@ -132,23 +138,37 @@ trait ParsesTextResponsesTrait
     }
 
     /**
+     * Extract the provider-hosted tool items from the output array.
+     *
+     * @param array<int, mixed> $output Output items
+     * @return array<int, \Crustum\Ai\Responses\Data\ProviderToolCall>
+     */
+    protected function extractProviderToolCalls(array $output): array
+    {
+        return array_values(array_map(
+            fn(array $item): ProviderToolCall => new ProviderToolCall($item['id'] ?? '', $item['type'], $item),
+            array_filter($output, fn(mixed $item): bool => is_array($item)
+                && ($item['type'] ?? '') !== 'function_call'
+                && str_ends_with((string)($item['type'] ?? ''), '_call')),
+        ));
+    }
+
+    /**
      * Extract usage data from the response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
         $usage = $data['usage'] ?? [];
-        $inputTokens = $usage['input_tokens'] ?? 0;
-        $cachedTokens = $usage['input_tokens_details']['cached_tokens'] ?? 0;
+        $reasoningTokens = $usage['output_tokens_details']['reasoning_tokens'] ?? null;
 
-        return new Usage(
-            $inputTokens - $cachedTokens,
-            $usage['output_tokens'] ?? 0,
-            0,
-            $cachedTokens,
-            $usage['output_tokens_details']['reasoning_tokens'] ?? 0,
+        return new TextUsage(
+            inputTokens: $usage['input_tokens'] ?? 0,
+            outputTokens: ($usage['output_tokens'] ?? 0) + ($reasoningTokens ?? 0),
+            cacheReadInputTokens: $usage['input_tokens_details']['cached_tokens'] ?? null,
+            reasoningTokens: $reasoningTokens,
         );
     }
 
@@ -160,10 +180,17 @@ trait ParsesTextResponsesTrait
      */
     protected function extractFinishReason(array $data): FinishReason
     {
+        /** @var array<int, array<string, mixed>> $output */
         $output = $data['output'] ?? [];
-        $lastOutput = end($output);
-        $status = $lastOutput['status'] ?? $data['status'] ?? '';
-        $type = $lastOutput['type'] ?? '';
+
+        /** @var array<int, array<string, mixed>> $items */
+        $items = collection($output)
+            ->filter(fn(mixed $item): bool => is_array($item) && ($item['type'] ?? '') !== 'reasoning')
+            ->toList();
+
+        $lastOutput = end($items);
+        $status = is_array($lastOutput) ? ($lastOutput['status'] ?? $data['status'] ?? '') : ($data['status'] ?? '');
+        $type = is_array($lastOutput) ? ($lastOutput['type'] ?? '') : '';
 
         return match ($status) {
             'incomplete' => FinishReason::Length,
@@ -175,6 +202,36 @@ trait ParsesTextResponsesTrait
             },
             default => FinishReason::Unknown,
         };
+    }
+
+    /**
+     * Extract the reasoning text from the output array.
+     *
+     * @param array<int, array<string, mixed>> $output Output items
+     */
+    protected function extractReasoning(array $output): string
+    {
+        /** @var \Cake\Collection\CollectionInterface<int, string> $texts */
+        $texts = collection($output)
+            ->filter(fn(mixed $item): bool => is_array($item) && ($item['type'] ?? '') === 'reasoning')
+            ->map(function (array $item): array {
+                /** @var array<int, array<string, mixed>> $summary */
+                $summary = $item['summary'] ?? [];
+                /** @var array<int, array<string, mixed>> $content */
+                $content = $item['content'] ?? [];
+                /** @var \Cake\Collection\CollectionInterface<int, string> $summaryTexts */
+                $summaryTexts = collection($summary)->map(fn(array $entry): string => $entry['text'] ?? '');
+                /** @var \Cake\Collection\CollectionInterface<int, string> $contentTexts */
+                $contentTexts = collection($content)->map(fn(array $entry): string => $entry['text'] ?? '');
+
+                return [
+                    implode('', $summaryTexts->toList()),
+                    implode('', $contentTexts->toList()),
+                ];
+            })
+            ->unfold();
+
+        return static::joinReasoning($texts->toList());
     }
 
     /**

@@ -53,7 +53,20 @@ trait RemembersConversationsTrait
     }
 
     /**
-     * Continue the latest conversation as the given user.
+     * Continue the given conversation for the participant, or start a new one when there is none.
+     *
+     * @param string|null $conversationId Conversation ID
+     * @param object $as Conversation participant
+     */
+    public function continueOrStart(?string $conversationId, object $as): static
+    {
+        return $conversationId === null
+            ? $this->forParticipant($as)
+            : $this->continue($conversationId, as: $as);
+    }
+
+    /**
+     * Continue the given user's last conversation with this agent.
      *
      * @param object $as Conversation participant
      */
@@ -65,6 +78,7 @@ trait RemembersConversationsTrait
             ->latestConversationId(
                 Conversation::participantType($as),
                 Conversation::participantKey($as),
+                static::class,
             );
 
         return $this;

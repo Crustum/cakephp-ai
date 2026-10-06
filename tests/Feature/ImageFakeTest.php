@@ -1,16 +1,20 @@
 <?php
 declare(strict_types=1);
 
+use Cake\Core\Configure;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Image;
 use Crustum\Ai\Job\GenerateImageJob;
 use Crustum\Ai\Prompts\ImagePrompt;
 use Crustum\Ai\Prompts\QueuedImagePrompt;
 use Crustum\Ai\Responses\Data\GeneratedImage;
+use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\ImageList;
 use Crustum\Ai\Responses\ImageResponse;
+use JMac\Testing\Double;
+use JMac\Testing\Matching\Argument;
+use League\Flysystem\FilesystemOperator;
 
 test('image rejects empty prompt', function (): void {
     Image::fake();
@@ -30,7 +34,7 @@ test('images can be faked', function (): void {
         fn(ImagePrompt $prompt): string => base64_encode('second-image-' . $prompt->prompt),
         new ImageResponse(
             new ImageList([new GeneratedImage(base64_encode('third-image'))]),
-            new Usage(),
+            new ImageUsage(),
             new Meta(),
         ),
     ]);
@@ -126,7 +130,7 @@ test('image is stored under a random name derived from its mime type', function 
         Image::fake([
             new ImageResponse(
                 new ImageList([new GeneratedImage(base64_encode('raw-bytes'), 'image/jpeg')]),
-                new Usage(),
+                new ImageUsage(),
                 new Meta(),
             ),
         ]);
@@ -172,6 +176,27 @@ test('image can be stored publicly and with an explicit name', function (): void
     } finally {
         rrmdir($dir);
     }
+});
+
+test('storing an image publicly passes public visibility to the disk', function (): void {
+    Image::fake([base64_encode('raw-bytes')]);
+
+    $response = Image::of('A sunset')->generate();
+
+    $operator = Double::for(FilesystemOperator::class);
+    $operator->expects('write')->with(Argument::matches('#^private/#'), 'raw-bytes', []);
+    $operator->expects('write')->with(Argument::matches('#^public/#'), 'raw-bytes', ['visibility' => 'public']);
+    $operator->expects('write')->with('sunset.png', 'raw-bytes', ['visibility' => 'public']);
+
+    Configure::write('Ai.filesystem.named.images', $operator);
+
+    $private = $response->store('private', 'images');
+    $public = $response->storePublicly('public', 'images');
+    $named = $response->storePubliclyAs('sunset.png', null, 'images');
+
+    expect($private)->toStartWith('private/')
+        ->and($public)->toStartWith('public/')
+        ->and($named)->toBe('sunset.png');
 });
 
 test('queued images can be faked', function (): void {
@@ -251,4 +276,14 @@ test('queued image size and quality are recorded', function (): void {
     Image::assertQueued(fn(QueuedImagePrompt $prompt): bool => $prompt->prompt === 'A sunset'
         && $prompt->size === '3:2'
         && $prompt->quality === 'low');
+});
+
+test('image timeout is recorded for generated and queued prompts', function (): void {
+    Image::fake();
+
+    Image::of('First prompt')->timeout(45)->generate();
+    Image::of('Second prompt')->timeout(90)->queue();
+
+    Image::assertGenerated(fn(ImagePrompt $prompt): bool => $prompt->timeout === 45);
+    Image::assertQueued(fn(QueuedImagePrompt $prompt): bool => $prompt->timeout === 90);
 });

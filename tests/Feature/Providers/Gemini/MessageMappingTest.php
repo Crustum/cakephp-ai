@@ -8,6 +8,9 @@ use Crustum\Ai\Files;
 use Crustum\Ai\Files\Base64Document;
 use Crustum\Ai\Files\Base64Video;
 use Crustum\Ai\Files\LocalImage;
+use Crustum\Ai\Files\RemoteAudio;
+use Crustum\Ai\Files\RemoteDocument;
+use Crustum\Ai\Files\RemoteImage;
 use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Messages\Message;
 use Crustum\Ai\Messages\ToolResultMessage;
@@ -18,7 +21,31 @@ use Crustum\Ai\Test\Support\IntegrationPrompts;
 use Crustum\Ai\Test\Support\Storage\LocalDisk;
 use Crustum\Ai\Trait\PromptableTrait;
 
-test('user message maps to gemini format', function (): void {
+function geminiRequestBody(): array
+{
+    foreach (aiHttpRecorded() as $pair) {
+        if (str_contains((string)$pair[0]->url(), 'generativelanguage.googleapis.com')) {
+            return $pair[0]->data();
+        }
+    }
+
+    return [];
+}
+
+function geminiInputBlock(string $type): ?array
+{
+    foreach (geminiRequestBody()['input'] as $step) {
+        foreach ($step['content'] ?? [] as $block) {
+            if (($block['type'] ?? null) === $type) {
+                return $block;
+            }
+        }
+    }
+
+    return null;
+}
+
+test('user message maps to a user input step', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
     ]);
@@ -28,16 +55,13 @@ test('user message maps to gemini format', function (): void {
         provider: 'gemini',
     );
 
-    aiAssertHttpSent(function ($request): bool {
-        $contents = $request->data()['contents'];
-        $userMessage = $contents[0];
-
-        return $userMessage['role'] === 'user'
-            && $userMessage['parts'][0]['text'] === IntegrationPrompts::question('knowledge');
-    });
+    expect(geminiRequestBody()['input'][0])->toMatchArray([
+        'type' => 'user_input',
+        'content' => [['type' => 'text', 'text' => IntegrationPrompts::question('knowledge')]],
+    ]);
 });
 
-test('tool result follow up maps model and function response', function (): void {
+test('tool result follow up maps a function call and function result step', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('The number is 72019'),
     ]);
@@ -53,7 +77,6 @@ test('tool result follow up maps model and function response', function (): void
 
         public function messages(): iterable
         {
-            // Use non-sequential keys to ensure parts serialize as a JSON array
             $toolResults = collect([
                 'custom_key' => new ToolResult('call_123', 'FixedNumberGenerator', [], 123),
             ]);
@@ -74,37 +97,22 @@ test('tool result follow up maps model and function response', function (): void
 
     expect($recorded)->toHaveCount(1);
 
-    $contents = $recorded[0][0]->data()['contents'];
+    $input = $recorded[0][0]->data()['input'];
 
-    $modelFunctionCall = null;
-    $userMessageParts = null;
+    $functionCall = collect($input)->firstMatch(['type' => 'function_call']);
+    $functionResult = collect($input)->firstMatch(['type' => 'function_result']);
 
-    foreach ($contents as $content) {
-        if ($content['role'] === 'model') {
-            foreach ($content['parts'] ?? [] as $part) {
-                if (isset($part['functionCall'])) {
-                    $modelFunctionCall = $part['functionCall'];
-                }
-            }
-        }
-
-        if ($content['role'] === 'user') {
-            foreach ($content['parts'] ?? [] as $part) {
-                if (isset($part['functionResponse'])) {
-                    $userMessageParts = $content['parts'];
-                }
-            }
-        }
-    }
-
-    expect($modelFunctionCall)->not->toBeNull('Follow-up should include model message with functionCall')
-        ->and($modelFunctionCall)->not->toHaveKey('args')
-        ->and($modelFunctionCall)->not->toHaveKey('id')
-        ->and($userMessageParts)->not->toBeNull('Follow-up should include user message with functionResponse')
-        ->and(array_is_list($userMessageParts))->toBeTrue('Tool result parts must be a sequential array');
+    expect($functionCall)->not->toBeNull('Follow-up should include a function_call step')
+        ->and($functionCall['name'])->toBe('FixedNumberGenerator')
+        ->and($functionCall['id'])->toBe('call_123')
+        ->and($functionResult)->not->toBeNull('Follow-up should include a function_result step')
+        ->and($functionResult['call_id'])->toBe('call_123')
+        ->and($functionResult['name'])->toBe('FixedNumberGenerator')
+        ->and(array_is_list($functionResult['result']))->toBeTrue('Tool results must be a sequential array')
+        ->and($functionResult['result'][0]['type'])->toBe('text');
 });
 
-test('prior assistant tool call with empty arguments omits args in conversation history', function (): void {
+test('prior assistant tool call sends its arguments as an object', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('OK'),
     ]);
@@ -131,26 +139,51 @@ test('prior assistant tool call with empty arguments omits args in conversation 
 
     $agent->prompt('And again', provider: 'gemini');
 
-    aiAssertHttpSent(function ($request): bool {
-        $modelFunctionCall = null;
+    $body = aiHttpRecorded()[0][0]->body();
 
-        foreach ($request->data()['contents'] ?? [] as $content) {
-            if (($content['role'] ?? null) !== 'model') {
-                continue;
-            }
+    expect($body)->toContain('"arguments":{}');
+});
 
-            foreach ($content['parts'] ?? [] as $part) {
-                if (isset($part['functionCall'])) {
-                    $modelFunctionCall = $part['functionCall'];
-                }
-            }
+test('prior assistant steps are replayed to gemini verbatim', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('OK'),
+    ]);
+
+    $replayed = [
+        ['type' => 'thought', 'summary' => [['type' => 'text', 'text' => 'Thinking.']], 'signature' => 'sig_123'],
+        ['type' => 'function_call', 'id' => 'call_123', 'name' => 'FixedNumberGenerator', 'arguments' => []],
+    ];
+
+    $agent = new class ($replayed) implements Agent, Conversational
+    {
+        use PromptableTrait;
+
+        public function __construct(protected array $replayed)
+        {
         }
 
-        $modelFunctionCall ??= null;
+        public function instructions(): string
+        {
+            return 'You are a helpful assistant.';
+        }
 
-        return $modelFunctionCall !== null
-            && ! array_key_exists('args', $modelFunctionCall);
-    });
+        public function messages(): iterable
+        {
+            return [
+                new Message(role: 'user', content: 'Generate a number'),
+                new AssistantMessage('', new Collection([
+                    new ToolCall('call_123', 'FixedNumberGenerator', [], 'call_123'),
+                ]), replayBlocks: $this->replayed),
+            ];
+        }
+    };
+
+    $agent->prompt('And again', provider: 'gemini');
+
+    [$request] = aiHttpRecorded()[0];
+
+    expect($request->data()['input'][1])->toBe($replayed[0])
+        ->and($request->body())->toContain('{"type":"function_call","id":"call_123","name":"FixedNumberGenerator","arguments":{}}');
 });
 
 test('local image attachment without explicit mime type detects mime from file', function (): void {
@@ -164,20 +197,25 @@ test('local image attachment without explicit mime type detects mime from file',
         provider: 'gemini',
     );
 
-    aiAssertHttpSent(function ($request): bool {
-        $parts = $request->data()['contents'][0]['parts'];
-
-        foreach ($parts as $part) {
-            if (isset($part['inlineData'])) {
-                return $part['inlineData']['mimeType'] === 'image/png';
-            }
-        }
-
-        return false;
-    });
+    expect(geminiInputBlock('image'))->toMatchArray(['mime_type' => 'image/png']);
 });
 
-test('base64 pdf document maps to inline data', function (): void {
+test('an attachment only message sends no text block', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('I see an image'),
+    ]);
+
+    agent('You are helpful.')->prompt(
+        '',
+        attachments: [new LocalImage(__DIR__ . '/../../../Fixtures/Images/red.png')],
+        provider: 'gemini',
+    );
+
+    expect(geminiRequestBody()['input'][0]['content'])->toHaveCount(1)
+        ->and(geminiRequestBody()['input'][0]['content'][0]['type'])->toBe('image');
+});
+
+test('base64 pdf document maps to a document block', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('I see a PDF'),
     ]);
@@ -190,21 +228,13 @@ test('base64 pdf document maps to inline data', function (): void {
         provider: 'gemini',
     );
 
-    aiAssertHttpSent(function ($request): bool {
-        $parts = $request->data()['contents'][0]['parts'];
-
-        foreach ($parts as $part) {
-            if (isset($part['inlineData'])) {
-                return $part['inlineData']['mimeType'] === 'application/pdf'
-                    && $part['inlineData']['data'] === base64_encode('fake-pdf-content');
-            }
-        }
-
-        return false;
-    });
+    expect(geminiInputBlock('document'))->toMatchArray([
+        'mime_type' => 'application/pdf',
+        'data' => base64_encode('fake-pdf-content'),
+    ]);
 });
 
-test('base64 video attachment maps to inline data', function (): void {
+test('base64 video attachment maps to a video block', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('I see a video'),
     ]);
@@ -217,18 +247,64 @@ test('base64 video attachment maps to inline data', function (): void {
         provider: 'gemini',
     );
 
-    aiAssertHttpSent(function ($request): bool {
-        $parts = $request->data()['contents'][0]['parts'];
+    expect(geminiInputBlock('video'))->toMatchArray([
+        'mime_type' => 'video/mp4',
+        'data' => base64_encode('fake-video-content'),
+    ]);
+});
 
-        foreach ($parts as $part) {
-            if (isset($part['inlineData'])) {
-                return $part['inlineData']['mimeType'] === 'video/mp4'
-                    && $part['inlineData']['data'] === base64_encode('fake-video-content');
-            }
-        }
+test('remote image url is fetched and mapped to an image block', function (): void {
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse('fake-image-bytes', 200, ['Content-Type' => 'image/png']),
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('I see an image'),
+    ]);
 
-        return false;
-    });
+    agent('You are helpful.')->prompt(
+        'What is in this image?',
+        attachments: [new RemoteImage('https://example.com/photo.png', 'image/png')],
+        provider: 'gemini',
+    );
+
+    expect(geminiInputBlock('image'))->toMatchArray([
+        'mime_type' => 'image/png',
+        'data' => base64_encode('fake-image-bytes'),
+    ]);
+});
+
+test('remote pdf url is fetched and mapped to a document block', function (): void {
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse('fake-pdf-bytes', 200, ['Content-Type' => 'application/pdf']),
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('I see a PDF'),
+    ]);
+
+    agent('You are helpful.')->prompt(
+        'What is in this PDF?',
+        attachments: [new RemoteDocument('https://example.com/report.pdf', 'application/pdf')],
+        provider: 'gemini',
+    );
+
+    expect(geminiInputBlock('document'))->toMatchArray([
+        'mime_type' => 'application/pdf',
+        'data' => base64_encode('fake-pdf-bytes'),
+    ]);
+});
+
+test('remote audio url is fetched and mapped to an audio block', function (): void {
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse('fake-audio-bytes', 200, ['Content-Type' => 'audio/mp3']),
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('I hear audio'),
+    ]);
+
+    agent('You are helpful.')->prompt(
+        'What is in this audio?',
+        attachments: [new RemoteAudio('https://example.com/clip.mp3', 'audio/mp3')],
+        provider: 'gemini',
+    );
+
+    expect(geminiInputBlock('audio'))->toMatchArray([
+        'mime_type' => 'audio/mp3',
+        'data' => base64_encode('fake-audio-bytes'),
+    ]);
 });
 
 test('stored text document sends real mime type', function (): void {
@@ -245,24 +321,16 @@ test('stored text document sends real mime type', function (): void {
             provider: 'gemini',
         );
 
-        aiAssertHttpSent(function ($request): bool {
-            $parts = $request->data()['contents'][0]['parts'];
-
-            foreach ($parts as $part) {
-                if (isset($part['inlineData'])) {
-                    return $part['inlineData']['mimeType'] === 'text/plain'
-                        && $part['inlineData']['data'] === base64_encode('stored text contents');
-                }
-            }
-
-            return false;
-        });
+        expect(geminiInputBlock('document'))->toMatchArray([
+            'mime_type' => 'text/plain',
+            'data' => base64_encode('stored text contents'),
+        ]);
     } finally {
         LocalDisk::cleanup('docs');
     }
 });
 
-test('system instructions are not in contents array', function (): void {
+test('system instructions are not part of the input steps', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
     ]);
@@ -272,15 +340,6 @@ test('system instructions are not in contents array', function (): void {
         provider: 'gemini',
     );
 
-    aiAssertHttpSent(function ($request): bool {
-        $body = $request->data();
-
-        foreach ($body['contents'] as $content) {
-            if ($content['role'] === 'system') {
-                return false;
-            }
-        }
-
-        return isset($body['system_instruction']);
-    });
+    expect(array_column(geminiRequestBody()['input'], 'type'))->not->toContain('system')
+        ->and(geminiRequestBody())->toHaveKey('system_instruction');
 });

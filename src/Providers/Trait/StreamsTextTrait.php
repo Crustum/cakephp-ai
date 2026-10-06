@@ -12,6 +12,7 @@ use Crustum\Ai\Event\ToolApprovalRequested;
 use Crustum\Ai\Event\ToolApprovalResolved;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Messages\UserMessage;
+use Crustum\Ai\Middleware\RememberConversation;
 use Crustum\Ai\Pipeline\Pipeline;
 use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Responses\Data\Meta;
@@ -38,17 +39,13 @@ trait StreamsTextTrait
     {
         $invocationId = $prompt->invocationId ?? Text::uuid();
 
-        $originalPrompt = $prompt;
-
-        $processedPrompt = null;
         $resolvedApprovalResults = null;
 
         try {
             $response = (new Pipeline())
                 ->send($prompt)
                 ->through($this->gatherMiddlewareFor($prompt->agent))
-                ->then(function (AgentPrompt $prompt) use ($invocationId, $originalPrompt, &$processedPrompt, &$resolvedApprovalResults): StreamableAgentResponse {
-                    $processedPrompt = $prompt;
+                ->then(function (AgentPrompt $prompt) use ($invocationId, &$resolvedApprovalResults): StreamableAgentResponse {
 
                     $agent = $prompt->agent;
 
@@ -58,7 +55,8 @@ trait StreamsTextTrait
 
                     $meta = new Meta($this->name(), $prompt->model);
 
-                    $messages = $this->withoutForeignProviderContentBlocks([
+                    $messages = $this->withoutForeignReplayBlocks([
+                        ...($prompt->messages ?? []),
                         ...($agent instanceof Conversational ? $agent->messages() : []),
                     ]);
 
@@ -66,7 +64,7 @@ trait StreamsTextTrait
                         $messages[] = new UserMessage($prompt->prompt, $prompt->attachments->toList());
                     }
 
-                    $tools = $this->resolveTools($agent);
+                    $tools = $this->resolveTools($prompt);
                     $approval = $this->resumableApprovalFor($prompt);
                     $recordApprovalResults = $this->approvalResultRecorderFor($prompt, $resolvedApprovalResults);
 
@@ -78,7 +76,7 @@ trait StreamsTextTrait
 
                     $streamable = new StreamableAgentResponse(
                         $invocationId,
-                        function () use ($invocationId, $prompt, $originalPrompt, $agent, $messages, $tools, $approval, $recordApprovalResults, $validatedApproval, &$streamable) {
+                        function () use ($invocationId, $prompt, $agent, $messages, $tools, $approval, $recordApprovalResults, $validatedApproval, &$streamable) {
                             $this->events->dispatch(new StreamingAgent($invocationId, $prompt));
 
                             try {
@@ -100,13 +98,13 @@ trait StreamsTextTrait
                                     ) as $event
                                 ) {
                                     if ($event instanceof ToolApprovalRequest) {
-                                        $this->throwIfNotResumable($agent);
+                                        $this->throwIfNotResumable($prompt);
                                     }
 
                                     yield $event;
                                 }
                             } catch (Throwable $throwable) {
-                                $this->recordAgentFailure($invocationId, $originalPrompt, $throwable, $prompt, retryable: !$streamable->hasYielded());
+                                $this->recordAgentFailure($invocationId, $prompt, $throwable, retryable: !$streamable->hasYielded());
 
                                 throw $throwable;
                             }
@@ -114,17 +112,27 @@ trait StreamsTextTrait
                         $meta,
                     );
 
+                    if (RememberConversation::appliesTo($agent)) {
+                        /** @var \Crustum\Ai\Contracts\Agent&\Crustum\Ai\Contracts\RemembersConversations $agent */
+                        if ($agent->currentConversation() !== null) {
+                            $streamable->withinConversation(
+                                $agent->currentConversation(),
+                                $agent->conversationParticipant(),
+                            );
+                        }
+                    }
+
                     return $streamable;
                 });
         } catch (Throwable $throwable) {
-            $this->recordAgentFailure($invocationId, $prompt, $throwable, $processedPrompt);
+            $this->recordAgentFailure($invocationId, $prompt, $throwable);
 
             throw $throwable;
         }
 
-        return $response->then(function (StreamedAgentResponse $response) use ($invocationId, $prompt, &$processedPrompt, &$resolvedApprovalResults): void {
+        return $response->then(function (StreamedAgentResponse $response) use ($invocationId, $prompt, &$resolvedApprovalResults): void {
             $this->events->dispatch(
-                new AgentStreamed($invocationId, $processedPrompt ?? $prompt, $response),
+                new AgentStreamed($invocationId, $prompt, $response),
             );
 
             if ($response->hasPendingApprovals()) {

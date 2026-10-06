@@ -9,6 +9,7 @@ use Crustum\Ai\Contracts\Providers\RerankingProvider;
 use Crustum\Ai\Prompts\RerankingPrompt;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\RankedDocument;
+use Crustum\Ai\Responses\Data\RerankingUsage;
 use Crustum\Ai\Responses\RerankingResponse;
 use RuntimeException;
 
@@ -47,6 +48,8 @@ class FakeRerankingGateway implements RerankingGateway
      * @param array<int, string> $documents Array of documents to rerank
      * @param string $query The query to use for relevance scoring
      * @param int|null $limit Maximum number of results to return
+     * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\RerankingResponse
      */
     public function rerank(
@@ -55,8 +58,10 @@ class FakeRerankingGateway implements RerankingGateway
         array $documents,
         string $query,
         ?int $limit = null,
+        int $timeout = 30,
+        array $providerOptions = [],
     ): RerankingResponse {
-        $prompt = new RerankingPrompt($documents, $query, $limit, $provider, $model);
+        $prompt = new RerankingPrompt($documents, $query, $limit, $provider, $model, $timeout, $providerOptions);
 
         return $this->nextResponse($provider, $model, $prompt);
     }
@@ -118,6 +123,7 @@ class FakeRerankingGateway implements RerankingGateway
         if (is_array($response) && isset($response[0]) && $response[0] instanceof RankedDocument) {
             return new RerankingResponse(
                 $response,
+                new RerankingUsage(),
                 new Meta($provider->name(), $model),
             );
         }

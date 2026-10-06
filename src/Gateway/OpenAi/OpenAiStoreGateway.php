@@ -60,7 +60,7 @@ class OpenAiStoreGateway implements StoreGateway
      * @param \Crustum\Ai\Contracts\Providers\StoreProvider $provider Store provider
      * @param string $name Store name
      * @param string|null $description Store description
-     * @param \Cake\Collection\Collection|null $fileIds Initial file IDs
+     * @param \Cake\Collection\Collection<int, string>|null $fileIds Initial file IDs
      * @param \DateInterval|null $expiresWhenIdleFor Idle expiration interval
      * @return \Crustum\Ai\Store
      */

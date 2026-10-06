@@ -1,8 +1,6 @@
 <?php
 declare(strict_types=1);
 
-use Cake\Core\Configure;
-
 /**
  * AI Plugin Configuration
  *
@@ -24,6 +22,7 @@ return [
         'default_for_transcription' => env('AI_DEFAULT_FOR_TRANSCRIPTION', 'openrouter'),
         'default_for_embeddings' => env('AI_DEFAULT_FOR_EMBEDDINGS', 'openrouter'),
         'default_for_reranking' => env('AI_DEFAULT_FOR_RERANKING', 'openrouter'),
+        'default_for_classification' => env('AI_DEFAULT_FOR_CLASSIFICATION', 'typesafe'),
         'default_for_stores' => env('AI_DEFAULT_FOR_STORES', 'openai'),
         'default_for_files' => env('AI_DEFAULT_FOR_FILES', 'openai'),
 
@@ -61,7 +60,7 @@ return [
                 'baseUrl' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
                 'timeout' => (int)env('OPENROUTER_TIMEOUT', 120),
                 'models' => [
-                    'text' => env('OPENROUTER_TEXT_MODEL', 'anthropic/claude-sonnet-4.6'),
+                    'text' => env('OPENROUTER_TEXT_MODEL', 'anthropic/claude-sonnet-5.5'),
                     'embeddings' => [
                         'default' => env('OPENROUTER_EMBEDDINGS_MODEL', 'google/gemini-embedding-001'),
                         'dimensions' => (int)env('OPENROUTER_EMBEDDINGS_DIMENSIONS', 1536),
@@ -79,12 +78,12 @@ return [
                 'timeout' => (int)env('OPENAI_TIMEOUT', 120),
                 'models' => [
                     'text' => [
-                        'default' => env('OPENAI_TEXT_MODEL', 'gpt-5.4'),
-                        'cheapest' => env('OPENAI_TEXT_MODEL_CHEAPEST', 'gpt-5.4-nano'),
-                        'smartest' => env('OPENAI_TEXT_MODEL_SMARTEST', 'gpt-5.4-pro'),
+                    'default' => env('OPENAI_TEXT_MODEL', 'gpt-6.1-sol'),
+                    'cheapest' => env('OPENAI_TEXT_MODEL_CHEAPEST', 'gpt-6-luna'),
+                    'smartest' => env('OPENAI_TEXT_MODEL_SMARTEST', 'gpt-6-astra'),
                     ],
                     'image' => [
-                        'default' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),
+                        'default' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2.5-flare'),
                     ],
                     'audio' => [
                         'default' => env('OPENAI_AUDIO_MODEL', 'gpt-4o-mini-tts'),
@@ -118,9 +117,9 @@ return [
                 'url' => env('OLLAMA_URL', 'http://localhost:11434'),
                 'models' => [
                     'text' => [
-                        'default' => env('OLLAMA_TEXT_MODEL', 'llama3.1:8b'),
-                        'cheapest' => env('OLLAMA_TEXT_MODEL_CHEAPEST', 'llama3.1:8b'),
-                        'smartest' => env('OLLAMA_TEXT_MODEL_SMARTEST', 'llama3.1:70b'),
+                    'default' => env('OLLAMA_TEXT_MODEL', 'qwen3.5:4b'),
+                    'cheapest' => env('OLLAMA_TEXT_MODEL_CHEAPEST', 'qwen3.5:0.8b'),
+                    'smartest' => env('OLLAMA_TEXT_MODEL_SMARTEST', 'gemma4:cloud'),
                     ],
                     'embeddings' => [
                         'default' => env('OLLAMA_EMBEDDINGS_MODEL', 'nomic-embed-text'),
@@ -136,9 +135,9 @@ return [
                 'use_default_credential_provider' => true,
                 'models' => [
                     'text' => [
-                        'default' => env('BEDROCK_TEXT_MODEL', 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
-                        'cheapest' => env('BEDROCK_TEXT_MODEL_CHEAPEST', 'us.anthropic.claude-haiku-4-5-20251001-v1:0'),
-                        'smartest' => env('BEDROCK_TEXT_MODEL_SMARTEST', 'us.anthropic.claude-opus-4-6-v1'),
+                        'default' => env('BEDROCK_TEXT_MODEL', 'global.anthropic.claude-sonnet-5-5'),
+                        'cheapest' => env('BEDROCK_TEXT_MODEL_CHEAPEST', 'global.anthropic.claude-haiku-4-5-20251001-v1:0'),
+                        'smartest' => env('BEDROCK_TEXT_MODEL_SMARTEST', 'global.anthropic.claude-opus-5-5'),
                     ],
                     'embeddings' => [
                         'default' => env('BEDROCK_EMBEDDINGS_MODEL', 'amazon.titan-embed-text-v2:0'),
@@ -155,9 +154,9 @@ return [
                 'url' => env('DEEPSEEK_URL', 'https://api.deepseek.com/v1'),
                 'models' => [
                     'text' => [
-                        'default' => env('DEEPSEEK_TEXT_MODEL', 'deepseek-v4-flash'),
-                        'cheapest' => env('DEEPSEEK_TEXT_MODEL_CHEAPEST', 'deepseek-v4-flash'),
-                        'smartest' => env('DEEPSEEK_TEXT_MODEL_SMARTEST', 'deepseek-reasoner'),
+                        'default' => env('DEEPSEEK_TEXT_MODEL', 'deepseek-flash'),
+                        'cheapest' => env('DEEPSEEK_TEXT_MODEL_CHEAPEST', 'deepseek-flash'),
+                        'smartest' => env('DEEPSEEK_TEXT_MODEL_SMARTEST', 'deepseek-v4-pro'),
                     ],
                 ],
             ],
@@ -167,16 +166,16 @@ return [
                 'url' => env('MISTRAL_URL', 'https://api.mistral.ai/v1'),
                 'models' => [
                     'text' => [
-                        'default' => env('MISTRAL_TEXT_MODEL', 'mistral-medium-latest'),
-                        'cheapest' => env('MISTRAL_TEXT_MODEL_CHEAPEST', 'mistral-small-latest'),
-                        'smartest' => env('MISTRAL_TEXT_MODEL_SMARTEST', 'mistral-large-latest'),
+                        'default' => env('MISTRAL_TEXT_MODEL', 'mistral-large-2512'),
+                        'cheapest' => env('MISTRAL_TEXT_MODEL_CHEAPEST', 'mistral-small-4'),
+                        'smartest' => env('MISTRAL_TEXT_MODEL_SMARTEST', 'mistral-medium-3-5'),
                     ],
                     'embeddings' => [
-                        'default' => env('MISTRAL_EMBEDDINGS_MODEL', 'mistral-embed'),
+                        'default' => env('MISTRAL_EMBEDDINGS_MODEL', 'mistral-embed-2312'),
                         'dimensions' => (int)env('MISTRAL_EMBEDDINGS_DIMENSIONS', 1024),
                     ],
                     'transcription' => [
-                        'default' => env('MISTRAL_TRANSCRIPTION_MODEL', 'voxtral-mini-latest'),
+                        'default' => env('MISTRAL_TRANSCRIPTION_MODEL', 'voxtral-mini-2602'),
                     ],
                 ],
             ],
@@ -187,9 +186,9 @@ return [
                 'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
                 'models' => [
                     'text' => [
-                        'default' => env('ANTHROPIC_TEXT_MODEL', 'claude-sonnet-5'),
+                        'default' => env('ANTHROPIC_TEXT_MODEL', 'claude-sonnet-5-5'),
                         'cheapest' => env('ANTHROPIC_TEXT_MODEL_CHEAPEST', 'claude-haiku-4-5-20251001'),
-                        'smartest' => env('ANTHROPIC_TEXT_MODEL_SMARTEST', 'claude-opus-4-8'),
+                        'smartest' => env('ANTHROPIC_TEXT_MODEL_SMARTEST', 'claude-fable-5-1'),
                     ],
                 ],
             ],
@@ -199,18 +198,18 @@ return [
                 'url' => env('GEMINI_URL', 'https://generativelanguage.googleapis.com/v1beta'),
                 'models' => [
                     'text' => [
-                        'default' => env('GEMINI_TEXT_MODEL', 'gemini-3.6-flash'),
-                        'cheapest' => env('GEMINI_TEXT_MODEL_CHEAPEST', 'gemini-3.5-flash-lite'),
-                        'smartest' => env('GEMINI_TEXT_MODEL_SMARTEST', 'gemini-3.6-flash'),
+                        'default' => env('GEMINI_TEXT_MODEL', 'gemini-3.8-flash'),
+                        'cheapest' => env('GEMINI_TEXT_MODEL_CHEAPEST', 'gemini-3.1-flash-lite'),
+                        'smartest' => env('GEMINI_TEXT_MODEL_SMARTEST', 'gemini-3.8-flash'),
                     ],
                     'image' => [
-                        'default' => env('GEMINI_IMAGE_MODEL', 'gemini-3.1-flash-image-preview'),
+                        'default' => env('GEMINI_IMAGE_MODEL', 'gemini-3.1-flash-image'),
                     ],
                     'audio' => [
-                        'default' => env('GEMINI_AUDIO_MODEL', 'gemini-2.5-flash-preview-tts'),
+                        'default' => env('GEMINI_AUDIO_MODEL', 'gemini-3.8-flash-lite-tts'),
                     ],
                     'transcription' => [
-                        'default' => env('GEMINI_TRANSCRIPTION_MODEL', 'gemini-3.5-flash'),
+                        'default' => env('GEMINI_TRANSCRIPTION_MODEL', 'gemini-3.5-transcribe'),
                     ],
                     'embeddings' => [
                         'default' => env('GEMINI_EMBEDDINGS_MODEL', 'gemini-embedding-2'),
@@ -224,12 +223,12 @@ return [
                 'url' => env('XAI_URL', 'https://api.x.ai/v1'),
                 'models' => [
                     'text' => [
-                        'default' => env('XAI_TEXT_MODEL', 'grok-4.20-non-reasoning'),
+                        'default' => env('XAI_TEXT_MODEL', 'grok-4.7'),
                         'cheapest' => env('XAI_TEXT_MODEL_CHEAPEST', 'grok-4.20-non-reasoning'),
-                        'smartest' => env('XAI_TEXT_MODEL_SMARTEST', 'grok-4.3'),
+                        'smartest' => env('XAI_TEXT_MODEL_SMARTEST', 'grok-4.7'),
                     ],
                     'image' => [
-                        'default' => env('XAI_IMAGE_MODEL', 'grok-imagine-image'),
+                        'default' => env('XAI_IMAGE_MODEL', 'grok-imagine-image-2.0'),
                     ],
                 ],
             ],
@@ -238,12 +237,22 @@ return [
                 'key' => env('AZURE_OPENAI_API_KEY'),
                 'url' => env('AZURE_OPENAI_URL'),
                 'api_version' => env('AZURE_OPENAI_API_VERSION', '2025-04-01-preview'),
-                'deployment' => env('AZURE_OPENAI_DEPLOYMENT', 'gpt-4o'),
-                'image_deployment' => env('AZURE_OPENAI_IMAGE_DEPLOYMENT', 'gpt-image-1'),
+                'deployment' => env('AZURE_OPENAI_DEPLOYMENT', 'gpt-6-sol'),
+                'image_deployment' => env('AZURE_OPENAI_IMAGE_DEPLOYMENT', 'gpt-image-2.5-flare'),
                 'embedding_deployment' => env('AZURE_OPENAI_EMBEDDING_DEPLOYMENT', 'text-embedding-3-small'),
                 'models' => [
                     'embeddings' => [
                         'dimensions' => (int)env('AZURE_OPENAI_EMBEDDINGS_DIMENSIONS', 1536),
+                    ],
+                ],
+            ],
+            'typesafe' => [
+                'className' => 'Crustum\Ai\Providers\TypeSafeProvider',
+                'key' => env('TYPESAFE_API_KEY'),
+                'url' => env('TYPESAFE_URL', 'https://api.typesafe.ai/v1'),
+                'models' => [
+                    'classification' => [
+                        'default' => env('TYPESAFE_CLASSIFICATION_MODEL', 'jev-latest'),
                     ],
                 ],
             ],
@@ -257,7 +266,7 @@ return [
                         'dimensions' => (int)env('VOYAGE_AI_EMBEDDINGS_DIMENSIONS', 1024),
                     ],
                     'reranking' => [
-                        'default' => env('VOYAGE_AI_RERANKING_MODEL', 'rerank-2.5-lite'),
+                        'default' => env('VOYAGE_AI_RERANKING_MODEL', 'rerank-3'),
                     ],
                 ],
             ],
@@ -266,12 +275,17 @@ return [
                 'key' => env('COHERE_API_KEY'),
                 'url' => env('COHERE_URL', 'https://api.cohere.com/v2'),
                 'models' => [
+                    'text' => [
+                        'default' => env('COHERE_TEXT_MODEL', 'command-a-03-2025'),
+                        'cheapest' => env('COHERE_TEXT_MODEL_CHEAPEST', 'command-r7b-12-2024'),
+                        'smartest' => env('COHERE_TEXT_MODEL_SMARTEST', 'command-a-plus-05-2026'),
+                    ],
                     'embeddings' => [
                         'default' => env('COHERE_EMBEDDINGS_MODEL', 'embed-v4.0'),
                         'dimensions' => (int)env('COHERE_EMBEDDINGS_DIMENSIONS', 1536),
                     ],
                     'reranking' => [
-                        'default' => env('COHERE_RERANKING_MODEL', 'rerank-v3.5'),
+                        'default' => env('COHERE_RERANKING_MODEL', 'rerank-v4.0-pro'),
                     ],
                 ],
             ],
@@ -285,7 +299,7 @@ return [
                         'dimensions' => (int)env('JINA_EMBEDDINGS_DIMENSIONS', 2048),
                     ],
                     'reranking' => [
-                        'default' => env('JINA_RERANKING_MODEL', 'jina-reranker-v3'),
+                        'default' => env('JINA_RERANKING_MODEL', 'jina-reranker-v3.5'),
                     ],
                 ],
             ],
@@ -326,10 +340,17 @@ return [
 
         /**
          * Queue integration configuration
+         *
+         * Ai jobs never share the application's `default` queue: they run
+         * under a dedicated processor and must be consumed by a worker bound
+         * to it. Point `connection` at a QueueManager connection configured
+         * with `Crustum\Ai\Queue\AiJobProcessor`, and `queue` at the broker
+         * queue that worker consumes.
          */
         'queue' => [
             'enabled' => env('AI_QUEUE_ENABLED', false),
-            'connection' => env('AI_QUEUE_CONNECTION', 'default'),
+            'connection' => env('AI_QUEUE_CONNECTION', 'ai'),
+            'queue' => env('AI_QUEUE_NAME', 'ai'),
         ],
 
         /**
@@ -357,18 +378,10 @@ return [
         ],
 
         /**
-         * Conversation store implementation class.
-         *
-         * Must implement Crustum\Ai\Contracts\ConversationStore.
-         * Override via Ai::setConversationStore() in tests.
-         */
-        'conversationStore' => env('AI_CONVERSATION_STORE'),
-
-        /**
          * Conversation behavior configuration
          */
         'conversations' => [
-            'connection' => env('AI_CONVERSATIONS_CONNECTION', 'test'),
+            'connection' => env('AI_CONVERSATIONS_CONNECTION', 'default'),
             'tables' => [
                 'conversations' => env('AI_CONVERSATIONS_TABLE', 'agent_conversations'),
                 'messages' => env('AI_CONVERSATIONS_MESSAGES_TABLE', 'agent_conversation_messages'),

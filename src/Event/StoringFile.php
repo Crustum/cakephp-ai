@@ -8,6 +8,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched before a file is stored.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class StoringFile extends AiEvent
 {
@@ -27,6 +29,6 @@ class StoringFile extends AiEvent
             'invocationId' => $invocationId,
             'provider' => $provider,
             'file' => $file,
-        ]);
+        ], $provider);
     }
 }

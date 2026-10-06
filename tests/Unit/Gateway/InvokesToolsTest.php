@@ -12,6 +12,7 @@ use Crustum\Ai\Gateway\RunContext;
 use Crustum\Ai\Gateway\Trait\InvokesToolsTrait;
 use Crustum\Ai\Tools\Request;
 use Crustum\JsonSchema\Contracts\JsonSchema;
+use JMac\Testing\Double;
 
 function toolInvokingGateway(): object
 {
@@ -60,8 +61,8 @@ function stubRunContext(EventManager $events, string $invocationId = 'inv_1'): R
 {
     return new RunContext(
         $invocationId,
-        Mockery::mock(Agent::class),
-        Mockery::mock(TextProvider::class),
+        Double::for(Agent::class),
+        Double::for(TextProvider::class),
         'stub-model',
         $events,
     );

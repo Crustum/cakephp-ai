@@ -22,15 +22,17 @@ trait ReranksTrait
      * @param string $query Query string
      * @param int|null $limit Maximum results
      * @param string|null $model Model name
+     * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\RerankingResponse
      */
-    public function rerank(array $documents, string $query, ?int $limit = null, ?string $model = null): RerankingResponse
+    public function rerank(array $documents, string $query, ?int $limit = null, ?string $model = null, int $timeout = 30, array $providerOptions = []): RerankingResponse
     {
         $invocationId = Text::uuid();
 
         $model ??= $this->defaultRerankingModel();
 
-        $prompt = new RerankingPrompt($documents, $query, $limit, $this, $model);
+        $prompt = new RerankingPrompt($documents, $query, $limit, $this, $model, $timeout, $providerOptions);
 
         if (Ai::manager()->rerankingIsFaked()) {
             Ai::manager()->recordReranking($prompt);
@@ -49,6 +51,8 @@ trait ReranksTrait
             $documents,
             $query,
             $limit,
+            $timeout,
+            $providerOptions,
         );
 
         $this->events->dispatch(new Reranked(

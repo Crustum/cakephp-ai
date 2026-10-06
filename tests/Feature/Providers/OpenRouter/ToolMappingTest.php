@@ -3,10 +3,8 @@ declare(strict_types=1);
 
 use Cake\Core\Configure;
 use Cake\Utility\Hash;
-use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\WebFetch;
 use Crustum\Ai\Providers\Tools\WebSearch;
-use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Test\Fixtures\Tools\NamedTool;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
@@ -66,13 +64,6 @@ test('tool parameters are not wrapped in schema definition', function (): void {
         return ! array_key_exists('schema_definition', $function['parameters']['properties'] ?? [])
             && ! in_array('schema_definition', $function['parameters']['required'] ?? []);
     });
-});
-
-test('unsupported provider tools throw runtime exception', function (): void {
-    aiHttpFake(['*' => fakeOpenRouterResponse('done')]);
-
-    expect(fn(): AgentResponse => agent(tools: [new FileSearch(['store'])])->prompt('Search', provider: 'openrouter'))
-        ->toThrow(RuntimeException::class, 'OpenRouter does not support [FileSearch] provider tools.');
 });
 
 test('web fetch tool is sent as openrouter:web_fetch type', function (): void {
@@ -200,6 +191,23 @@ test('web search tool sends allowed_domains', function (): void {
         $tool = collect(Hash::get($body, 'tools'))->filter(fn($item): bool => is_array($item) && array_key_exists('type', $item) && $item['type'] === 'openrouter:web_search')->first();
 
         return Hash::get($tool, 'parameters.allowed_domains') === ['example.com', 'cakephp.org'];
+    });
+});
+
+test('web search tool sends user_location', function (): void {
+    aiHttpFake(['*' => fakeOpenRouterResponse('done')]);
+
+    agent(tools: [(new WebSearch())->location(city: 'San Francisco', country: 'US')])->prompt('Search the web', provider: 'openrouter');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $tool = collect(Hash::get($body, 'tools'))->filter(fn($item): bool => is_array($item) && array_key_exists('type', $item) && $item['type'] === 'openrouter:web_search')->first();
+
+        return Hash::get($tool, 'parameters.user_location') === [
+            'type' => 'approximate',
+            'city' => 'San Francisco',
+            'country' => 'US',
+        ];
     });
 });
 

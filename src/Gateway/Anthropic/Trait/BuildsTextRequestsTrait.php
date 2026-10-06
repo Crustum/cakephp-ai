@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Gateway\Anthropic\Trait;
 
+use Crustum\Ai\Attributes\CacheConversation;
+use Crustum\Ai\Attributes\CacheInstructions;
+use Crustum\Ai\Attributes\CacheToolDefinitions;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\Anthropic\AnthropicSchemaSanitizer;
 use Crustum\Ai\Gateway\TextGenerationOptions;
@@ -81,7 +84,108 @@ trait BuildsTextRequestsTrait
             'top_p' => $options?->topP,
         ], static fn(mixed $value): bool => $value !== null));
 
-        return array_merge($body, $providerOptions);
+        return $this->applyPromptCacheBreakpoints(array_merge($body, $providerOptions), $options);
+    }
+
+    /**
+     * Stamp the requested cache breakpoints onto the final request body.
+     *
+     * @param array<string, mixed> $body Request body
+     * @param \Crustum\Ai\Gateway\TextGenerationOptions|null $options Generation options
+     * @return array<string, mixed>
+     */
+    protected function applyPromptCacheBreakpoints(array $body, ?TextGenerationOptions $options): array
+    {
+        $this->ensureValidPromptCacheOrder($body, $options);
+
+        if (isset($body['system']) && $options?->cacheInstructions instanceof CacheInstructions) {
+            $system = is_string($body['system'])
+                ? [['type' => 'text', 'text' => $body['system']]]
+                : $body['system'];
+
+            $system[array_key_last($system)]['cache_control'] = $this->cacheControl($options->cacheInstructions->ttl);
+
+            $body['system'] = $system;
+        }
+
+        if (isset($body['tools']) && $options?->cacheToolDefinitions instanceof CacheToolDefinitions) {
+            $body['tools'][array_key_last($body['tools'])]['cache_control'] = $this->cacheControl($options->cacheToolDefinitions->ttl);
+        }
+
+        if (isset($body['messages']) && $options?->cacheConversation instanceof CacheConversation) {
+            $this->stampConversationCacheBreakpoint($body['messages'], $this->cacheControl($options->cacheConversation->ttl));
+        }
+
+        return $body;
+    }
+
+    /**
+     * Stamp a prompt-cache breakpoint on the final content block of the last non-empty message.
+     *
+     * @param array<int, array<string, mixed>> $messages Mapped conversation messages
+     * @param array<string, string> $cacheControl Cache control block
+     * @return void
+     */
+    protected function stampConversationCacheBreakpoint(array &$messages, array $cacheControl): void
+    {
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            $content = $messages[$i]['content'] ?? null;
+
+            if (in_array($content, [null, '', []], true)) {
+                continue;
+            }
+
+            if (is_string($content)) {
+                $content = [['type' => 'text', 'text' => $content]];
+            }
+
+            if (!is_array($content)) {
+                continue;
+            }
+
+            $content[array_key_last($content)]['cache_control'] = $cacheControl;
+            $messages[$i]['content'] = $content;
+
+            return;
+        }
+    }
+
+    /**
+     * Ensure longer-lived cache breakpoints precede shorter-lived breakpoints.
+     *
+     * @param array<string, mixed> $body Request body
+     * @param \Crustum\Ai\Gateway\TextGenerationOptions|null $options Generation options
+     * @throws \InvalidArgumentException When cache TTL ordering is invalid
+     */
+    protected function ensureValidPromptCacheOrder(array $body, ?TextGenerationOptions $options): void
+    {
+        if (
+            $options?->cacheInstructions?->ttl === '1h'
+            && $options->cacheToolDefinitions instanceof CacheToolDefinitions
+            && $options->cacheToolDefinitions->ttl !== '1h'
+        ) {
+            throw new InvalidArgumentException('A one-hour instructions cache requires the tool definitions cache to also use a one-hour TTL.');
+        }
+
+        if (
+            ($body['cache_control']['ttl'] ?? null) === '1h'
+            && (($options?->cacheInstructions instanceof CacheInstructions && $options->cacheInstructions->ttl !== '1h')
+                || ($options?->cacheToolDefinitions instanceof CacheToolDefinitions && $options->cacheToolDefinitions->ttl !== '1h')
+                || ($options?->cacheConversation instanceof CacheConversation && $options->cacheConversation->ttl !== '1h'))
+        ) {
+            throw new InvalidArgumentException('A one-hour automatic cache requires all explicit cache breakpoints to also use a one-hour TTL.');
+        }
+    }
+
+    /**
+     * Build the cache control block for the given TTL.
+     *
+     * @param string|null $ttl Cache TTL
+     * @return array<string, string>
+     */
+    protected function cacheControl(?string $ttl): array
+    {
+        return array_filter(['type' => 'ephemeral', 'ttl' => $ttl]);
     }
 
     /**

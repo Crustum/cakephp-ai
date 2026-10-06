@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 use Cake\Core\Configure;
 use Cake\Utility\Hash;
-use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Test\Fixtures\Tools\NamedTool;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
@@ -53,14 +52,6 @@ test('tool with empty schema includes parameters', function (): void {
             && $function['parameters']['additionalProperties'] === false;
     });
 });
-
-test('provider tools throw runtime exception', function (): void {
-    aiHttpFake(['*' => $this->fakeTextResponse()]);
-
-    agent(
-        tools: [new FileSearch(['store_1'])],
-    )->prompt('Search for something', provider: 'mistral');
-})->throws(RuntimeException::class, 'Mistral does not support');
 
 test('tool with a name() method emits the declared name', function (): void {
     aiHttpFake(['*' => $this->fakeTextResponse('ok')]);

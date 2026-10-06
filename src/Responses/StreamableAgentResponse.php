@@ -8,10 +8,17 @@ use Cake\Http\Response;
 use Closure;
 use Crustum\Ai\Http\Stream\EventStreamResponse;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TextUsage;
+use Crustum\Ai\Streaming\Event\Citation;
+use Crustum\Ai\Streaming\Event\ReasoningDelta;
 use Crustum\Ai\Streaming\Event\StreamEnd;
+use Crustum\Ai\Streaming\Event\StreamStart;
 use Crustum\Ai\Streaming\Event\TextDelta;
+use Crustum\Ai\Streaming\Protocols\AgentUserInteractionProtocol;
+use Crustum\Ai\Streaming\Protocols\StreamProtocol;
+use Crustum\Ai\Streaming\Protocols\VercelDataProtocol;
 use IteratorAggregate;
+use Throwable;
 use Traversable;
 
 /**
@@ -23,7 +30,10 @@ use Traversable;
  */
 class StreamableAgentResponse implements IteratorAggregate
 {
-    use Trait\CanStreamUsingVercelProtocolTrait;
+    /**
+     * Stream protocol used for the HTTP response.
+     */
+    protected ?StreamProtocol $protocol = null;
 
     /**
      * Generated text (after streaming)
@@ -33,7 +43,7 @@ class StreamableAgentResponse implements IteratorAggregate
     /**
      * Token usage (after streaming)
      */
-    public ?Usage $usage = null;
+    public ?TextUsage $usage = null;
 
     /**
      * Stream events
@@ -41,6 +51,13 @@ class StreamableAgentResponse implements IteratorAggregate
      * @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Streaming\Event\StreamEvent>
      */
     public CollectionInterface $events;
+
+    /**
+     * Cited sources (after streaming)
+     *
+     * @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\Citation>
+     */
+    public CollectionInterface $citations;
 
     /**
      * Conversation identifier
@@ -53,6 +70,21 @@ class StreamableAgentResponse implements IteratorAggregate
     public ?object $conversationUser = null;
 
     /**
+     * Persisted user message row this turn wrote, if any.
+     */
+    public ?string $userMessageId = null;
+
+    /**
+     * Persisted assistant message row this turn wrote, if any.
+     */
+    public ?string $assistantMessageId = null;
+
+    /**
+     * Reasoning the streamed turn produced, if any.
+     */
+    public string $reasoning = '';
+
+    /**
      * Callbacks to execute after streaming completes
      *
      * @var array<int, callable>
@@ -60,14 +92,11 @@ class StreamableAgentResponse implements IteratorAggregate
     protected array $thenCallbacks = [];
 
     /**
-     * Whether to use Vercel protocol for streaming
+     * Callbacks to execute when streaming fails
+     *
+     * @var array<int, callable>
      */
-    protected bool $usesVercelProtocol = false;
-
-    /**
-     * Client message id to continue when streaming the Vercel protocol
-     */
-    protected ?string $vercelProtocolMessageId = null;
+    protected array $catchCallbacks = [];
 
     /**
      * Completed streamed response
@@ -92,6 +121,7 @@ class StreamableAgentResponse implements IteratorAggregate
         protected ?Meta $meta = null,
     ) {
         $this->events = collection([]);
+        $this->citations = collection([]);
     }
 
     /**
@@ -106,6 +136,18 @@ class StreamableAgentResponse implements IteratorAggregate
                 break;
             }
         }
+
+        return $this;
+    }
+
+    /**
+     * Provide a callback that should be invoked when the stream fails.
+     *
+     * @param callable $callback The callback to execute
+     */
+    public function catch(callable $callback): static
+    {
+        $this->catchCallbacks[] = $callback;
 
         return $this;
     }
@@ -161,23 +203,45 @@ class StreamableAgentResponse implements IteratorAggregate
             $this->withinConversation($response->conversationId, $response->conversationUser);
         }
 
+        $this->userMessageId = $response->userMessageId;
+        $this->assistantMessageId = $response->assistantMessageId;
+
         return $this;
     }
 
     /**
-     * Stream the response using Vercel's AI SDK stream protocol.
+     * Stream the response using the given stream protocol.
      *
-     * See: https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
-     *
-     * @param bool $value Whether to use Vercel protocol
-     * @param string|null $messageId Client message id to continue
+     * @param \Crustum\Ai\Streaming\Protocols\StreamProtocol $protocol Stream protocol
      */
-    public function usingVercelDataProtocol(bool $value = true, ?string $messageId = null): static
+    public function usingProtocol(StreamProtocol $protocol): static
     {
-        $this->usesVercelProtocol = $value;
-        $this->vercelProtocolMessageId = $messageId;
+        $this->protocol = $protocol;
 
         return $this;
+    }
+
+    /**
+     * Stream the response using the Vercel AI SDK data stream protocol.
+     *
+     * The message ID is the assistant message being continued, not the "messageId" sent by useChat.
+     *
+     * @param string|null $messageId Client message id to continue
+     */
+    public function usingVercelDataProtocol(?string $messageId = null): static
+    {
+        return $this->usingProtocol(new VercelDataProtocol($messageId));
+    }
+
+    /**
+     * Stream the response using the Agent User Interaction protocol.
+     *
+     * @param string|null $threadId Thread identifier
+     * @param string|null $runId Run identifier
+     */
+    public function usingAgentUserInteractionProtocol(?string $threadId = null, ?string $runId = null): static
+    {
+        return $this->usingProtocol(new AgentUserInteractionProtocol($threadId, $runId));
     }
 
     /**
@@ -187,8 +251,8 @@ class StreamableAgentResponse implements IteratorAggregate
      */
     public function toResponse(): Response
     {
-        if ($this->usesVercelProtocol) {
-            return $this->toVercelProtocolResponse();
+        if ($this->protocol instanceof StreamProtocol) {
+            return $this->protocol->response($this);
         }
 
         return new EventStreamResponse($this);
@@ -216,17 +280,44 @@ class StreamableAgentResponse implements IteratorAggregate
         $events = [];
 
         // Resolve the stream of the prompt and yield the events...
-        foreach (call_user_func($this->generator) as $event) {
-            $events[] = $event;
+        try {
+            foreach (call_user_func($this->generator) as $event) {
+                $events[] = $event;
 
-            $this->hasYielded = true;
+                $this->hasYielded = true;
 
-            yield $event;
+                yield $event;
+            }
+        } catch (Throwable $throwable) {
+            // Taken before invoking so a re-iterated stream does not report the same failure twice.
+            $callbacks = $this->catchCallbacks;
+
+            $this->catchCallbacks = [];
+
+            foreach ($callbacks as $callback) {
+                $callback($throwable);
+            }
+
+            throw $throwable;
         }
 
         $this->events = collection($events);
         $this->text = TextDelta::combine($events);
+        $this->reasoning = ReasoningDelta::combine($events);
+        $this->citations = Citation::combine($events);
         $this->usage = StreamEnd::combineUsage($events);
+
+        $start = null;
+
+        foreach ($events as $event) {
+            if ($event instanceof StreamStart) {
+                $start = $event;
+            }
+        }
+
+        if ($start instanceof StreamStart && $this->meta instanceof Meta) {
+            $this->meta->model = $start->model;
+        }
 
         $this->streamedResponse = new StreamedAgentResponse(
             $this->invocationId,
@@ -240,6 +331,11 @@ class StreamableAgentResponse implements IteratorAggregate
                 $this->conversationUser,
             );
         }
+
+        $this->streamedResponse->withStoredMessages(
+            $this->userMessageId,
+            $this->assistantMessageId,
+        );
 
         foreach ($this->thenCallbacks as $callback) {
             call_user_func($callback, $this->streamedResponse);
@@ -255,12 +351,10 @@ class StreamableAgentResponse implements IteratorAggregate
      */
     protected function syncConversationFromStreamedResponse(): void
     {
-        if ($this->streamedResponse->conversationId === null) {
-            return;
-        }
-
         $this->conversationId = $this->streamedResponse->conversationId;
         $this->conversationUser = $this->streamedResponse->conversationUser;
+        $this->userMessageId = $this->streamedResponse->userMessageId;
+        $this->assistantMessageId = $this->streamedResponse->assistantMessageId;
     }
 
     /**

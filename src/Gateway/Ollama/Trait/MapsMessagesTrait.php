@@ -112,7 +112,7 @@ trait MapsMessagesTrait
             $chatMessages[] = [
                 'role' => 'tool',
                 'tool_name' => $toolResult->name,
-                'content' => $this->serializeToolResultOutput($toolResult->result),
+                'content' => $toolResult->text(),
             ];
         }
     }
@@ -135,20 +135,5 @@ trait MapsMessagesTrait
                 'arguments' => $toolCall->arguments ?: (object)[],
             ],
         ];
-    }
-
-    /**
-     * Serialize a tool result output value to a string.
-     *
-     * @param mixed $output Tool result output
-     * @return string
-     */
-    protected function serializeToolResultOutput(mixed $output): string
-    {
-        if (is_string($output)) {
-            return $output;
-        }
-
-        return is_array($output) ? (string)json_encode($output) : (string)$output;
     }
 }

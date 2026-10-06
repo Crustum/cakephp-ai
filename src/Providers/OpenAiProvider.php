@@ -17,6 +17,7 @@ use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
 use Crustum\Ai\Contracts\Providers\StoreProvider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsFileSearch;
 use Crustum\Ai\Contracts\Providers\SupportsToolSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
@@ -26,6 +27,7 @@ use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\OpenAi\OpenAiFileGateway;
 use Crustum\Ai\Gateway\OpenAi\OpenAiGateway;
 use Crustum\Ai\Gateway\OpenAi\OpenAiStoreGateway;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Providers\Trait\GeneratesAudioTrait;
@@ -48,7 +50,7 @@ use Crustum\Ai\Utility\Value;
 /**
  * OpenAI provider.
  */
-class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsFileSearch, SupportsToolSearch, SupportsWebSearch, TextProvider, TranscriptionProvider
+class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsCodeExecution, SupportsFileSearch, SupportsToolSearch, SupportsWebSearch, TextProvider, TranscriptionProvider
 {
     use GeneratesAudioTrait;
     use GeneratesEmbeddingsTrait;
@@ -93,6 +95,19 @@ class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvide
         $this->config['name'] ??= 'openai';
         $this->config['driver'] ??= 'openai';
         $this->config['key'] ??= $this->config['apiKey'] ?? null;
+    }
+
+    /**
+     * Get the code execution tool options for the provider.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $codeExecution Code execution tool
+     * @return array<string, mixed>
+     */
+    public function codeExecutionToolOptions(CodeExecution $codeExecution): array
+    {
+        return $codeExecution->providerOptions(Lab::OpenAI) + [
+            'container' => ['type' => 'auto'],
+        ];
     }
 
     /**
@@ -231,7 +246,7 @@ class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? 'gpt-5.4';
+        return $this->config['models']['text']['default'] ?? 'gpt-6.1-sol';
     }
 
     /**
@@ -241,7 +256,7 @@ class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function cheapestTextModel(): string
     {
-        return $this->config['models']['text']['cheapest'] ?? 'gpt-5.4-nano';
+        return $this->config['models']['text']['cheapest'] ?? 'gpt-6-luna';
     }
 
     /**
@@ -251,7 +266,7 @@ class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'gpt-5.4-pro';
+        return $this->config['models']['text']['smartest'] ?? 'gpt-6-astra';
     }
 
     /**
@@ -261,7 +276,7 @@ class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function defaultImageModel(): string
     {
-        return $this->config['models']['image']['default'] ?? 'gpt-image-2';
+        return $this->config['models']['image']['default'] ?? 'gpt-image-2.5-flare';
     }
 
     /**

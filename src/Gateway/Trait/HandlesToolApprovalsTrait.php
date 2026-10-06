@@ -47,7 +47,7 @@ trait HandlesToolApprovalsTrait
             $pending = [];
 
             foreach ($message->toolCalls as $toolCall) {
-                if ($toolCall instanceof ToolCall && !in_array($toolCall->id, $resolved, true)) {
+                if (!in_array($toolCall->id, $resolved, true)) {
                     $pending[] = $toolCall;
                 }
             }
@@ -143,11 +143,15 @@ trait HandlesToolApprovalsTrait
 
             if ($next instanceof ToolResultMessage) {
                 $merged = [...array_values(iterator_to_array($next->toolResults)), ...$placeholders];
-                $output[] = new ToolResultMessage(new Collection($merged));
+                /** @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolResult> $mergedResults */
+                $mergedResults = new Collection($merged);
+                $output[] = new ToolResultMessage($mergedResults);
 
                 $index++;
             } else {
-                $output[] = new ToolResultMessage(new Collection($placeholders));
+                /** @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolResult> $placeholderResults */
+                $placeholderResults = new Collection($placeholders);
+                $output[] = new ToolResultMessage($placeholderResults);
             }
         }
 

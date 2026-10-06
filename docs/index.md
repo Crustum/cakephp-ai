@@ -13,29 +13,37 @@
     - [Conversation Context](#conversation-context)
         - [Remembering Conversations](#remembering-conversations)
         - [Conversation Participants](#conversation-participants)
+        - [Inspecting Stored Conversations](#inspecting-stored-conversations)
     - [Structured Output](#structured-output)
         - [Nested Objects](#structured-output-nested-objects)
         - [Arrays of Objects](#structured-output-arrays-of-objects)
     - [Attachments](#attachments)
     - [Streaming](#streaming)
         - [Streaming Using the Vercel AI SDK Protocol](#streaming-using-the-vercel-ai-sdk-protocol)
+        - [Frontend Integration](#frontend-integration)
     - [Broadcasting](#broadcasting)
         - [Skipping Oversized Events](#skipping-oversized-events)
     - [Queueing](#queueing)
     - [Tools](#tools)
+        - [Runtime Tool Overrides](#runtime-tool-overrides)
         - [Repairing Tool Calls](#repairing-tool-calls)
         - [Similarity Search](#similarity-search)
+        - [Validating Tool Arguments](#validating-tool-arguments)
+    - [Deferred Tool Loading](#deferred-tool-loading)
     - [File Storage Tools](#file-storage-tools)
     - [MCP Tools](#mcp-tools)
     - [Provider Tools](#provider-tools)
         - [Web Search](#web-search)
         - [Web Fetch](#web-fetch)
         - [File Search](#file-search)
+        - [Code Execution](#code-execution)
     - [Sub-Agents](#sub-agents)
     - [Middleware](#middleware)
     - [Anonymous Agents](#anonymous-agents)
     - [Agent Configuration](#agent-configuration)
     - [Provider Options](#provider-options)
+        - [Custom HTTP Headers](#custom-http-headers)
+    - [Prompt Caching](#prompt-caching)
 - [Human Tool Approval](#human-tool-approval)
     - [Complete Approval Flow](#complete-approval-flow)
 - [Images](#images)
@@ -48,10 +56,12 @@
     - [Caching Embeddings](#caching-embeddings)
 - [Reranking](#reranking)
     - [Reranking Collections](#reranking-collections)
+- [Classification](#classification)
 - [Files](#files)
     - [Using Stored Files in Conversations](#using-stored-files-in-conversations)
 - [Vector Stores](#vector-stores)
     - [Adding Files to Stores](#adding-files-to-stores)
+- [Usage](#usage)
 - [Failover](#failover)
 - [Testing](#testing)
     - [Agents](#testing-agents)
@@ -60,6 +70,7 @@
     - [Transcriptions](#testing-transcriptions)
     - [Embeddings](#testing-embeddings)
     - [Reranking](#testing-reranking)
+    - [Classification](#testing-classification)
     - [Files](#testing-files)
     - [Vector Stores](#testing-vector-stores)
 - [Events](#events)
@@ -130,6 +141,7 @@ OPENAI_COMPATIBLE_API_KEY=
 OPENAI_COMPATIBLE_URL=
 OPENROUTER_API_KEY=
 JINA_API_KEY=
+TYPESAFE_API_KEY=
 VOYAGEAI_API_KEY=
 XAI_API_KEY=
 ```
@@ -146,6 +158,7 @@ return [
         'default_for_transcription' => env('AI_DEFAULT_FOR_TRANSCRIPTION', 'openrouter'),
         'default_for_embeddings' => env('AI_DEFAULT_FOR_EMBEDDINGS', 'openrouter'),
         'default_for_reranking' => env('AI_DEFAULT_FOR_RERANKING', 'openrouter'),
+        'default_for_classification' => env('AI_DEFAULT_FOR_CLASSIFICATION', 'typesafe'),
         'default_for_stores' => env('AI_DEFAULT_FOR_STORES', 'openai'),
         'default_for_files' => env('AI_DEFAULT_FOR_FILES', 'openai'),
     ],
@@ -236,7 +249,7 @@ You may add custom HTTP headers to every outgoing request for the provider by de
 ],
 ```
 
-OpenAI-compatible providers support text generation, streaming, tools, structured output, image attachments, and embeddings. If your endpoint requires additional request body fields, provide them using [provider options](#provider-options).
+OpenAI-compatible providers support text generation, streaming, tools, structured output, image attachments, embeddings, and transcription. If your endpoint requires additional request body fields, provide them using [provider options](#provider-options).
 
 <a name="openai-compatible-embeddings"></a>
 #### OpenAI-Compatible Embeddings
@@ -257,6 +270,27 @@ Since arbitrary endpoints have no known models, you must configure a default emb
 ],
 ```
 
+<a name="openai-compatible-transcriptions"></a>
+#### OpenAI-Compatible Transcriptions
+
+Likewise, you must configure a default transcription model to use `Transcription` with an OpenAI-compatible provider. The audio will be uploaded to the endpoint's `/audio/transcriptions` route as a standard multipart request:
+
+```php
+'local' => [
+    'className' => 'Crustum\Ai\Providers\OpenAiCompatibleProvider',
+    'url' => env('LOCAL_AI_URL'),
+    'key' => env('LOCAL_AI_API_KEY'),
+    'models' => [
+        'transcription' => [
+            'default' => 'whisper-1',
+        ],
+    ],
+],
+```
+
+> [!NOTE]
+> The Groq provider does not support diarization. Invoking the `diarize` method when using Groq will throw an exception.
+
 <a name="provider-support"></a>
 ### Provider Support
 
@@ -266,11 +300,12 @@ The AI plugin supports a variety of providers across its features. The following
 |---|---|
 | Text | OpenAI, OpenAI Compatible, Anthropic, Gemini, Azure, Bedrock, Groq, xAI, DeepSeek, Mistral, Ollama, OpenRouter |
 | Images | OpenAI, Gemini, xAI, Azure, Bedrock, OpenRouter |
-| TTS | OpenAI, ElevenLabs, Gemini |
-| STT | OpenAI, ElevenLabs, Mistral, Gemini |
+| TTS | OpenAI, ElevenLabs, Gemini, Mistral, OpenRouter |
+| STT | OpenAI, OpenAI Compatible, ElevenLabs, Groq, Mistral, Gemini, OpenRouter |
 | Embeddings | OpenAI, OpenAI-Compatible, Gemini, Azure, Bedrock, Cohere, Mistral, Jina, VoyageAI, Ollama, OpenRouter |
-| Reranking | Cohere, Jina, VoyageAI |
-| Files | OpenAI, Anthropic, Gemini, Azure |
+| Reranking | Cohere, Jina, VoyageAI, Bedrock, OpenRouter |
+| Classification | TypeSafe, OpenRouter |
+| Files | OpenAI, Anthropic, Gemini, Azure, OpenRouter |
 
 The `Crustum\Ai\Enums\Lab` enum may be used to reference providers throughout your code instead of using plain strings:
 
@@ -450,10 +485,27 @@ public function messages(): iterable
         ->limit(50)
         ->all()
         ->reverse()
-        ->map(fn ($message) => new Message($message->role, $message->content))
+        ->map(fn ($message) => new Message(
+            $message->role, $message->content,
+        ))
         ->toArray();
 }
 ```
+
+If your agent does not implement the `Conversational` interface, you may use the `withMessages` method to provide the conversation history for a single run, such as a history posted by your application's frontend:
+
+```php
+use Crustum\Ai\Messages\Message;
+
+$response = (new SalesCoach)
+    ->withMessages([
+        new Message('user', 'Analyze this sales transcript...'),
+        new Message('assistant', 'The rep never asked for the close.'),
+    ])
+    ->prompt('What should they say next time?');
+```
+
+Agents that implement the `Conversational` interface load their own history, so combining the two approaches will throw a `LogicException`.
 
 <a name="remembering-conversations"></a>
 #### Remembering Conversations
@@ -543,7 +595,21 @@ $response = (new SalesCoach)
     ->prompt('Tell me more about that.');
 ```
 
-When using the `RemembersConversationsTrait`, previous messages are automatically loaded and included in the conversation context when prompting. New messages (both user and assistant) are automatically stored after each interaction.
+The `continueOrStart` method may be used to continue the given conversation, or start a new conversation if the given ID is `null`:
+
+```php
+$response = (new SalesCoach)
+    ->continueOrStart($conversationId, as: $user)
+    ->prompt('Hello!');
+```
+
+When using the `RemembersConversationsTrait`, previous messages are automatically loaded and included in the conversation context when prompting. New messages (both user and assistant) are automatically stored after each interaction. Each response also contains the IDs of the conversation and messages that were stored:
+
+```php
+$response->conversationId;
+$response->userMessageId;
+$response->assistantMessageId;
+```
 
 <a name="conversation-participants"></a>
 #### Conversation Participants
@@ -558,7 +624,7 @@ $response = (new SalesCoach)
 
 The participant's morph class and primary key are stored with the conversation. Therefore, models of different types that have the same primary key, such as `User` ID `1` and `Team` ID `1`, have separate conversation histories. The `forUser` method is an alias for `forParticipant`.
 
-You may continue the participant's most recent conversation using the `continueLastConversation` method:
+You may continue the participant's most recent conversation with the agent using the `continueLastConversation` method. Conversations are scoped to the agent, so only conversations that the agent participated in will be continued:
 
 ```php
 $response = (new SalesCoach)
@@ -589,7 +655,70 @@ $participant = TableRegistry::getTableLocator()
 If your application uses multiple participant model types, you should consider defining an ORM morph map so that stored participant types are not coupled to your model class names.
 
 > [!WARNING]
-> The `continue` method does not verify that the given participant owns the conversation. Your application should authorize access to the conversation before continuing it.
+> The `continue` and `continueOrStart` methods do not verify that the given participant owns the conversation. Your application should authorize access to the conversation before continuing it.
+
+<a name="inspecting-stored-conversations"></a>
+#### Inspecting Stored Conversations
+
+When displaying a conversation to your users, you often need details such as message IDs, timestamps, and tool calls. You may resolve the conversation store to read the stored messages without querying the AI plugin's tables directly:
+
+```php
+use Crustum\Ai\Ai;
+
+$store = Ai::manager()->conversationStore();
+```
+
+Messages are paginated newest first using a cursor and are returned as `StoredMessage` instances, which contain each message's ID, timestamps, usage, metadata, and attachments:
+
+```php
+$messages = $store->paginateConversationMessages($conversationId, perPage: 25);
+
+foreach ($messages->items() as $message) {
+    $message->id;
+    $message->role;
+    $message->content;
+    $message->createdAt;
+    $message->usage;
+    $message->status;
+}
+
+$nextCursor = $messages->nextCursor(); // Pass as the `cursor` argument to fetch the next page...
+```
+
+Each turn, which consists of a user prompt and the assistant's reply, is stored as a list of steps. A step is a single request to the provider, so a turn in which the model calls tools will contain several steps. Each tool result is recorded on the tool call that produced it. The `toolCalls`, `providerToolCalls`, and `toolResults` methods flatten these steps in order, so you do not need to traverse them yourself:
+
+```php
+$message->steps;
+
+$message->toolCalls();
+$message->providerToolCalls();
+$message->toolResults();
+```
+
+A tool call contains a `result` once it has been executed. Tool calls that contain an `approval_reason` but no `result` are still awaiting a [tool approval](#human-tool-approval).
+
+The `status` property contains a `Crustum\Ai\Enums\MessageStatus` instance. A turn that failed partway through is stored as `Failed` along with the steps it had already completed, so tool calls that ran before the failure remain in the history. When the conversation continues, any tool call without a recorded result is sent to the model marked as interrupted, since the plugin cannot determine whether it ran.
+
+Before continuing a conversation via an ID provided by your application's frontend, you should verify that the conversation was stored for the given participant:
+
+```php
+// In src/Controller/ChatController.php
+$identity = $this->request->getAttribute('identity');
+
+if (! $store->conversationBelongsTo($conversationId, $identity::class, $identity->id)) {
+    throw new ForbiddenException('You may not view this conversation.');
+}
+```
+
+If the most recent turn is paused awaiting [tool approval](#human-tool-approval), you may render its pending tool calls after a page reload without resuming the run:
+
+```php
+foreach ($store->pendingApprovalsFor($conversationId) as $approval) {
+    // $approval->id, $approval->tool, $approval->arguments, $approval->reason...
+}
+```
+
+These methods are defined by the `PaginatesConversations`, `VerifiesConversationOwnership`, and `ResolvesPendingApprovals` contracts. The included database store implements all three, while a custom store may implement only the contracts it needs.
 
 <a name="structured-output"></a>
 ### Structured Output
@@ -789,8 +918,26 @@ foreach ($stream as $event) {
 }
 ```
 
+The response also contains the model's reasoning and any sources it cited. Both are stored with the assistant message when using the `RemembersConversationsTrait`:
+
+```php
+use Crustum\Ai\Responses\StreamedAgentResponse;
+
+(new SalesCoach)
+    ->stream('Analyze this sales transcript...')
+    ->then(function (StreamedAgentResponse $response) {
+        $response->reasoning; // '' unless the model returned reasoning text...
+        $response->meta->citations;
+    });
+```
+
+Reasoning is also available on responses returned by the `prompt` method.
+
 <a name="streaming-using-the-vercel-ai-sdk-protocol"></a>
-#### Streaming Using the Vercel AI SDK Protocol
+<a name="stream-protocols"></a>
+#### Stream Protocols
+
+By default, streamed responses use the AI plugin's own event format. However, you may use a frontend streaming protocol instead, which allows you to pair your agent with an existing chat interface rather than building your own.
 
 You may stream the events using the [Vercel AI SDK stream protocol](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) by invoking the `usingVercelDataProtocol` method on the streamable response:
 
@@ -803,6 +950,110 @@ public function coach(): \Cake\Http\Response
         ->usingVercelDataProtocol()
         ->toResponse();
 }
+```
+
+You may pass a message ID if your application's frontend assigns its own:
+
+```php
+->usingVercelDataProtocol($this->request->getQuery('messageId'));
+```
+
+Alternatively, the `usingAgentUserInteractionProtocol` method may be used to stream using the [Agent User Interaction (AG-UI) protocol](https://docs.ag-ui.com):
+
+```php
+// In src/Controller/CoachController.php
+public function coach(): \Cake\Http\Response
+{
+    return (new SalesCoach)
+        ->forUser($this->request->getAttribute('identity'))
+        ->stream((string)$this->request->getData('prompt'))
+        ->usingAgentUserInteractionProtocol()
+        ->toResponse();
+}
+```
+
+The `threadId` and `runId` arguments are optional and default to the conversation ID and the invocation ID:
+
+```php
+->usingAgentUserInteractionProtocol(
+    threadId: $this->request->getData('threadId'),
+    runId: $this->request->getData('runId'),
+);
+```
+
+To use a protocol that the AI plugin does not implement, you may pass your own `Crustum\Ai\Streaming\Protocols\StreamProtocol` implementation to the `usingProtocol` method:
+
+```php
+use App\Ai\Protocols\CustomProtocol;
+
+return (new SalesCoach)
+    ->stream('Analyze this sales transcript...')
+    ->usingProtocol(new CustomProtocol);
+```
+
+<a name="chat-requests"></a>
+<a name="frontend-integration"></a>
+#### Frontend Integration
+
+Chat interfaces built with libraries such as Vercel's `useChat` or CopilotKit already render messages, tool calls, and approval prompts, so your application only needs to handle the requests they send. Each request contains the conversation history, the newest user message, and any tool approval responses.
+
+The `Vercel::chat` and `AgentUserInteraction::chat` methods convert such a request into an object that may be passed directly to an agent's `stream` method:
+
+```php
+use Crustum\Ai\Vercel\Vercel;
+
+// In src/Controller/ChatController.php
+public function chat(): \Cake\Http\Response
+{
+    $chat = Vercel::chat($this->request);
+
+    return (new SupportAgent)
+        ->withMessages($chat->history())
+        ->stream($chat)
+        ->usingProtocol($chat->protocol())
+        ->toResponse();
+}
+```
+
+If the request contains [approval decisions](#human-tool-approval), the agent will resume using those decisions. Otherwise, the agent is prompted with the request's newest user message and attachments. The `protocol` method returns the protocol used by the client.
+
+> [!NOTE]
+> Agents that implement the `Conversational` interface load their own history, so the `withMessages` method may be omitted.
+
+The `AgentUserInteraction::chat` method provides the same API for AG-UI clients, in addition to the request's thread and run IDs:
+
+```php
+use Crustum\Ai\AgentUserInteraction\AgentUserInteraction;
+
+$chat = AgentUserInteraction::chat($this->request);
+
+$chat->threadId();
+$chat->runId();
+```
+
+You may also convert stored messages back into the format a client expects, allowing the client to display a previous conversation, such as after a page reload:
+
+```php
+use Cake\ORM\TableRegistry;
+
+$messages = TableRegistry::getTableLocator()
+    ->get('Crustum/Ai.ConversationMessages')
+    ->find()
+    ->where(['conversation_id' => $conversationId])
+    ->orderByAsc('created')
+    ->all();
+
+return $this->response
+    ->withType('application/json')
+    ->withStringBody(json_encode(['messages' => Vercel::toUiMessages($messages)]));
+```
+
+The `AgentUserInteraction::toClientState` method performs the same conversion for AG-UI clients, in addition to returning any pending approval interrupts:
+
+```php
+return $this->response
+    ->withType('application/json')
+    ->withStringBody(json_encode(AgentUserInteraction::toClientState($messages)));
 ```
 
 <a name="broadcasting"></a>
@@ -954,6 +1205,66 @@ public function tools(): iterable
 }
 ```
 
+<a name="runtime-tool-overrides"></a>
+#### Runtime Tool Overrides
+
+The `withTools` method may be used to replace the tools declared by an agent instance. This is useful for per-tenant or feature-flagged tool sets:
+
+```php
+$response = (new SupportAgent)
+    ->withTools([new LookupOrder])
+    ->prompt('Where is order 12345?');
+```
+
+You may also pass a closure, which receives the agent's declared tools, allowing you to append to or filter them:
+
+```php
+$response = (new SupportAgent)
+    ->withTools(fn (array $tools) => [...$tools, new LookupOrder])
+    ->prompt('Where is order 12345?');
+```
+
+<a name="validating-tool-arguments"></a>
+#### Validating Tool Arguments
+
+Although your tool's schema constrains the arguments a model may provide, you may validate the incoming arguments using the request's `validate` method:
+
+```php
+public function handle(Request $request): Stringable|string
+{
+    $validated = $request->validate([
+        'city' => 'required|string',
+        'days' => 'required|integer',
+    ]);
+
+    return $this->forecast($validated['city'], $validated['days']);
+}
+```
+
+Rules use the same pipe-delimited shape as the Laravel SDK — each field maps to a pipe-delimited string or an array of rule names. The supported rules are `required`, `string`, `integer`, `numeric`, `boolean`, `email`, and `scalar`, plus any other rule name provided by CakePHP's validator. Custom messages and attribute names may be passed as the second and third arguments.
+
+For full access to the framework's validation API, including parameterized rules, you may pass a `Cake\Validation\Validator` instance instead:
+
+```php
+use Cake\Validation\Validator;
+
+public function handle(Request $request): Stringable|string
+{
+    $validated = $request->validate(
+        (new Validator())
+            ->requirePresence('city', true)
+            ->notEmptyString('city')
+            ->integer('days')
+            ->greaterThan('days', 0)
+            ->lessThanOrEqual('days', 7)
+    );
+
+    return $this->forecast($validated['city'], $validated['days']);
+}
+```
+
+When validation fails, the validation messages are returned to the model as the tool's result, allowing it to correct the arguments and call the tool again.
+
 <a name="repairing-tool-calls"></a>
 #### Repairing Tool Calls
 
@@ -1059,6 +1370,47 @@ SimilaritySearch::usingModel(Document::class, 'embedding')
     ->withDescription('Search the knowledge base for relevant articles.'),
 ```
 
+<a name="deferred-tool-loading"></a>
+### Deferred Tool Loading
+
+By default, every tool an agent exposes is sent to the provider with each request. When an agent provides a large number of tools, this consumes tokens and may reduce the accuracy of the model's tool selection. Using the `ToolSearch` provider tool with OpenAI or Anthropic, you may defer tool definitions so that the provider only loads them when they are needed:
+
+```php
+use App\Ai\Tools\RefundOrder;
+use App\Ai\Tools\SearchInvoices;
+use App\Ai\Tools\Weather;
+use Crustum\Ai\Providers\Tools\ToolSearch;
+
+public function tools(): iterable
+{
+    return [
+        new Weather,
+        new ToolSearch(tools: [
+            new SearchInvoices,
+            new RefundOrder,
+        ]),
+    ];
+}
+```
+
+The wrapped tools do not require any modification. The provider will search for and load them when they are relevant to the prompt, after which the agent may call them like any other tool.
+
+When using Anthropic, the `strategy` argument may be used to determine how the provider should search for deferred tools. The supported strategies are `regex` (default) and `bm25`:
+
+```php
+new ToolSearch(tools: [new SearchInvoices], strategy: 'bm25'),
+```
+
+When using Anthropic, additional provider-specific options may be passed to the search tool using the `withProviderOptions` method:
+
+```php
+(new ToolSearch(tools: [new SearchInvoices]))
+    ->withProviderOptions(['cache_control' => ['type' => 'ephemeral']]),
+```
+
+> [!WARNING]
+> Providers that do not support tool search will throw an exception rather than silently discarding the deferred tools. In addition, Anthropic requires that at least one tool is provided outside of the `ToolSearch` wrapper.
+
 <a name="file-storage-tools"></a>
 ### File Storage Tools
 
@@ -1130,7 +1482,7 @@ Provider tools can be returned by your agent's `tools` method.
 
 The `WebSearch` provider tool allows agents to search the web for real-time information. This is useful for answering questions about current events, recent data, or topics that may have changed since the model's training cutoff.
 
-**Supported providers:** Anthropic, OpenAI, Azure, Gemini, OpenRouter
+**Supported providers:** Anthropic, OpenAI, Azure, Gemini, xAI, OpenRouter
 
 ```php
 use Crustum\Ai\Providers\Tools\WebSearch;
@@ -1164,7 +1516,7 @@ To refine search results based on user location, use the `location` method:
 
 The `WebFetch` provider tool allows agents to fetch and read the contents of web pages. This is useful when you need the agent to analyze specific URLs or retrieve detailed information from known web pages.
 
-**Supported providers:** Anthropic, Gemini
+**Supported providers:** Anthropic, Gemini, OpenRouter
 
 ```php
 use Crustum\Ai\Providers\Tools\WebFetch;
@@ -1188,7 +1540,7 @@ You may configure the web fetch tool to limit the number of fetches or restrict 
 
 The `FileSearch` provider tool allows agents to search through [files](#files) stored in [vector stores](#vector-stores). This enables retrieval-augmented generation (RAG) by allowing the agent to search your uploaded documents for relevant information.
 
-**Supported providers:** OpenAI, Gemini
+**Supported providers:** OpenAI, Gemini, xAI
 
 ```php
 use Crustum\Ai\Providers\Tools\FileSearch;
@@ -1211,7 +1563,7 @@ If your files have [metadata](#adding-files-to-stores), you may filter the searc
 
 ```php
 new FileSearch(stores: ['store_id'], where: [
-    'author' => 'Taylor Otwell',
+    'author' => 'Larry Masters',
     'year' => 2026,
 ]);
 ```
@@ -1222,10 +1574,34 @@ For more complex filters, you may pass a closure that receives a `FileSearchQuer
 use Crustum\Ai\Providers\Tools\FileSearchQuery;
 
 new FileSearch(stores: ['store_id'], where: fn (FileSearchQuery $query) =>
-    $query->where('author', 'Taylor Otwell')
+    $query->where('author', 'Larry Masters')
         ->whereNot('status', 'draft')
         ->whereIn('category', ['news', 'updates'])
 );
+```
+
+<a name="code-execution"></a>
+#### Code Execution
+
+The `CodeExecution` provider tool allows agents to run code in a sandbox hosted by the AI provider. This is useful for performing calculations and analyzing data.
+
+**Supported providers:** Anthropic, OpenAI, Azure, Gemini, xAI
+
+```php
+use Crustum\Ai\Providers\Tools\CodeExecution;
+
+public function tools(): iterable
+{
+    return [new CodeExecution];
+}
+```
+
+When using OpenAI or Azure, you may make [stored files](#files) available to the sandbox via provider options:
+
+```php
+(new CodeExecution)->withProviderOptions([
+    'container' => ['type' => 'auto', 'file_ids' => ['file_123']],
+]);
 ```
 
 <a name="sub-agents"></a>
@@ -1274,12 +1650,6 @@ class CustomerSupportAgent implements Agent, HasTools
 To customize how the sub-agent is exposed to the parent agent, implement the `CanActAsTool` interface on the sub-agent and define a tool-facing name and description:
 
 ```php
-<?php
-declare(strict_types=1);
-
-namespace App\Ai\Agents;
-
-use App\Ai\Tools\LookupOrder;
 use Crustum\Ai\Attributes\Provider;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\CanActAsTool;
@@ -1291,14 +1661,6 @@ use Crustum\Ai\Promptable;
 class RefundsAgent implements Agent, CanActAsTool, HasTools
 {
     use Promptable;
-
-    /**
-     * Get the instructions that the agent should follow.
-     */
-    public function instructions(): string
-    {
-        return 'You are a refunds specialist. Use order details and the refund policy to give concise eligibility guidance.';
-    }
 
     /**
      * Get the agent's tool name.
@@ -1316,26 +1678,32 @@ class RefundsAgent implements Agent, CanActAsTool, HasTools
         return 'Determine whether an order is eligible for a refund and explain the next step.';
     }
 
-    /**
-     * Get the tools available to the agent.
-     *
-     * @return Tool[]
-     */
-    public function tools(): iterable
-    {
-        return [
-            new LookupOrder,
-        ];
-    }
+    // ...
 }
 ```
 
 If a sub-agent does not implement `CanActAsTool`, the AI plugin will use the agent's class basename as the tool name and a generic description that asks the parent agent to pass a clear, self-contained task description. Each sub-agent invocation runs in isolation and does not receive the parent agent's conversation history.
 
+When the parent agent is [streaming](#streaming), its sub-agents stream as well. The parent agent emits `ToolResult` events containing the text the sub-agent has produced so far. These events are marked as preliminary and are followed by the tool call's final result, so you may skip them when iterating events manually:
+
+```php
+use Crustum\Ai\Streaming\Event\ToolResult;
+
+foreach ($stream as $event) {
+    if ($event instanceof ToolResult && $event->preliminary) {
+        continue;
+    }
+
+    // ...
+}
+```
+
+Response values such as `text`, `usage`, and `toolResults` ignore preliminary events. The [Vercel protocol](#stream-protocols) renders them as native streaming tool output, so `useChat` displays the progress without any custom code, while the AG-UI protocol reports them as activity snapshots. The completed response's text, reasoning, citations, and usage include those of the sub-agent.
+
 <a name="middleware"></a>
 ### Middleware
 
-Agents support middleware, allowing you to intercept and modify prompts before they are sent to the provider. Middleware can be created using the `bake` command:
+Agents support middleware, allowing you to intercept and modify each generation step before it is sent to the provider. Middleware is invoked once per step, so a run that takes three steps will invoke it three times. Middleware can be created using the `bake` command:
 
 ```shell
 bin/cake bake agent_middleware LogPrompts
@@ -1372,7 +1740,7 @@ class SalesCoach implements Agent, HasMiddleware
 }
 ```
 
-Each middleware class should define a `handle` method that receives the `AgentPrompt` and a `Closure` to pass the prompt to the next middleware:
+Each middleware class should define a `handle` method that receives a `PendingStep` and a `Closure` that passes the step to the next middleware:
 
 ```php
 <?php
@@ -1382,32 +1750,89 @@ namespace App\Ai\Middleware;
 
 use Cake\Log\Log;
 use Closure;
-use Crustum\Ai\Prompts\AgentPrompt;
+use Crustum\Ai\PendingStep;
 
 class LogPrompts
 {
     /**
-     * Handle the incoming prompt.
+     * Handle the pending generation step.
      */
-    public function handle(AgentPrompt $prompt, Closure $next)
+    public function handle(PendingStep $step, Closure $next)
     {
-        Log::info('Prompting agent', ['prompt' => $prompt->prompt]);
+        Log::info('Prompting agent', ['model' => $step->model]);
 
-        return $next($prompt);
+        return $next($step);
     }
 }
 ```
 
-You may use the `then` method on the response to execute code after the agent has finished processing. This works for both synchronous and streaming responses:
+In addition to the `provider`, `model`, `instructions`, `messages`, and `tools` that are about to be sent, the step exposes the steps that have already completed, their combined usage, and the progress of the run:
 
 ```php
-public function handle(AgentPrompt $prompt, Closure $next)
+$step->steps;
+$step->usage;
+
+$step->number;
+$step->isFirstStep();
+$step->isFinalStep;
+```
+
+The `withModel`, `withInstructions`, `withMessages`, `withTools`, `onlyTools`, `withoutTools`, `withToolChoice`, `withMaxTokens`, and `withProviderOptions` methods each return a copy of the step. For example, you may remove an expensive tool once the agent has used it:
+
+```php
+public function handle(PendingStep $step, Closure $next)
 {
-    return $next($prompt)->then(function (AgentResponse $response) {
+    if (! $step->isFirstStep()) {
+        $step = $step->withoutTools('SearchDocumentation');
+    }
+
+    return $next($step);
+}
+```
+
+Or, you may keep a long tool calling loop within the context window by summarizing the middle of the conversation:
+
+```php
+use Crustum\Ai\Agents\SummarizeAgent;
+use Crustum\Ai\Messages\UserMessage;
+
+public function handle(PendingStep $step, Closure $next)
+{
+    if (count($step->messages) > 40) {
+        $contents = array_map(
+            fn ($message) => (string)$message->content,
+            array_slice($step->messages, 1, -10),
+        );
+
+        $summary = (new SummarizeAgent)->prompt(implode("\n", $contents))->text;
+
+        $step = $step->withMessages([
+            $step->messages[0],
+            new UserMessage("Summary of the conversation so far: {$summary}"),
+            ...array_slice($step->messages, -10),
+        ]);
+    }
+
+    return $next($step);
+}
+```
+
+Messages passed to the `withMessages` method only change what is sent for the current step. Later steps and the stored conversation continue to use the full, unsummarized history.
+
+You may use the `then` method to execute code once the model has answered the step, before its tool calls are executed. This works for both synchronous and streaming responses:
+
+```php
+use Crustum\Ai\Gateway\StepResponse;
+
+public function handle(PendingStep $step, Closure $next)
+{
+    return $next($step)->then(function (StepResponse $response) {
         Log::info('Agent responded', ['text' => $response->text]);
     });
 }
 ```
+
+Middleware must return the result of `$next`, or its own `StepResponse` to answer the step without invoking the model, such as when serving a cached response. Returning any other value will throw a `LogicException`.
 
 <a name="anonymous-agents"></a>
 ### Anonymous Agents
@@ -1419,7 +1844,7 @@ $response = agent(
     instructions: 'You are an expert at software development.',
     messages: [],
     tools: [],
-)->prompt('Tell me about CakePHP')
+)->prompt('Tell me about CakePHP');
 ```
 
 Anonymous agents may also produce structured output:
@@ -1431,7 +1856,7 @@ $response = agent(
     schema: fn (JsonSchema $schema) => [
         'number' => $schema->integer()->required(),
     ],
-)->prompt('Generate a random number less than 100')
+)->prompt('Generate a random number less than 100');
 ```
 
 <a name="agent-configuration"></a>
@@ -1554,15 +1979,89 @@ class SalesCoach implements Agent, HasProviderOptions
 
 The `providerOptions` method receives the provider currently being used (`Lab` enum or string), allowing you to return different options per provider. This is especially useful when using [failover](#failover), since each fallback provider can receive its own configuration.
 
-The Anthropic example above also enables [prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) via `cache_control`.
+The Anthropic example above also enables [prompt caching](#prompt-caching) via `cache_control`.
+
+The [image](#images), [audio](#audio), [transcription](#transcription), [embedding](#embeddings), and [reranking](#reranking) builders accept provider options as well:
+
+```php
+use Crustum\Ai\Audio;
+
+$audio = Audio::of('I love coding with CakePHP.')
+    ->withProviderOptions(['speed' => 1.25])
+    ->generate();
+```
+
+You may also pass a closure instead of an array, which will receive the provider currently being used.
+
+<a name="custom-http-headers"></a>
+#### Custom HTTP Headers
+
+Headers configured for a provider within your application's `config/ai.php` configuration file are sent with every request that provider makes. To send headers on a per-request basis, such as metadata used by an AI gateway, you may use the `withHeaders` method, which is available on the image, audio, transcription, embedding, and reranking builders, as well as on [file uploads](#files):
+
+```php
+use Crustum\Ai\Embeddings;
+
+$embeddings = Embeddings::for($chunks)
+    ->withHeaders(['cf-aig-metadata' => json_encode(['team' => $team->id])])
+    ->withProviderOptions(['dimensions' => 1024])
+    ->generate();
+```
+
+Headers may also be given as a closure, which receives the provider currently being used. Headers are not included in the request body and do not affect [embedding cache keys](#caching-embeddings).
+
+<a name="prompt-caching"></a>
+### Prompt Caching
+
+Most providers cache repeated prompt prefixes automatically and bill the cached portion at a discount. OpenAI, Gemini, Groq, DeepSeek, and xAI require no configuration, and you may inspect the savings via the response's usage:
+
+```php
+$response->usage->cacheReadInputTokens;
+$response->usage->cacheWriteInputTokens;
+```
+
+Both of these counts are subsets of the input token total, which is discussed further in the [usage documentation](#usage).
+
+The `anthropic` and `bedrock` providers only cache when asked. The `CacheInstructions` and `CacheToolDefinitions` attributes place a cache breakpoint at the end of your agent's instructions and tool definitions, so every conversation reads that prefix from the cache instead of writing it again:
+
+```php
+use Crustum\Ai\Attributes\CacheInstructions;
+use Crustum\Ai\Attributes\CacheToolDefinitions;
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Promptable;
+
+#[CacheInstructions]
+#[CacheToolDefinitions]
+class SalesCoach implements Agent
+{
+    use Promptable;
+
+    // ...
+}
+```
+
+If your instructions change on every request, such as when they embed the current date, use `CacheToolDefinitions` alone. Caching a prefix that changes on every request creates a new cache entry each time, so you pay to write it to the cache without ever reusing it.
+
+Providers that do not support these attributes ignore them, so an agent may safely declare them while using [failover](#failover).
+
+Cached prefixes are retained for five minutes by default. Anthropic may retain them for an hour if you pass a TTL to the attribute:
+
+```php
+#[CacheInstructions('1h')]
+#[CacheToolDefinitions('1h')]
+```
+
+Alternatively, Anthropic's automatic caching may be enabled via a top-level `cache_control` [provider option](#provider-options). This places a single breakpoint after the last block of the request, so the breakpoint advances as the conversation grows and each turn reads the previous turns from the cache. Both mechanisms may be combined.
+
+> [!WARNING]
+> Because providers build prompts in the order tools, instructions, and messages, caching instructions for an hour also requires caching tool definitions for an hour. Mixing the two throws an `InvalidArgumentException`.
 
 <a name="human-tool-approval"></a>
 ## Human Tool Approval
 
 > [!WARNING]
-> Tool approval requires a `Conversational` agent whose conversation history is persisted so the paused call can be resumed. The `RemembersConversationsTrait` provides the necessary persistence.
+> Tool approval requires the paused turn's history to be available when the run is resumed. You should either use a `Conversational` agent, such as one using the `RemembersConversationsTrait`, or provide the history from your application's frontend using the [`withMessages` method](#conversation-context). Agents that do neither will throw an `ApprovalNotResumableException` when a tool pauses.
 
-Tools that perform sensitive or irreversible actions may require human approval before they are executed. To make a tool approvable, implement the `Approvable` contract and use the `InteractsWithApprovals` trait. Approvable tools require approval by default:
+Tools that perform sensitive or irreversible actions may require human approval before they are executed. To make a tool approvable, implement the `Approvable` contract and use the `InteractsWithApprovalsTrait` trait. Approvable tools require approval by default:
 
 ```php
 <?php
@@ -1571,7 +2070,7 @@ declare(strict_types=1);
 namespace App\Ai\Tools;
 
 use Cake\Filesystem\Filesystem;
-use Crustum\Ai\Concerns\InteractsWithApprovals;
+use Crustum\Ai\Trait\InteractsWithApprovalsTrait;
 use Crustum\Ai\Contracts\Approvable;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Tools\Request;
@@ -1580,7 +2079,7 @@ use Stringable;
 
 class DeleteFile implements Approvable, Tool
 {
-    use InteractsWithApprovals;
+    use InteractsWithApprovalsTrait;
 
     /**
      * Get the description of the tool's purpose.
@@ -1671,6 +2170,9 @@ $response = (new FileAssistant)
     ]));
 ```
 
+> [!IMPORTANT]
+> Paused turns are matched by their conversation and pending tool calls, not by the participant that paused them. Therefore, your application should authorize access to the conversation before resuming it, as demonstrated in the [complete approval flow](#complete-approval-flow), or verify access using the conversation store's `conversationBelongsTo` method.
+
 The boolean values `true` and `false` may be used as shorthand for approval and rejection. Every pending tool call must receive a decision. Unknown, missing, or previously resolved tool call IDs will cause an `ApprovalMismatchException` to be thrown. You may provide a default for calls without an explicit decision using the `approveRemaining` or `rejectRemaining` methods:
 
 ```php
@@ -1687,7 +2189,27 @@ A rejection with a result, such as `Decision::reject('Not approved.')`, is retur
 
 Tool approval is supported by the `prompt`, `stream`, `queue`, `broadcast`, `broadcastNow`, and `broadcastOnQueue` methods.
 
-During streaming and broadcasting, a pause is represented by a `tool_approval_request` event. When using the [Vercel AI SDK stream protocol](#streaming-using-the-vercel-ai-sdk-protocol), approval requests and results are emitted using the protocol's native tool approval parts.
+During streaming and broadcasting, a pause is represented by a `tool_approval_request` event. When using the [Vercel AI SDK stream protocol](#stream-protocols), approval requests and results are emitted using the protocol's native tool approval parts, and the Agent User Interaction protocol reports them as interrupts.
+
+Clients that use either protocol post their decisions along with the rest of the conversation, so a [chat request](#frontend-integration) may be passed directly to the agent:
+
+```php
+use Crustum\Ai\Vercel\Vercel;
+
+// In src/Controller/ChatController.php
+public function chat($conversationId): \Cake\Http\Response
+{
+    $chat = Vercel::chat($this->request);
+
+    return (new FileAssistant)
+        ->continue($conversationId, as: $this->request->getAttribute('identity'))
+        ->stream($chat)
+        ->usingProtocol($chat->protocol())
+        ->toResponse();
+}
+```
+
+When a paused turn is resumed, the resumed steps are merged into that turn, so each turn is stored as a single assistant message. The response's `assistantMessageId` contains the ID of the paused message, and that message's usage includes both the pause and the resume.
 
 For queued agents, the resulting response is passed to the `then` callback, and the AI plugin also dispatches a `ToolApprovalRequested` event.
 
@@ -1696,21 +2218,13 @@ The AI plugin stores the result of an approved tool before asking the model to c
 <a name="complete-approval-flow"></a>
 ### Complete Approval Flow
 
-The following controller actions demonstrate a complete approval flow. The `view` action returns the chat screen, while the `submit` action accepts either a new text prompt or approval decisions from the chat screen. This example assumes the application's `UsersTable` uses the `HasConversations` behavior:
+The following action demonstrates a complete approval flow, accepting either a new text prompt or approval decisions from the chat screen. This example assumes the application's `UsersTable` uses the `HasConversations` behavior:
 
 ```php
 // In src/Controller/ChatController.php
 use App\Ai\Agents\FileAssistant;
 use Crustum\Ai\Approvals\Decision;
 use Crustum\Ai\Approvals\Decisions;
-
-public function view($conversationId)
-{
-    $conversation = $this->Conversations->get($conversationId);
-    $this->Authorization->authorize($conversation, 'view');
-
-    $this->set(compact('conversation'));
-}
 
 public function submit($conversationId)
 {
@@ -1743,7 +2257,7 @@ public function submit($conversationId)
 }
 ```
 
-When the response status is `awaiting_approval`, the chat screen should render the pending approvals and submit the user's choices to the same endpoint using the tool call ID as each decision's key:
+When the response status is `awaiting_approval`, the chat screen should render the pending approvals and submit the user's choices to the same endpoint using the tool call ID as each decision's key. Otherwise, the screen may submit a plain `message` value:
 
 ```json
 {
@@ -1756,14 +2270,6 @@ When the response status is `awaiting_approval`, the chat screen should render t
             "result": "The invoice must be retained."
         }
     }
-}
-```
-
-For a normal chat message, the screen may instead submit a `message` value:
-
-```json
-{
-    "message": "Delete the old invoice."
 }
 ```
 
@@ -1807,6 +2313,18 @@ $image = Image::of('Update this photo of me to be in the style of an impressioni
     ])
     ->landscape()
     ->generate();
+```
+
+Some providers may generate multiple images in a single request. OpenAI, Azure, and xAI accept an `n` [provider option](#provider-options), and the response will contain every image that was returned:
+
+```php
+$response = Image::of('A donut sitting on the kitchen counter')
+    ->withProviderOptions(['n' => 4])
+    ->generate();
+
+count($response);           // 4
+$response->images;          // Images that were generated...
+$response->firstImage();    // The first generated image...
 ```
 
 Generated images may be easily stored using the default filesystem configured in your application's `config/ai.php` configuration file:
@@ -2114,6 +2632,7 @@ return [
             'embeddings' => [
                 'cache' => true,
                 'store' => env('CACHE_STORE', 'database'),
+                'individually' => true,
                 // ...
             ],
         ],
@@ -2122,6 +2641,8 @@ return [
 ```
 
 When caching is enabled, embeddings are cached for 30 days. The cache key is based on the provider, model, dimensions, and input content, ensuring that identical requests return cached results while different configurations generate fresh embeddings.
+
+By default, each input's embedding is cached under its own key, so a later request may hit the cache for inputs it has seen before even when the set of inputs or their order has changed. To instead cache the entire set of inputs under a single key, set the `Ai.caching.embeddings.individually` configuration option to `false`.
 
 You may also enable caching for a specific request using the `cache` method, even when global caching is disabled:
 
@@ -2161,11 +2682,12 @@ $response->first()->score;    // 0.95
 $response->first()->index;    // 1 (original position)
 ```
 
-The `limit` method may be used to restrict the number of results returned:
+The `limit` method may be used to restrict the number of results returned, while the `timeout` method may be used to specify the HTTP timeout in seconds, which defaults to 30:
 
 ```php
 $response = Reranking::of($documents)
     ->limit(5)
+    ->timeout(60)
     ->rerank('search query');
 ```
 
@@ -2205,6 +2727,132 @@ use Crustum\Ai\Reranking;
 $reranked = Reranking::of($posts->extract('content')->toList())
     ->limit(10)
     ->rerank('CakePHP tutorials', provider: Lab::Cohere);
+```
+
+Alternatively, you may rerank a collection directly, resolving each item's document text with the `by` argument and passing a `timeout` in seconds, which defaults to 30:
+
+```php
+use Crustum\Ai\Collections;
+use Crustum\Ai\Enums\Lab;
+
+$reranked = Collections::of($posts)
+    ->rerank(
+        query: 'CakePHP tutorials',
+        by: 'content',
+        limit: 10,
+        provider: Lab::Cohere,
+        timeout: 60,
+    );
+```
+
+<a name="classification"></a>
+## Classification
+
+> [!WARNING]
+> Classification is currently experimental and its API may change in future minor releases of the AI plugin.
+
+Classification allows you to ask a fixed set of questions about a given string or array of data and receive a typed answer, backed by a probability, for each question instead of free-form text. This is useful for routing, moderation, and scoring, where you need to compare an answer against a threshold or make assertions about it in your tests.
+
+The `Crustum\Ai\Classification` class may be used to classify content. Each question is given a key, and the corresponding answer may be retrieved from the response using that key:
+
+```php
+use Crustum\Ai\Classification;
+use Crustum\Ai\Classification\Boolean;
+use Crustum\Ai\Classification\Choice;
+use Crustum\Ai\Classification\Score;
+
+$result = Classification::of($supportRequest)
+    ->questions([
+        'urgent' => new Boolean('Does this request need an immediate response?', [
+            'true' => 'Explicitly time-sensitive',
+            'false' => 'No urgency expressed',
+        ]),
+        'department' => new Choice('Which team should handle this request?', [
+            'billing' => 'Payments, invoices, and refunds',
+            'technical' => 'Bugs, outages, and integrations',
+            'sales' => 'Pricing, plans, and upgrades',
+        ]),
+        'frustration' => new Score('How frustrated is the customer?', [
+            'Calm',
+            'Frustrated',
+            'Very angry',
+        ]),
+    ])
+    ->classify();
+```
+
+`Boolean` questions return the probability that the answer is "true". The `isTrue` method may be used to determine whether that probability meets a given threshold, which defaults to `0.5`:
+
+```php
+$result['urgent']->probability;             // 0.94
+$result['urgent']->isTrue(threshold: 0.8);  // true
+```
+
+`Choice` questions return one of the given options along with the probability of each option. The `confidence` property indicates how certain the provider is across the full set of probabilities, and will be `null` when the provider is unable to measure it:
+
+```php
+$result['department']->choice;                      // 'technical'
+$result['department']->probabilityOf('technical');  // 0.87
+$result['department']->probabilities;               // ['billing' => 0.08, 'technical' => 0.87, 'sales' => 0.05]
+$result['department']->confidence;                  // 0.82
+```
+
+`Score` questions return a position on the ordered levels that were provided. The `score` property is probability-weighted and may fall between two levels, while the `level` and `label` methods describe the most probable level:
+
+```php
+$result['frustration']->score;          // 1.24, the probability-weighted level
+$result['frustration']->level();        // 1, the most probable level
+$result['frustration']->label();        // 'Frustrated'
+$result['frustration']->normalized();   // 0.62, the score as a fraction of the highest level
+$result['frustration']->probabilities;  // [0.12, 0.52, 0.36]
+```
+
+The criteria given to a `Boolean` question, the option descriptions given to a `Choice` question, and the levels given to a `Score` question may each be an array when a single sentence is not sufficient. `Choice` questions require at least two options, while `Score` questions require at least two levels.
+
+The response may be iterated, counted, and accessed as an array. In addition, the `answer` method may be used to retrieve a single answer, while the `collect` method returns all of the answers as a CakePHP collection:
+
+```php
+$result->answer('urgent');
+$result->collect();
+
+$result->usage;
+$result->meta->provider;
+```
+
+For a single yes or no decision, you may use the `decide` method available via the `Text` class, which returns a boolean instead of a full response. You may describe what a "yes" and a "no" mean, and specify the probability the answer must reach, which defaults to `0.5`:
+
+```php
+use Crustum\Ai\Text;
+
+if (Text::of($message)->decide('Is this spam?')) {
+    // ...
+}
+
+$spam = Text::of($message)->decide('Is this spam?', criteria: [
+    'true' => 'Unsolicited bulk mail.',
+    'false' => 'A genuine message from a customer.',
+], threshold: 0.9);
+```
+
+By default, classification is performed by [TypeSafe](https://typesafe.ai). You may change this using the `default_for_classification` option within your application's `config/ai.php` configuration file. You may also specify the provider and model when classifying:
+
+```php
+use Crustum\Ai\Enums\Lab;
+
+$result = Classification::of($supportRequest)
+    ->questions($questions)
+    ->classify(Lab::OpenRouter, 'model-name');
+```
+
+The `timeout` method may be used to specify the HTTP timeout in seconds, which defaults to 30. [Provider options](#provider-options) and custom headers may be given as well:
+
+```php
+$result = Classification::of($supportRequest)
+    ->questions($questions)
+    ->timeout(60)
+    ->withProviderOptions(['temperature' => 0])
+    ->withHeaders(['cf-aig-metadata' => json_encode(['team' => $team->id])])
+    ->classify();
 ```
 
 <a name="files"></a>
@@ -2415,11 +3063,13 @@ $document->fileId;
 
 > **Note:** Typically, when adding previously stored files to vector stores, the returned document ID will match the file's previously assigned ID; however, some vector storage providers may return a new, different "document ID". Therefore, it's recommended that you always store both IDs in your database for future reference.
 
+When adding a file to a Gemini store, the AI plugin waits for the import to finish so that the document is searchable once the call returns. A `Crustum\Ai\Exception\AiException` will be thrown if the import fails or exceeds five minutes, so you may wish to add Gemini files from a [queued job](#queueing).
+
 You may attach metadata to files when adding them to a store. This metadata can later be used to filter search results when using the [file search provider tool](#file-search):
 
 ```php
 $store->add(Document::fromPath('/var/www/document.pdf'), metadata: [
-    'author' => 'Taylor Otwell',
+    'author' => 'Larry Masters',
     'department' => 'Engineering',
     'year' => 2026,
 ]);
@@ -2435,6 +3085,56 @@ Removing a file from a vector store does not remove it from the provider's [file
 
 ```php
 $store->remove('file_abc123', deleteFile: true);
+```
+
+<a name="usage"></a>
+## Usage
+
+Every response contains a `usage` property containing the token counts reported by the provider. The input and output counts are totals, so tokens counted as cached or reasoning tokens are also included in the total they belong to:
+
+```php
+$response = (new SalesCoach)->prompt('Analyze this sales transcript...');
+
+$response->usage->inputTokens;
+$response->usage->outputTokens;
+$response->usage->totalTokens();
+```
+
+Text generation returns a `Crustum\Ai\Responses\Data\TextUsage` instance, which breaks these totals down further. Each of these values will be `null`, rather than `0`, when the provider does not report it:
+
+```php
+$response->usage->cacheReadInputTokens; // Subset of the input tokens read from a prompt cache...
+$response->usage->cacheWriteInputTokens; // Subset of the input tokens written to a prompt cache...
+$response->usage->reasoningTokens; // Subset of the output tokens spent on reasoning...
+
+$response->usage->uncachedInputTokens(); // Input tokens that were neither read from nor written to the cache...
+```
+
+Cache reads, cache writes, and uncached input are billed at different rates, so you should price these three counts separately instead of using the input total alone.
+
+The remaining capabilities return a usage object containing the counts specific to them:
+
+<div class="overflow-auto">
+
+| Capability | Usage object | Adds |
+|---|---|---|
+| Text, classification | `TextUsage` | Cache read, cache write, and reasoning tokens |
+| Images | `ImageUsage` | `imageInputTokens` and `imageOutputTokens` |
+| Transcription | `TranscriptionUsage` | `audioSeconds`, the duration of the transcribed audio |
+| Reranking | `RerankingUsage` | `searchUnits`, which some providers bill instead of tokens |
+| Audio, embeddings | `Usage` | |
+
+</div>
+
+Not every provider reports every count, and counts that a provider does not report will be `null`:
+
+```php
+use Crustum\Ai\Image;
+use Crustum\Ai\Transcription;
+
+Image::of('A donut sitting on the kitchen counter')->generate()->usage->imageOutputTokens;
+
+Transcription::fromPath('/var/www/meeting.mp3')->generate()->usage->audioSeconds;
 ```
 
 <a name="failover"></a>
@@ -2474,6 +3174,8 @@ $response = (new SalesCoach)->prompt(
 
 <a name="testing"></a>
 ## Testing
+
+When faking queued image, audio, transcription, or embeddings generation, any `then` callback registered on the queued generation will be invoked with the faked response, allowing you to test the logic contained within the callback.
 
 <a name="testing-agents"></a>
 ### Agents
@@ -2529,6 +3231,24 @@ $response = (new FileAssistant)->prompt('Delete the invoice.');
 $response->hasPendingApprovals(); // true
 ```
 
+In addition, you can fake a response that includes reasoning. The fake emits reasoning events, so the reasoning is reported on streamed runs as well:
+
+```php
+use Crustum\Ai\Responses\AgentResponse;
+
+SalesCoach::fake([
+    AgentResponse::fakeWithReasoning('They asked about pricing.', 'Plans start at $10.'),
+]);
+
+$response = (new SalesCoach)->stream('What does it cost?');
+
+foreach ($response as $event) {
+    // ...
+}
+
+$response->reasoning; // 'They asked about pricing.'
+```
+
 > **Note:** When `Agent::fake()` is invoked on an agent that returns structured output and fake output was not explicitly provided, the plugin will automatically generate fake data that matches your agent's defined output schema.
 
 After prompting the agent, you may make assertions about the prompts that were received:
@@ -2541,6 +3261,8 @@ SalesCoach::assertPrompted('Analyze this...');
 SalesCoach::assertPrompted(function (AgentPrompt $prompt) {
     return $prompt->contains('Analyze');
 });
+
+SalesCoach::assertPromptedTimes(3);
 
 SalesCoach::assertNotPrompted('Missing prompt');
 
@@ -2854,6 +3576,54 @@ Reranking::assertNotReranked(
 Reranking::assertNothingReranked();
 ```
 
+<a name="testing-classification"></a>
+### Classification
+
+Classification may be faked by invoking the `fake` method on the `Classification` class. If no custom responses are provided, the plugin will automatically generate answers that match the shape of each question:
+
+```php
+use Crustum\Ai\Classification;
+use Crustum\Ai\Prompts\ClassificationPrompt;
+use Crustum\Ai\Responses\Data\BooleanAnswer;
+use Crustum\Ai\Responses\Data\ChoiceAnswer;
+
+// Automatically generate fake answers...
+Classification::fake();
+
+// Provide answers for specific questions...
+Classification::fake([
+    [
+        'urgent' => new BooleanAnswer(0.94),
+        'department' => new ChoiceAnswer('technical', [
+            'billing' => 0.08,
+            'technical' => 0.87,
+            'sales' => 0.05,
+        ], confidence: 0.82),
+    ],
+]);
+
+// Build answers from the prompt...
+Classification::fake(fn (ClassificationPrompt $prompt) => [
+    'urgent' => new BooleanAnswer($prompt->contains('ASAP') ? 1.0 : 0.0),
+]);
+```
+
+Questions that are omitted from a fake response will still receive a generated answer, so your tests only need to provide the answers they make assertions against.
+
+After classifying, you may make assertions about the operations that were performed:
+
+```php
+Classification::assertClassified(function (ClassificationPrompt $prompt) {
+    return $prompt->contains('refund') && $prompt->asks('department');
+});
+
+Classification::assertNotClassified(
+    fn (ClassificationPrompt $prompt) => $prompt->asks('sentiment')
+);
+
+Classification::assertNothingClassified();
+```
+
 <a name="testing-files"></a>
 ### Files
 
@@ -2978,6 +3748,8 @@ The AI plugin dispatches a variety of CakePHP events that you may listen to, inc
 - `AgentPrompted`
 - `AgentStreamed`
 - `AudioGenerated`
+- `Classified`
+- `Classifying`
 - `CreatingStore`
 - `EmbeddingsGenerated`
 - `FileAddedToStore`

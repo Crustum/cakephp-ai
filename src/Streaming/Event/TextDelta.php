@@ -31,32 +31,52 @@ class TextDelta extends StreamEvent
     /**
      * Combine the text deltas in the given collection of events into a single string.
      *
-     * Deltas from a multi-step generation carry a distinct message ID per step,
-     * and each step's text is a self-contained utterance (typically narration
-     * around a tool call). Steps are therefore joined with a blank line instead
-     * of being run together mid-sentence.
+     * Each step of a multi-step generation is a self-contained utterance
+     * (typically narration around a tool call), so steps are joined with a blank
+     * line instead of being run together mid-sentence. The boundary is the step's
+     * own `StreamStart` rather than a change of message ID, which Anthropic rotates
+     * per content block — web search splits one answer across several, mid-sentence.
      *
-     * @param \Cake\Collection\Collection<\Crustum\Ai\Streaming\Event\StreamEvent>|array<\Crustum\Ai\Streaming\Event\StreamEvent> $events Events
+     * @param \Cake\Collection\Collection<int, \Crustum\Ai\Streaming\Event\StreamEvent>|array<\Crustum\Ai\Streaming\Event\StreamEvent> $events Events
      * @return string
      */
     public static function combine(Collection|array $events): string
     {
         $events = is_array($events) ? collection($events) : $events;
 
-        $steps = $events->filter(fn($event): bool => $event instanceof TextDelta)
-            ->groupBy(fn(TextDelta $event): string => $event->messageId)
-            ->map(function (array $deltas): string {
-                $text = '';
-                foreach ($deltas as $event) {
+        $steps = [];
+        $current = [];
+
+        foreach ($events as $event) {
+            if ($event instanceof StreamStart && $current !== []) {
+                $steps[] = $current;
+                $current = [];
+            }
+
+            $current[] = $event;
+        }
+
+        if ($current !== []) {
+            $steps[] = $current;
+        }
+
+        $texts = [];
+
+        foreach ($steps as $step) {
+            $text = '';
+
+            foreach ($step as $event) {
+                if ($event instanceof TextDelta) {
                     $text .= $event->delta;
                 }
+            }
 
-                return $text;
-            })
-            ->filter(fn(string $text): bool => trim($text) !== '')
-            ->toList();
+            if (trim($text) !== '') {
+                $texts[] = $text;
+            }
+        }
 
-        return implode("\n\n", $steps);
+        return implode("\n\n", $texts);
     }
 
     /**
@@ -71,18 +91,6 @@ class TextDelta extends StreamEvent
             'message_id' => $this->messageId,
             'delta' => $this->delta,
             'timestamp' => $this->timestamp,
-        ];
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'text-delta',
-            'id' => $this->messageId,
-            'delta' => $this->delta,
         ];
     }
 }

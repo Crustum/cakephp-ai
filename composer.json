@@ -11,12 +11,12 @@
     ],
     "require": {
         "php": ">=8.4",
-        "aws/aws-sdk-php": "^3.393",
         "cakephp/cakephp": "^5.4",
+        "cakephp/chronos": "^3.5",
         "crustum/cakephp-queue": "^1.2",
-        "crustum/broadcasting": "^1.3",
+        "crustum/broadcasting": "^1.4",
         "crustum/json-schema": "^1.0",
-        "crustum/mcp": "dev-main",
+        "crustum/mcp": "^1.0",
         "crustum/plugin-manifest": "^1.1",
         "enqueue/enqueue": "^0.10.27",
         "enqueue/simple-client": "^0.10.27",
@@ -24,12 +24,19 @@
         "enqueue/null": "^0.10.27",
         "guzzlehttp/guzzle": "^7.15",
         "laravel/serializable-closure": "^2.0",
-        "league/flysystem": "^3.35",
-        "league/flysystem-local": "^3.31",
-        "opis/closure": "^4.5"
+        "league/flysystem": "^3.36",
+        "league/flysystem-local": "^3.36",
+        "league/mime-type-detection": "^1.16",
+        "opis/closure": "^4.5",
+        "queue-interop/queue-interop": "^0.8.2",
+        "symfony/config": "^7.2|^8.0",
+        "symfony/http-foundation": "^6.0",
+        "symfony/yaml": "^7.2|^8.0"
     },
     "require-dev": {
+        "aws/aws-sdk-php": "^3.393",
         "boundwize/structarmed": "^0.15.44",
+        "cakedc/cakephp-phpstan": "^4.3",
         "cakephp/bake": "^3.8",
         "crustum/essentia": "^1.0.2",
         "phpunit/phpunit": "^12.5.33",
@@ -38,7 +45,7 @@
         "cakephp/cakephp-codesniffer": "^5.3",
         "phpstan/phpstan": "^2.2",
         "rector/rector": "^2.6",
-        "mockery/mockery": "^1.6.15"
+        "jasonmccreary/double": "^1.0"
     },
     "autoload": {
         "psr-4": {
@@ -77,15 +84,21 @@
         ],
         "cs-check": "phpcs -p --standard=phpcs.xml src/ tests/",
         "cs-fix": "phpcbf --standard=phpcs.xml src/ tests/",
-        "test": "pest",
-        "test:unit": "pest --testsuite=Unit",
-        "test:integration": "pest --testsuite=Integration",
+        "test": "pest --compact",
+        "test:unit": "pest --compact --testsuite=Unit",
+        "test:integration": "pest --compact --testsuite=Integration",
         "test:coverage": "pest --coverage",
         "rector-check": "vendor/bin/rector process --dry-run",
         "rector-fix": "vendor/bin/rector process",
         "stan": "phpstan analyse src/",
         "stan-baseline": "phpstan analyse --generate-baseline",
         "structarmed": "vendor/bin/structarmed analyze src"
+    },
+    "conflict": {
+        "aws/aws-sdk-php": "<3.393"
+    },
+    "suggest": {
+        "aws/aws-sdk-php": "Required to use the Bedrock provider."
     },
     "minimum-stability": "dev",
     "prefer-stable": true,

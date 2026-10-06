@@ -9,6 +9,8 @@ use Crustum\Ai\Responses\RerankingResponse;
 
 /**
  * Dispatched after documents are reranked.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class Reranked extends AiEvent
 {
@@ -34,6 +36,6 @@ class Reranked extends AiEvent
             'model' => $model,
             'prompt' => $prompt,
             'response' => $response,
-        ]);
+        ], $provider);
     }
 }

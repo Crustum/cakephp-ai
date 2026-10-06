@@ -10,8 +10,8 @@ use Crustum\Ai\Contracts\Providers\ImageProvider;
 use Crustum\Ai\Gateway\Bedrock\Trait\CreatesBedrockClientTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Responses\Data\GeneratedImage;
+use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\ImageResponse;
 use Throwable;
 
@@ -42,6 +42,7 @@ class BedrockImageGateway implements ImageGateway
      * @param '3:2'|'2:3'|'1:1'|null $size Image size
      * @param 'low'|'medium'|'high'|null $quality Image quality
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      */
     public function generateImage(
@@ -52,6 +53,7 @@ class BedrockImageGateway implements ImageGateway
         ?string $size = null,
         ?string $quality = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse {
         $client = $this->createBedrockClient($provider, $timeout);
         $options = $provider->defaultImageOptions($size, $quality);
@@ -63,7 +65,7 @@ class BedrockImageGateway implements ImageGateway
                     'modelId' => $model,
                     'contentType' => 'application/json',
                     'accept' => 'application/json',
-                    'body' => json_encode($this->prepareImageRequestBody($model, $prompt, $size, $options)),
+                    'body' => json_encode(array_replace_recursive($providerOptions, $this->prepareImageRequestBody($model, $prompt, $size, $options))),
                 ]),
             );
         } catch (Throwable $throwable) {
@@ -74,7 +76,7 @@ class BedrockImageGateway implements ImageGateway
 
         return new ImageResponse(
             $this->parseImageResponse($model, $result),
-            new Usage(),
+            new ImageUsage(),
             new Meta($provider->name(), $model),
         );
     }

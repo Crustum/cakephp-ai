@@ -9,6 +9,8 @@ use Crustum\Ai\Responses\TranscriptionResponse;
 
 /**
  * Dispatched after a transcription is generated.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class TranscriptionGenerated extends AiEvent
 {
@@ -34,6 +36,6 @@ class TranscriptionGenerated extends AiEvent
             'model' => $model,
             'prompt' => $prompt,
             'response' => $response,
-        ]);
+        ], $provider);
     }
 }

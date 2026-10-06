@@ -79,7 +79,7 @@ test('audio uses default model when none specified', function (): void {
 
     Audio::of('Hello')->generate(provider: 'openrouter');
 
-    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'google/gemini-3.1-flash-tts-preview');
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'google/gemini-3.8-flash-lite-tts');
 });
 
 test('audio request to gemini tts model uses pcm response format and pcm mime', function (): void {

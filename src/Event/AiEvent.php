@@ -8,6 +8,9 @@ use ReflectionClass;
 
 /**
  * Base AI event class for CakePHP event dispatching.
+ *
+ * @template TSubject of object
+ * @extends \Cake\Event\Event<TSubject>
  */
 abstract class AiEvent extends Event
 {
@@ -15,10 +18,11 @@ abstract class AiEvent extends Event
      * Constructor.
      *
      * @param array<string, mixed> $data Event payload
+     * @param TSubject|null $subject Subject the event applies to
      */
-    public function __construct(array $data = [])
+    public function __construct(array $data = [], ?object $subject = null)
     {
-        parent::__construct(static::eventName(), null, $data);
+        parent::__construct(static::eventName(), $subject, $data);
     }
 
     /**

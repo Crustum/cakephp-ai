@@ -48,6 +48,7 @@ dataset('file-providers', [
     'openai' => ['openai', 'OPENAI_API_KEY'],
     // 'gemini' => ['gemini', 'GEMINI_API_KEY'],
     // 'azure' => ['azure', 'AZURE_OPENAI_API_KEY'],
+    'openrouter' => ['openrouter', 'OPENROUTER_API_KEY'],
 ]);
 
 dataset('store-providers', [
@@ -59,24 +60,32 @@ dataset('store-providers', [
 dataset('file-search-providers', [
     'openai' => ['openai', 'OPENAI_API_KEY'],
     'azure' => ['azure', 'AZURE_OPENAI_API_KEY'],
+    'gemini' => ['gemini', 'GEMINI_API_KEY'],
 ]);
 
 dataset('reranking-providers', [
     'cohere' => ['cohere', 'COHERE_API_KEY'],
+    'openrouter' => ['openrouter', 'OPENROUTER_API_KEY'],
     'voyageai' => ['voyageai', 'VOYAGEAI_API_KEY'],
+]);
+
+dataset('classification-providers', [
+    'openrouter' => ['openrouter', 'OPENROUTER_API_KEY'],
+    'typesafe' => ['typesafe', 'TYPESAFE_API_KEY'],
 ]);
 
 dataset('agent-providers', [
     // 'anthropic' => ['anthropic', 'ANTHROPIC_API_KEY', 'claude-haiku-4-5-20251001'],
     // 'azure' => ['azure', 'AZURE_OPENAI_API_KEY', 'gpt-5.4-mini'],
+    // 'cohere' => ['cohere', 'COHERE_API_KEY', 'command-a-03-2025'],
     // 'deepseek' => ['deepseek', 'DEEPSEEK_API_KEY', 'deepseek-v4-pro'],
-    // 'gemini' => ['gemini', 'GEMINI_API_KEY', 'gemini-3.1-flash-lite'],
+    // 'gemini' => ['gemini', 'GEMINI_API_KEY', 'gemini-3.5-flash-lite'],
     // 'groq' => ['groq', 'GROQ_API_KEY', 'openai/gpt-oss-20b'],
     // 'mistral' => ['mistral', 'MISTRAL_API_KEY', 'mistral-small-latest'],
     // 'ollama' => ['ollama', 'OLLAMA_API_KEY', 'gpt-oss:20b'],
     // 'ollama' => ['ollama', 'OLLAMA_API_KEY', 'tinyllama'],
     'ollama' => ['ollama', 'OLLAMA_API_KEY', 'llama3.2'],
-    // 'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-5.4-nano'],
+    // 'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-6-luna'],
     // 'openrouter' => ['openrouter', 'OPENROUTER_API_KEY', 'anthropic/claude-haiku-4.5'],
     // for testing free router
     // 'openrouter' => ['openrouter', 'OPENROUTER_API_KEY', 'openrouter/free'],
@@ -85,19 +94,47 @@ dataset('agent-providers', [
 
 dataset('agent-document-providers', [
     // 'anthropic' => ['anthropic', 'ANTHROPIC_API_KEY', 'claude-haiku-4-5-20251001'],
-    'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-5.4-nano'],
+    'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-6-luna'],
     // 'gemini' => ['gemini', 'GEMINI_API_KEY', 'gemini-3.1-flash-lite'],
 ]);
 
 dataset('agent-image-providers', [
-    'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-5.4-nano'],
+    'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-6-luna'],
     // 'gemini' => ['gemini', 'GEMINI_API_KEY', 'gemini-3.1-flash-lite'],
     // 'xai' => ['xai', 'XAI_API_KEY', 'grok-4.20-non-reasoning'],
+    // 'cohere' => ['cohere', 'COHERE_API_KEY', 'command-a-vision-07-2025'],
 ]);
 
 dataset('tool-replay-providers', [
     // Reasoning model
-    'openai-gpt-5-4-nano' => ['openai', 'OPENAI_API_KEY', 'gpt-5.4-nano', true],
+    'openai-gpt-6-luna' => ['openai', 'OPENAI_API_KEY', 'gpt-6-luna', true],
     // Non-reasoning model (backward compatibility)
     'openai-gpt-4-1' => ['openai', 'OPENAI_API_KEY', 'gpt-4.1', false],
+]);
+
+dataset('reasoning-providers', [
+    // 'anthropic' => ['anthropic', 'ANTHROPIC_API_KEY', 'claude-haiku-4-5-20251001', ['thinking' => ['type' => 'enabled', 'budget_tokens' => 2000], 'max_tokens' => 4000]],
+    // 'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-6-luna', ['reasoning' => ['effort' => 'high', 'summary' => 'auto']]],
+    // 'gemini' => ['gemini', 'GEMINI_API_KEY', 'gemini-3.5-flash', ['thinking_level' => 'high', 'thinking_summaries' => 'auto']],
+    // 'xai' => ['xai', 'XAI_API_KEY', 'grok-4.6', ['reasoning' => ['summary' => 'auto']]],
+    // 'cohere' => ['cohere', 'COHERE_API_KEY', 'command-a-reasoning-08-2025', ['thinking' => ['type' => 'enabled']]],
+    // 'deepseek' => ['deepseek', 'DEEPSEEK_API_KEY', 'deepseek-reasoner', []],
+    // 'groq' => ['groq', 'GROQ_API_KEY', 'openai/gpt-oss-20b', []],
+    // 'mistral' => ['mistral', 'MISTRAL_API_KEY', 'magistral-medium-latest', []],
+    'ollama' => ['ollama', 'OLLAMA_API_KEY', 'gpt-oss:20b', ['think' => true]],
+    // 'openrouter' => ['openrouter', 'OPENROUTER_API_KEY', 'anthropic/claude-haiku-4.5', ['reasoning' => ['max_tokens' => 2000]]],
+]);
+
+dataset('code-execution-providers', [
+    'anthropic' => ['anthropic', 'ANTHROPIC_API_KEY', 'claude-haiku-4-5-20251001'],
+    'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-6-sol'],
+    'gemini' => ['gemini', 'GEMINI_API_KEY', 'gemini-3.1-flash-lite'],
+    'xai' => ['xai', 'XAI_API_KEY', 'grok-4.6'],
+    'groq' => ['groq', 'GROQ_API_KEY', 'openai/gpt-oss-120b'],
+]);
+
+dataset('tool-search-providers', [
+    'anthropic' => ['anthropic', 'ANTHROPIC_API_KEY', 'claude-haiku-4-5-20251001'],
+    'openai' => ['openai', 'OPENAI_API_KEY', 'gpt-6-sol'],
+    'azure' => ['azure', 'AZURE_OPENAI_API_KEY', 'gpt-5.4-mini'],
 ]);

@@ -8,10 +8,11 @@ use Cake\Core\Configure;
 use Cake\Event\EventManager;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Enums\Lab;
-use Crustum\Ai\Event\ProviderFailedOverEvent;
+use Crustum\Ai\Event\ProviderFailedOver;
 use Crustum\Ai\Exception\FailoverableException;
 use Crustum\Ai\Job\GenerateAudioJob;
 use Crustum\Ai\Job\PendingDispatch;
+use Crustum\Ai\PendingResponses\Trait\ResolvesProviderOptionsTrait;
 use Crustum\Ai\Prompts\QueuedAudioPrompt;
 use Crustum\Ai\Providers\Provider;
 use Crustum\Ai\Responses\AudioResponse;
@@ -29,6 +30,7 @@ use InvalidArgumentException;
 class PendingAudioGeneration
 {
     use ConditionableTrait;
+    use ResolvesProviderOptionsTrait;
 
     /**
      * The voice for the generated audio.
@@ -137,6 +139,10 @@ class PendingAudioGeneration
 
             $model ??= $provider->defaultAudioModel();
 
+            [$providerOptions, $headers] = $this->resolveProviderOptionsAndHeaders($provider);
+
+            $provider = $provider->withHeaders($headers);
+
             try {
                 return $provider->audio(
                     $this->text,
@@ -144,11 +150,12 @@ class PendingAudioGeneration
                     $this->instructions,
                     $model,
                     $this->timeout,
+                    $providerOptions,
                 );
             } catch (FailoverableException $e) {
                 $lastException = $e;
 
-                EventManager::instance()->dispatch(new ProviderFailedOverEvent($provider->name(), $model, $e));
+                EventManager::instance()->dispatch(new ProviderFailedOver($provider->name(), $model, $e, $provider));
 
                 continue;
             }
@@ -175,6 +182,7 @@ class PendingAudioGeneration
                     $provider,
                     $model,
                     $this->timeout,
+                    $this->queuedProviderOptions(),
                 ),
             );
         }

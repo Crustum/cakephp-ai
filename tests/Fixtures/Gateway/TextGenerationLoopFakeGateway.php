@@ -26,6 +26,11 @@ class TextGenerationLoopFakeGateway implements StepTextGateway
      */
     public array $messages = [];
 
+    /**
+     * @var array<int, array<int, mixed>>
+     */
+    public array $tools = [];
+
     public function __construct(
         public array $steps = [],
         public array $streams = [],
@@ -46,6 +51,7 @@ class TextGenerationLoopFakeGateway implements StepTextGateway
         $this->generateCalls++;
         $this->contexts[] = $stepContext;
         $this->messages[] = $messages;
+        $this->tools[] = $tools;
 
         return array_shift($this->steps);
     }
@@ -64,6 +70,7 @@ class TextGenerationLoopFakeGateway implements StepTextGateway
     ): Generator {
         $this->streamCalls++;
         $this->contexts[] = $stepContext;
+        $this->tools[] = $tools;
 
         [$events, $result] = array_shift($this->streams);
 

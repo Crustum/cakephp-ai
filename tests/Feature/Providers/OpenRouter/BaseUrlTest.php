@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Crustum\Ai\Files\Document;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 
 beforeEach(function (): void {
@@ -32,6 +33,19 @@ test('openrouter requests fall back to the default base url', function (): void 
 
     aiAssertHttpSentCount(1);
     openRouterAssertRequestSent('POST', 'https://openrouter.ai/api/v1/chat/completions');
+});
+
+test('openrouter file requests ignore an in-region base url', function (): void {
+    configureOpenRouterProvider('https://eu.openrouter.ai/api/v1');
+
+    aiHttpFake(['*' => aiHttpResponse(['id' => 'or_file_uploaded123'])]);
+
+    Document::fromString('Hello, World!', 'text/plain')->as('hello.txt')->put(provider: 'openrouter');
+
+    aiAssertHttpSentCount(1);
+    openRouterAssertRequestSent('POST', 'https://openrouter.ai/api/v1/files');
+
+    Configure::delete('Ai.providers.openrouter.url');
 });
 
 function configureOpenRouterProvider(?string $url = null): void

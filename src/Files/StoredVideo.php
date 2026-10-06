@@ -5,10 +5,9 @@ namespace Crustum\Ai\Files;
 
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files\Trait\CanBeUploadedToProviderTrait;
-use Crustum\Ai\Files\Trait\ReadsStoredFilesystemTrait;
+use Crustum\Ai\Files\Trait\HasStoredContentTrait;
 use InvalidArgumentException;
 use JsonSerializable;
-use Override;
 
 /**
  * Stored video file.
@@ -18,7 +17,7 @@ use Override;
 class StoredVideo extends Video implements JsonSerializable, StorableFile
 {
     use CanBeUploadedToProviderTrait;
-    use ReadsStoredFilesystemTrait;
+    use HasStoredContentTrait;
 
     /**
      * Constructor.
@@ -35,17 +34,6 @@ class StoredVideo extends Video implements JsonSerializable, StorableFile
     }
 
     /**
-     * Get the displayable name of the file.
-     *
-     * @return string|null
-     */
-    #[Override]
-    public function name(): ?string
-    {
-        return $this->name ?? basename($this->path);
-    }
-
-    /**
      * Get the instance as an array.
      *
      * @return array<string, mixed>
@@ -58,25 +46,5 @@ class StoredVideo extends Video implements JsonSerializable, StorableFile
             'path' => $this->path,
             'filesystem' => $this->resolvedFilesystemName(),
         ];
-    }
-
-    /**
-     * Get the JSON serializable representation of the instance.
-     *
-     * @return array<string, mixed>
-     */
-    public function jsonSerialize(): mixed
-    {
-        return $this->toArray();
-    }
-
-    /**
-     * Get string representation.
-     *
-     * @return string
-     */
-    public function __toString(): string
-    {
-        return $this->content();
     }
 }

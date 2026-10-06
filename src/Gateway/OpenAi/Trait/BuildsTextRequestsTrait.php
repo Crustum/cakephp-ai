@@ -89,13 +89,15 @@ trait BuildsTextRequestsTrait
             return [];
         }
 
-        return collection($lastMessage->toolResults)
+        /** @var \Cake\Collection\CollectionInterface<int, array<string, mixed>> $input */
+        $input = collection($lastMessage->toolResults)
             ->map(fn($toolResult): array => [
                 'type' => 'function_call_output',
                 'call_id' => $toolResult->resultId,
-                'output' => $this->serializeToolResultOutput($toolResult->result),
-            ])
-            ->toList();
+                'output' => $toolResult->text(),
+            ]);
+
+        return $input->toList();
     }
 
     /**
@@ -147,13 +149,13 @@ trait BuildsTextRequestsTrait
 
         if ($this->isStateless($provider)) {
             $body['store'] = false;
+        }
 
-            if ($this->isReasoningModel($body['model'] ?? '')) {
-                $body['include'] = array_values(array_unique([
-                    ...($body['include'] ?? []),
-                    'reasoning.encrypted_content',
-                ]));
-            }
+        if ($this->isReasoningModel($body['model'] ?? '')) {
+            $body['include'] = array_values(array_unique([
+                ...($body['include'] ?? []),
+                'reasoning.encrypted_content',
+            ]));
         }
 
         return $body;
@@ -200,6 +202,7 @@ trait BuildsTextRequestsTrait
     protected function isReasoningModel(string $model): bool
     {
         return (str_starts_with($model, 'gpt-5') && !str_starts_with($model, 'gpt-5-chat'))
+            || str_starts_with($model, 'gpt-6')
             || str_starts_with($model, 'o4-mini')
             || str_starts_with($model, 'o3')
             || str_starts_with($model, 'o1');

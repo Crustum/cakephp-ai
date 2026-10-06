@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Streaming\Event;
 
+use Cake\Collection\Collection;
+use Crustum\Ai\Trait\JoinsReasoningTrait;
+
 /**
  * Reasoning delta event.
  *
@@ -10,6 +13,8 @@ namespace Crustum\Ai\Streaming\Event;
  */
 class ReasoningDelta extends StreamEvent
 {
+    use JoinsReasoningTrait;
+
     /**
      * Constructor.
      *
@@ -29,6 +34,25 @@ class ReasoningDelta extends StreamEvent
     }
 
     /**
+     * Combine reasoning deltas by block, separating each block with a blank line.
+     *
+     * @param \Cake\Collection\Collection<int, \Crustum\Ai\Streaming\Event\StreamEvent>|array<\Crustum\Ai\Streaming\Event\StreamEvent> $events Events
+     * @return string
+     */
+    public static function combine(Collection|array $events): string
+    {
+        $events = is_array($events) ? collection($events) : $events;
+
+        /** @var \Cake\Collection\CollectionInterface<int, string> $texts */
+        $texts = $events
+            ->filter(fn($event): bool => $event instanceof ReasoningDelta)
+            ->groupBy(fn(ReasoningDelta $event): string => $event->reasoningId)
+            ->map(fn(array $deltas): string => implode('', collection($deltas)->map(fn(ReasoningDelta $event): string => $event->delta)->toList()));
+
+        return static::joinReasoning($texts->toList());
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toArray(): array
@@ -41,18 +65,6 @@ class ReasoningDelta extends StreamEvent
             'delta' => $this->delta,
             'timestamp' => $this->timestamp,
             'summary' => $this->summary,
-        ];
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'reasoning-delta',
-            'id' => $this->reasoningId,
-            'delta' => $this->delta,
         ];
     }
 }

@@ -8,6 +8,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched before embeddings are generated.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class GeneratingEmbeddings extends AiEvent
 {
@@ -30,6 +32,6 @@ class GeneratingEmbeddings extends AiEvent
             'provider' => $provider,
             'model' => $model,
             'prompt' => $prompt,
-        ]);
+        ], $provider);
     }
 }

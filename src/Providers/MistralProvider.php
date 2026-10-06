@@ -5,16 +5,20 @@ namespace Crustum\Ai\Providers;
 
 use Cake\Event\EventManager;
 use Cake\Event\EventManagerInterface;
+use Crustum\Ai\Contracts\Gateway\AudioGateway;
 use Crustum\Ai\Contracts\Gateway\EmbeddingGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Gateway\TranscriptionGateway;
+use Crustum\Ai\Contracts\Providers\AudioProvider;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
 use Crustum\Ai\Gateway\Mistral\MistralGateway;
+use Crustum\Ai\Providers\Trait\GeneratesAudioTrait;
 use Crustum\Ai\Providers\Trait\GeneratesEmbeddingsTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTranscriptionsTrait;
+use Crustum\Ai\Providers\Trait\HasAudioGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasEmbeddingGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasTextGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasTranscriptionGatewayTrait;
@@ -24,11 +28,13 @@ use Override;
 /**
  * Mistral text, embeddings, and transcription provider.
  */
-class MistralProvider extends Provider implements EmbeddingProvider, TextProvider, TranscriptionProvider
+class MistralProvider extends Provider implements AudioProvider, EmbeddingProvider, TextProvider, TranscriptionProvider
 {
+    use GeneratesAudioTrait;
     use GeneratesEmbeddingsTrait;
     use GeneratesTextTrait;
     use GeneratesTranscriptionsTrait;
+    use HasAudioGatewayTrait;
     use HasEmbeddingGatewayTrait;
     use HasTextGatewayTrait;
     use HasTranscriptionGatewayTrait;
@@ -120,13 +126,23 @@ class MistralProvider extends Provider implements EmbeddingProvider, TextProvide
     }
 
     /**
+     * Get the provider's audio gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\AudioGateway
+     */
+    public function audioGateway(): AudioGateway
+    {
+        return $this->audioGateway ??= $this->mistralGateway();
+    }
+
+    /**
      * Get the name of the default text model.
      *
      * @return string
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? 'mistral-medium-latest';
+        return $this->config['models']['text']['default'] ?? 'mistral-large-2512';
     }
 
     /**
@@ -136,7 +152,7 @@ class MistralProvider extends Provider implements EmbeddingProvider, TextProvide
      */
     public function cheapestTextModel(): string
     {
-        return $this->config['models']['text']['cheapest'] ?? 'mistral-small-latest';
+        return $this->config['models']['text']['cheapest'] ?? 'mistral-small-2603';
     }
 
     /**
@@ -146,7 +162,7 @@ class MistralProvider extends Provider implements EmbeddingProvider, TextProvide
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'mistral-large-latest';
+        return $this->config['models']['text']['smartest'] ?? 'mistral-medium-3-5';
     }
 
     /**
@@ -156,7 +172,7 @@ class MistralProvider extends Provider implements EmbeddingProvider, TextProvide
      */
     public function defaultTranscriptionModel(): string
     {
-        return $this->config['models']['transcription']['default'] ?? 'voxtral-mini-latest';
+        return $this->config['models']['transcription']['default'] ?? 'voxtral-mini-2602';
     }
 
     /**
@@ -166,7 +182,7 @@ class MistralProvider extends Provider implements EmbeddingProvider, TextProvide
      */
     public function defaultEmbeddingsModel(): string
     {
-        return $this->config['models']['embeddings']['default'] ?? 'mistral-embed';
+        return $this->config['models']['embeddings']['default'] ?? 'mistral-embed-2312';
     }
 
     /**
@@ -177,5 +193,15 @@ class MistralProvider extends Provider implements EmbeddingProvider, TextProvide
     public function defaultEmbeddingsDimensions(): int
     {
         return $this->config['models']['embeddings']['dimensions'] ?? 1024;
+    }
+
+    /**
+     * Get the name of the default audio (TTS) model.
+     *
+     * @return string
+     */
+    public function defaultAudioModel(): string
+    {
+        return $this->config['models']['audio']['default'] ?? 'voxtral-mini-tts-2603';
     }
 }

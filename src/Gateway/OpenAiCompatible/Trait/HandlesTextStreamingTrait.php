@@ -7,9 +7,13 @@ use Cake\Utility\Text;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Streaming\Event\Error;
+use Crustum\Ai\Streaming\Event\ProviderToolEvent;
+use Crustum\Ai\Streaming\Event\ReasoningDelta;
+use Crustum\Ai\Streaming\Event\ReasoningEnd;
+use Crustum\Ai\Streaming\Event\ReasoningStart;
 use Crustum\Ai\Streaming\Event\StreamStart;
 use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Streaming\Event\TextEnd;
@@ -39,6 +43,7 @@ trait HandlesTextStreamingTrait
         object $streamBody,
     ): Generator {
         $messageId = $this->generateEventId();
+        $reasoningId = null;
         $streamStartEmitted = false;
         $textStartEmitted = false;
         $currentText = '';
@@ -85,6 +90,37 @@ trait HandlesTextStreamingTrait
                 ))->withInvocationId($invocationId);
             }
 
+            $reasoning = $delta['reasoning_content'] ?? $delta['reasoning'] ?? '';
+
+            if ($reasoning !== '') {
+                if ($reasoningId === null) {
+                    $reasoningId = $this->generateEventId();
+
+                    yield (new ReasoningStart(
+                        $this->generateEventId(),
+                        $reasoningId,
+                        time(),
+                    ))->withInvocationId($invocationId);
+                }
+
+                yield (new ReasoningDelta(
+                    $this->generateEventId(),
+                    $reasoningId,
+                    $reasoning,
+                    time(),
+                ))->withInvocationId($invocationId);
+            }
+
+            if ($reasoningId !== null && ((isset($delta['content']) && $delta['content'] !== '') || isset($delta['tool_calls']) || isset($delta['executed_tools']))) {
+                yield (new ReasoningEnd(
+                    $this->generateEventId(),
+                    $reasoningId,
+                    time(),
+                ))->withInvocationId($invocationId);
+
+                $reasoningId = null;
+            }
+
             if (isset($delta['content']) && $delta['content'] !== '') {
                 if (!$textStartEmitted) {
                     $textStartEmitted = true;
@@ -106,17 +142,27 @@ trait HandlesTextStreamingTrait
                 ))->withInvocationId($invocationId);
             }
 
+            foreach ($delta['executed_tools'] ?? [] as $executedTool) {
+                yield (new ProviderToolEvent(
+                    $this->generateEventId(),
+                    (string)($executedTool['index'] ?? ''),
+                    (string)($executedTool['name'] ?? $executedTool['type'] ?? ''),
+                    $executedTool,
+                    isset($executedTool['output']) ? 'completed' : 'in_progress',
+                    time(),
+                    provider: $provider->name(),
+                ))->withInvocationId($invocationId);
+            }
+
             if (isset($delta['tool_calls'])) {
                 foreach ($delta['tool_calls'] as $tcDelta) {
                     $idx = $tcDelta['index'];
 
-                    if (!isset($pendingToolCalls[$idx])) {
-                        $pendingToolCalls[$idx] = [
-                            'id' => $tcDelta['id'] ?? '',
-                            'name' => $tcDelta['function']['name'] ?? '',
-                            'arguments' => '',
-                        ];
-                    }
+                    $pendingToolCalls[$idx] ??= [
+                        'id' => $tcDelta['id'] ?? '',
+                        'name' => $tcDelta['function']['name'] ?? '',
+                        'arguments' => '',
+                    ];
 
                     if (isset($tcDelta['function']['arguments'])) {
                         $pendingToolCalls[$idx]['arguments'] .= $tcDelta['function']['arguments'];
@@ -131,6 +177,14 @@ trait HandlesTextStreamingTrait
             if (isset($data['usage'])) {
                 $usage = $this->extractUsage($data);
             }
+        }
+
+        if ($reasoningId !== null) {
+            yield (new ReasoningEnd(
+                $this->generateEventId(),
+                $reasoningId,
+                time(),
+            ))->withInvocationId($invocationId);
         }
 
         if ($textStartEmitted) {
@@ -157,7 +211,7 @@ trait HandlesTextStreamingTrait
             text: $currentText,
             toolCalls: $toolCalls,
             finishReason: $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
-            usage: $usage ?? new Usage(0, 0),
+            usage: $usage ?? new TextUsage(0, 0),
             meta: new Meta($provider->name(), $responseModel),
         );
     }

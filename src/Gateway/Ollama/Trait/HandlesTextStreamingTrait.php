@@ -8,9 +8,12 @@ use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Streaming\Event\Error;
+use Crustum\Ai\Streaming\Event\ReasoningDelta;
+use Crustum\Ai\Streaming\Event\ReasoningEnd;
+use Crustum\Ai\Streaming\Event\ReasoningStart;
 use Crustum\Ai\Streaming\Event\StreamStart;
 use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Streaming\Event\TextEnd;
@@ -40,6 +43,7 @@ trait HandlesTextStreamingTrait
         object $streamBody,
     ): Generator {
         $messageId = $this->generateEventId();
+        $reasoningId = null;
         $streamStartEmitted = false;
         $textStartEmitted = false;
         $currentText = '';
@@ -75,7 +79,37 @@ trait HandlesTextStreamingTrait
                 ))->withInvocationId($invocationId);
             }
 
+            $thinking = $data['message']['thinking'] ?? '';
             $content = $data['message']['content'] ?? '';
+
+            if ($thinking !== '') {
+                if ($reasoningId === null) {
+                    $reasoningId = $this->generateEventId();
+
+                    yield (new ReasoningStart(
+                        $this->generateEventId(),
+                        $reasoningId,
+                        time(),
+                    ))->withInvocationId($invocationId);
+                }
+
+                yield (new ReasoningDelta(
+                    $this->generateEventId(),
+                    $reasoningId,
+                    $thinking,
+                    time(),
+                ))->withInvocationId($invocationId);
+            }
+
+            if ($reasoningId !== null && ($content !== '' || !empty($data['message']['tool_calls']))) {
+                yield (new ReasoningEnd(
+                    $this->generateEventId(),
+                    $reasoningId,
+                    time(),
+                ))->withInvocationId($invocationId);
+
+                $reasoningId = null;
+            }
 
             if ($content !== '') {
                 if (!$textStartEmitted) {
@@ -100,14 +134,12 @@ trait HandlesTextStreamingTrait
 
             if (!empty($data['message']['tool_calls'])) {
                 foreach ($data['message']['tool_calls'] as $index => $toolCall) {
-                    if (!isset($pendingToolCalls[$index])) {
-                        $pendingToolCalls[$index] = [
-                            'id' => null,
-                            'name' => '',
-                            'arguments' => [],
-                            'argumentsBuffer' => '',
-                        ];
-                    }
+                    $pendingToolCalls[$index] ??= [
+                        'id' => null,
+                        'name' => '',
+                        'arguments' => [],
+                        'argumentsBuffer' => '',
+                    ];
 
                     if (isset($toolCall['id'])) {
                         $pendingToolCalls[$index]['id'] = $toolCall['id'];
@@ -135,10 +167,7 @@ trait HandlesTextStreamingTrait
             }
 
             if (isset($data['prompt_eval_count']) || isset($data['eval_count'])) {
-                $usage = new Usage(
-                    $data['prompt_eval_count'] ?? 0,
-                    $data['eval_count'] ?? 0,
-                );
+                $usage = $this->extractUsage($data);
             }
 
             if ($data['done'] ?? false) {
@@ -146,6 +175,14 @@ trait HandlesTextStreamingTrait
 
                 break;
             }
+        }
+
+        if ($reasoningId !== null) {
+            yield (new ReasoningEnd(
+                $this->generateEventId(),
+                $reasoningId,
+                time(),
+            ))->withInvocationId($invocationId);
         }
 
         if ($textStartEmitted) {
@@ -186,7 +223,7 @@ trait HandlesTextStreamingTrait
             text: $currentText,
             toolCalls: $toolCalls,
             finishReason: Value::filled($toolCalls) ? FinishReason::ToolCalls : $this->extractFinishReason($lastData),
-            usage: $usage ?? new Usage(0, 0),
+            usage: $usage ?? new TextUsage(0, 0),
             meta: new Meta($provider->name(), $lastData['model'] ?? $model),
         );
     }

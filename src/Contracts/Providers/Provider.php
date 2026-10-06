@@ -38,4 +38,13 @@ interface Provider
      * @return array<string, mixed>
      */
     public function additionalConfiguration(): array;
+
+    /**
+     * Get a provider instance that sends the given HTTP headers with each request.
+     *
+     * @param array<string, string> $headers HTTP headers to send
+     * @return static
+     * @internal
+     */
+    public function withHeaders(array $headers): static;
 }

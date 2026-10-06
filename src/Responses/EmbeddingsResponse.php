@@ -5,6 +5,7 @@ namespace Crustum\Ai\Responses;
 
 use Countable;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\Usage;
 use IteratorAggregate;
 use JsonSerializable;
 use Traversable;
@@ -22,10 +23,10 @@ class EmbeddingsResponse implements Countable, IteratorAggregate, JsonSerializab
      * Create a new embeddings response instance.
      *
      * @param array<int, array<float>> $embeddings The generated embeddings
-     * @param int $tokens Number of tokens used
+     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage for the request
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata about the response
      */
-    public function __construct(public array $embeddings, public int $tokens, public Meta $meta)
+    public function __construct(public array $embeddings, public Usage $usage, public Meta $meta)
     {
     }
 
@@ -48,7 +49,7 @@ class EmbeddingsResponse implements Countable, IteratorAggregate, JsonSerializab
     {
         return [
             'embeddings' => $this->embeddings,
-            'tokens' => $this->tokens,
+            'usage' => $this->usage,
             'meta' => $this->meta,
         ];
     }

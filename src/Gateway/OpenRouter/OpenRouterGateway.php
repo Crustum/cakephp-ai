@@ -7,11 +7,13 @@ use Cake\Event\EventManagerInterface;
 use Cake\Utility\Hash;
 use Crustum\Ai\Contracts\Files\TranscribableAudio;
 use Crustum\Ai\Contracts\Gateway\Gateway;
+use Crustum\Ai\Contracts\Gateway\RerankingGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Providers\AudioProvider;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
 use Crustum\Ai\Contracts\Providers\Provider;
+use Crustum\Ai\Contracts\Providers\RerankingProvider;
 use Crustum\Ai\Contracts\Providers\SupportsWebFetch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
@@ -32,10 +34,15 @@ use Crustum\Ai\Providers\Tools\WebFetch;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Responses\AudioResponse;
 use Crustum\Ai\Responses\Data\GeneratedImage;
+use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\RankedDocument;
+use Crustum\Ai\Responses\Data\RerankingUsage;
+use Crustum\Ai\Responses\Data\TranscriptionUsage;
 use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\EmbeddingsResponse;
 use Crustum\Ai\Responses\ImageResponse;
+use Crustum\Ai\Responses\RerankingResponse;
 use Crustum\Ai\Responses\TranscriptionResponse;
 use Crustum\Ai\Utility\Reflection;
 use InvalidArgumentException;
@@ -45,7 +52,7 @@ use RuntimeException;
 /**
  * OpenRouter API gateway.
  */
-class OpenRouterGateway implements Gateway, StepTextGateway
+class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
 {
     use BuildsTextRequestsTrait;
     use CreatesOpenRouterClientTrait;
@@ -134,6 +141,7 @@ class OpenRouterGateway implements Gateway, StepTextGateway
      * @param string|null $size Image size
      * @param string|null $quality Image quality
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      */
     public function generateImage(
@@ -144,6 +152,7 @@ class OpenRouterGateway implements Gateway, StepTextGateway
         ?string $size = null,
         ?string $quality = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse {
         $imageOptions = $provider->defaultImageOptions($size, $quality);
 
@@ -155,19 +164,23 @@ class OpenRouterGateway implements Gateway, StepTextGateway
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider, $timeout ?? 120)
-                ->post('chat/completions', array_filter([
+                ->post('chat/completions', array_merge($providerOptions, array_filter([
                     'model' => $model,
                     'messages' => $this->buildImageMessages($prompt, $attachments),
                     'modalities' => ['image'],
                     'image_config' => $imageConfig ?: null,
-                ])),
+                ]))),
         );
 
         $data = $response->getJson() ?? [];
 
         $message = $data['choices'][0]['message'] ?? [];
 
-        $images = collection($message['images'] ?? [])->map(function (array $image): ?GeneratedImage {
+        /** @var array<int, array<string, mixed>> $imageItems */
+        $imageItems = $message['images'] ?? [];
+
+        /** @var array<int, \Crustum\Ai\Responses\Data\GeneratedImage> $images */
+        $images = collection($imageItems)->map(function (array $image): ?GeneratedImage {
             $url = $image['image_url']['url'] ?? '';
 
             if (preg_match('/^data:(image\/[\w+.-]+);base64,(.+)$/', $url, $matches) === 1) {
@@ -181,7 +194,7 @@ class OpenRouterGateway implements Gateway, StepTextGateway
 
         return new ImageResponse(
             $images,
-            new Usage($usage['prompt_tokens'] ?? 0, $usage['completion_tokens'] ?? 0),
+            new ImageUsage($usage['prompt_tokens'] ?? 0, $usage['completion_tokens'] ?? 0),
             new Meta($provider->name(), $data['model'] ?? $model),
         );
     }
@@ -214,6 +227,7 @@ class OpenRouterGateway implements Gateway, StepTextGateway
      * @param string $voice Voice identifier
      * @param string|null $instructions Optional instructions
      * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\AudioResponse
      */
     public function generateAudio(
@@ -223,23 +237,24 @@ class OpenRouterGateway implements Gateway, StepTextGateway
         string $voice,
         ?string $instructions = null,
         int $timeout = 30,
+        array $providerOptions = [],
     ): AudioResponse {
         $format = $this->audioResponseFormat($model);
 
         $response = $this->withErrorHandling(
             $provider->name(),
-            fn(): HttpResponseInterface => $this->client($provider, $timeout)->post('audio/speech', array_filter([
+            fn(): HttpResponseInterface => $this->client($provider, $timeout)->post('audio/speech', array_merge(['speed' => 1.0], $providerOptions, array_filter([
                 'model' => $model,
                 'input' => $text,
                 'voice' => $this->resolveVoice($model, $voice),
                 'response_format' => $format,
-                'speed' => 1.0,
                 'instructions' => $instructions,
-            ])),
+            ]))),
         );
 
         return new AudioResponse(
             base64_encode($response->getStringBody()),
+            new Usage(),
             new Meta($provider->name(), $model),
             $this->audioResponseMimeType($format),
         );
@@ -363,9 +378,10 @@ class OpenRouterGateway implements Gateway, StepTextGateway
         return new TranscriptionResponse(
             $data['text'] ?? '',
             collection([]),
-            new Usage(
-                (int)Hash::get($data, 'usage.input_tokens', 0),
-                (int)Hash::get($data, 'usage.output_tokens', 0),
+            new TranscriptionUsage(
+                inputTokens: (int)Hash::get($data, 'usage.input_tokens', 0),
+                outputTokens: (int)Hash::get($data, 'usage.output_tokens', 0),
+                audioSeconds: Hash::get($data, 'usage.seconds'),
             ),
             new Meta($provider->name(), $model),
         );
@@ -386,9 +402,10 @@ class OpenRouterGateway implements Gateway, StepTextGateway
             'audio/mp4', 'audio/m4a', 'audio/x-m4a' => 'm4a',
             'audio/flac', 'audio/x-flac' => 'flac',
             'audio/aac' => 'aac',
+            'audio/aiff', 'audio/x-aiff' => 'aiff',
             'audio/mpeg', 'audio/mp3' => 'mp3',
             default => throw new InvalidArgumentException(
-                sprintf('Unsupported audio MIME type [%s] for OpenRouter transcription. Supported types: audio/wav, audio/mp3, audio/mpeg, audio/flac, audio/m4a, audio/mp4, audio/ogg, audio/webm, audio/aac.', $mimeType),
+                sprintf('Unsupported audio MIME type [%s] for OpenRouter. Supported types: audio/wav, audio/mp3, audio/mpeg, audio/flac, audio/m4a, audio/mp4, audio/ogg, audio/webm, audio/aac, audio/aiff.', $mimeType),
             ),
         };
     }
@@ -427,9 +444,58 @@ class OpenRouterGateway implements Gateway, StepTextGateway
 
         $this->validateTextResponse($data);
 
+        /** @var array<int, array<string, mixed>> $rows */
+        $rows = $data['data'] ?? [];
+
         return new EmbeddingsResponse(
-            collection($data['data'] ?? [])->extract('embedding')->toList(),
-            $data['usage']['prompt_tokens'] ?? 0,
+            collection($rows)->extract('embedding')->toList(),
+            new Usage($data['usage']['prompt_tokens'] ?? 0),
+            new Meta($provider->name(), $model),
+        );
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function rerank(
+        RerankingProvider $provider,
+        string $model,
+        array $documents,
+        string $query,
+        ?int $limit = null,
+        int $timeout = 30,
+        array $providerOptions = [],
+    ): RerankingResponse {
+        $response = $this->withErrorHandling(
+            $provider->name(),
+            fn(): HttpResponseInterface => $this->client($provider, $timeout)->post('rerank', array_merge($providerOptions, array_filter([
+                'model' => $model,
+                'query' => $query,
+                'documents' => $documents,
+                'top_n' => $limit,
+            ]))),
+        );
+
+        $data = $response->getJson() ?? [];
+
+        $this->validateTextResponse($data);
+
+        /** @var array<int, array<string, mixed>> $resultItems */
+        $resultItems = $data['results'];
+
+        /** @var array<int, \Crustum\Ai\Responses\Data\RankedDocument> $results */
+        $results = collection($resultItems)->map(fn(array $result): RankedDocument => new RankedDocument(
+            index: $result['index'],
+            document: $documents[$result['index']],
+            score: $result['relevance_score'],
+        ))->toList();
+
+        return new RerankingResponse(
+            $results,
+            new RerankingUsage(
+                inputTokens: $data['usage']['total_tokens'] ?? 0,
+                searchUnits: $data['usage']['search_units'] ?? null,
+            ),
             new Meta($provider->name(), $model),
         );
     }

@@ -12,11 +12,10 @@ namespace Crustum\Ai\Contracts;
 interface HasMiddleware
 {
     /**
-     * Get the agent's prompt middleware.
+     * Get the middleware wrapping each generation step of the agent.
      *
-     * Returns an array of middleware classes or callables that will be applied to prompts
-     * in the order they are defined. Middleware can modify prompts, add context, enforce
-     * policies, or perform other transformations.
+     * Returns an array of middleware classes or callables that will be applied to each
+     * generation step in the order they are defined.
      *
      * @return array The middleware stack.
      */

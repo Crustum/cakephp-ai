@@ -5,7 +5,7 @@ namespace Crustum\Ai\Responses;
 
 use ArrayAccess;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Trait\ProvidesStructuredResponseTrait;
 use JsonSerializable;
 use Override;
@@ -15,6 +15,8 @@ use Override;
  *
  * Agent response with structured output that conforms to a schema.
  * Implements ArrayAccess for convenient data access.
+ *
+ * @implements \ArrayAccess<string, mixed>
  */
 class StructuredAgentResponse extends AgentResponse implements ArrayAccess, JsonSerializable
 {
@@ -26,10 +28,10 @@ class StructuredAgentResponse extends AgentResponse implements ArrayAccess, Json
      * @param string $invocationId Invocation identifier
      * @param array<string, mixed> $structured Structured output data
      * @param string $text Text representation
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Token usage
      * @param \Crustum\Ai\Responses\Data\Meta $meta Response metadata
      */
-    public function __construct(string $invocationId, array $structured, string $text, Usage $usage, Meta $meta)
+    public function __construct(string $invocationId, array $structured, string $text, TextUsage $usage, Meta $meta)
     {
         parent::__construct($invocationId, $text, $usage, $meta);
 

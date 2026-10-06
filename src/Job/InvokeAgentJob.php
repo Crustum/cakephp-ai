@@ -3,17 +3,22 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Job;
 
-use Cake\Queue\Job\JobInterface;
 use Cake\Queue\Job\Message;
 use Crustum\Ai\Approvals\Decisions;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Providers\Provider as AbstractProvider;
 use Interop\Queue\Processor;
 
 /**
  * Invoke an agent asynchronously via Cake Queue.
+ *
+ * Stateless by contract: the job is built with no constructor arguments
+ * (`AiJobProcessor` / `Message::getCallable()`) and all job data travels in
+ * the message payload. Business logic lives in `run()`; the lifecycle is
+ * owned by `Crustum\Ai\Queue\AiJobProcessor`.
  */
-class InvokeAgentJob implements JobInterface
+class InvokeAgentJob implements AiJobInterface
 {
     use DispatchableTrait;
 
@@ -23,7 +28,7 @@ class InvokeAgentJob implements JobInterface
      * @param \Crustum\Ai\Contracts\Agent $agent The agent to invoke
      * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return array<string, mixed>
      */
@@ -31,7 +36,7 @@ class InvokeAgentJob implements JobInterface
         Agent $agent,
         Decisions|string $prompt = '',
         array $attachments = [],
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
     ): array {
         return [
@@ -49,7 +54,7 @@ class InvokeAgentJob implements JobInterface
      * @param \Crustum\Ai\Contracts\Agent $agent The agent to invoke
      * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return void
      */
@@ -57,7 +62,7 @@ class InvokeAgentJob implements JobInterface
         Agent $agent,
         Decisions|string $prompt = '',
         array $attachments = [],
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
     ): void {
         static::push(static::payload($agent, $prompt, $attachments, $provider, $model));
@@ -71,16 +76,18 @@ class InvokeAgentJob implements JobInterface
      */
     public function execute(Message $message): ?string
     {
-        return $this->run($message->getArgument() ?? []);
+        $this->response = $this->run($message->getArgument() ?? []);
+
+        return Processor::ACK;
     }
 
     /**
      * Run the job from a decoded payload (also used by tests).
      *
      * @param array<string, mixed> $data Job payload
-     * @return string
+     * @return mixed The produced agent response
      */
-    public function run(array $data): string
+    public function run(array $data): mixed
     {
         /** @var \Crustum\Ai\Contracts\Agent $agent */
         $agent = static::unpack($data['agent'] ?? null);
@@ -88,14 +95,10 @@ class InvokeAgentJob implements JobInterface
         $prompt = static::unpack($data['prompt'] ?? null) ?? '';
         /** @var array<mixed> $attachments */
         $attachments = static::unpack($data['attachments'] ?? null) ?? [];
-        /** @var \Crustum\Ai\Enums\Lab|array|string|null $provider */
+        /** @var \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider */
         $provider = static::unpack($data['provider'] ?? null);
         $model = isset($data['model']) && is_string($data['model']) ? $data['model'] : null;
 
-        $response = $agent->prompt($prompt, $attachments, $provider, $model);
-
-        PendingDispatch::resolve(static::class, $response);
-
-        return Processor::ACK;
+        return $agent->prompt($prompt, $attachments, $provider, $model);
     }
 }

@@ -2,14 +2,22 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Crustum\Ai\Files\Base64Document;
 use Crustum\Ai\Files\Base64Image;
+use Crustum\Ai\Files\Document;
+use Crustum\Ai\Files\LocalAudio;
+use Crustum\Ai\Files\LocalDocument;
 use Crustum\Ai\Files\LocalImage;
 use Crustum\Ai\Files\RemoteDocument;
 use Crustum\Ai\Files\RemoteImage;
+use Crustum\Ai\Files\StoredDocument;
+use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolUsingAgent;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 use Crustum\Ai\Test\Support\IntegrationPrompts;
+use Crustum\Ai\Test\Support\Storage\LocalDisk;
+use Laminas\Diactoros\UploadedFile;
 
 beforeEach(function (): void {
     Configure::write('Ai.providers.mistral', [
@@ -159,6 +167,184 @@ test('remote document maps to document url', function (): void {
         return $docBlock !== null
             && $docBlock['document_url'] === 'https://example.com/report.pdf';
     });
+});
+
+test('base64 document maps to an inline document url', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('I see a document')]);
+
+    $document = (new Base64Document(base64_encode('fake-pdf-content'), 'application/pdf'))->as('report.pdf');
+
+    agent('You are helpful.')->prompt(
+        'What is in this document?',
+        attachments: [$document],
+        provider: 'mistral',
+    );
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $content = $body['messages'][1]['content'] ?? $body['messages'][0]['content'];
+
+        if (! is_array($content)) {
+            return false;
+        }
+
+        return collect($content)->filter(fn($m): bool => ($m['type'] ?? null) === 'document_url')->first() === [
+            'type' => 'document_url',
+            'document_url' => 'data:application/pdf;base64,' . base64_encode('fake-pdf-content'),
+            'document_name' => 'report.pdf',
+        ];
+    });
+});
+
+test('local document maps to an inline document url', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('I see a document')]);
+
+    $path = __DIR__ . '/../../../Fixtures/document.txt';
+
+    agent('You are helpful.')->prompt(
+        'What is in this document?',
+        attachments: [new LocalDocument($path)],
+        provider: 'mistral',
+    );
+
+    aiAssertHttpSent(function (AiHttpRequest $request) use ($path): bool {
+        $body = json_decode($request->body(), true);
+        $content = $body['messages'][1]['content'] ?? $body['messages'][0]['content'];
+
+        if (! is_array($content)) {
+            return false;
+        }
+
+        return collect($content)->filter(fn($m): bool => ($m['type'] ?? null) === 'document_url')->first() === [
+            'type' => 'document_url',
+            'document_url' => 'data:text/plain;base64,' . base64_encode((string)file_get_contents($path)),
+            'document_name' => 'document.txt',
+        ];
+    });
+});
+
+test('stored document maps to an inline document url', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('I see a document')]);
+    LocalDisk::fake('docs');
+    LocalDisk::put('docs', 'notes.txt', 'stored text contents');
+
+    agent('You are helpful.')->prompt(
+        'What is in this document?',
+        attachments: [new StoredDocument('notes.txt', 'docs')],
+        provider: 'mistral',
+    );
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $content = $body['messages'][1]['content'] ?? $body['messages'][0]['content'];
+
+        if (! is_array($content)) {
+            return false;
+        }
+
+        return collect($content)->filter(fn($m): bool => ($m['type'] ?? null) === 'document_url')->first() === [
+            'type' => 'document_url',
+            'document_url' => 'data:text/plain;base64,' . base64_encode('stored text contents'),
+            'document_name' => 'notes.txt',
+        ];
+    });
+});
+
+test('uploaded document maps to an inline document url', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('I see a document')]);
+
+    $resource = fopen('php://temp', 'r+');
+    fwrite($resource, 'uploaded text contents');
+    rewind($resource);
+    $upload = new UploadedFile($resource, 22, UPLOAD_ERR_OK, 'notes.txt', 'text/plain');
+
+    agent('You are helpful.')->prompt(
+        'What is in this document?',
+        attachments: [$upload],
+        provider: 'mistral',
+    );
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $content = $body['messages'][1]['content'] ?? $body['messages'][0]['content'];
+
+        if (! is_array($content)) {
+            return false;
+        }
+
+        return collect($content)->filter(fn($m): bool => ($m['type'] ?? null) === 'document_url')->first() === [
+            'type' => 'document_url',
+            'document_url' => 'data:text/plain;base64,' . base64_encode('uploaded text contents'),
+            'document_name' => 'notes.txt',
+        ];
+    });
+});
+
+test('uploaded avif image maps to an image url', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('I see an image')]);
+
+    $resource = fopen('php://temp', 'r+');
+    fwrite($resource, 'avif-bytes');
+    rewind($resource);
+    $upload = new UploadedFile($resource, 10, UPLOAD_ERR_OK, 'shot.avif', 'image/avif');
+
+    agent('You are helpful.')->prompt(
+        'What is in this image?',
+        attachments: [$upload],
+        provider: 'mistral',
+    );
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $content = $body['messages'][1]['content'] ?? $body['messages'][0]['content'];
+
+        if (! is_array($content)) {
+            return false;
+        }
+
+        return collect($content)->filter(fn($m): bool => ($m['type'] ?? null) === 'image_url')->first() === [
+            'type' => 'image_url',
+            'image_url' => ['url' => 'data:image/avif;base64,' . base64_encode('avif-bytes')],
+        ];
+    });
+});
+
+test('document without a name or mime type falls back to a pdf data uri', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse('I see a document')]);
+
+    agent('You are helpful.')->prompt(
+        'What is in this document?',
+        attachments: [Document::fromString('nameless contents')],
+        provider: 'mistral',
+    );
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $content = $body['messages'][1]['content'] ?? $body['messages'][0]['content'];
+
+        if (! is_array($content)) {
+            return false;
+        }
+
+        return collect($content)->filter(fn($m): bool => ($m['type'] ?? null) === 'document_url')->first() === [
+            'type' => 'document_url',
+            'document_url' => 'data:application/pdf;base64,' . base64_encode('nameless contents'),
+            'document_name' => 'document',
+        ];
+    });
+});
+
+test('unsupported attachment type throws', function (): void {
+    aiHttpFake(['*' => $this->fakeTextResponse()]);
+
+    expect(fn(): AgentResponse => agent('You are helpful.')->prompt(
+        'What is in this recording?',
+        attachments: [new LocalAudio(__DIR__ . '/../../../Fixtures/audio.mp3')],
+        provider: 'mistral',
+    ))->toThrow(
+        InvalidArgumentException::class,
+        'Mistral only supports image and document attachments. Unsupported attachment type [' . LocalAudio::class . '].',
+    );
 });
 
 test('system instructions are in messages array', function (): void {

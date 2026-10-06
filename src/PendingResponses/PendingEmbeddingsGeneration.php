@@ -12,7 +12,7 @@ use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Enums\Lab;
-use Crustum\Ai\Event\ProviderFailedOverEvent;
+use Crustum\Ai\Event\ProviderFailedOver;
 use Crustum\Ai\Exception\EmbeddingsCountMismatchException;
 use Crustum\Ai\Exception\FailoverableException;
 use Crustum\Ai\Files\Audio;
@@ -29,6 +29,7 @@ use Crustum\Ai\PendingResponses\Trait\ResolvesProviderOptionsTrait;
 use Crustum\Ai\Prompts\QueuedEmbeddingsPrompt;
 use Crustum\Ai\Providers\Provider as AbstractProvider;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\EmbeddingsResponse;
 use Crustum\Ai\Responses\QueuedEmbeddingsResponse;
 use Crustum\Ai\Trait\ConditionableTrait;
@@ -178,7 +179,9 @@ class PendingEmbeddingsGeneration
 
             $dimensions = $this->dimensions ?: $provider->defaultEmbeddingsDimensions();
 
-            $providerOptions = $this->resolveProviderOptions($provider);
+            [$providerOptions, $headers] = $this->resolveProviderOptionsAndHeaders($provider);
+
+            $provider = $provider->withHeaders($headers);
 
             try {
                 return $this->shouldCacheIndividually()
@@ -187,7 +190,7 @@ class PendingEmbeddingsGeneration
             } catch (FailoverableException $e) {
                 $lastException = $e;
 
-                EventManager::instance()->dispatch(new ProviderFailedOverEvent($provider->name(), $model, $e));
+                EventManager::instance()->dispatch(new ProviderFailedOver($provider->name(), $model, $e, $provider));
 
                 continue;
             }
@@ -233,7 +236,7 @@ class PendingEmbeddingsGeneration
         $cached = $this->cachedIndividualEmbeddings($provider, $model, $dimensions, $providerOptions);
 
         if (count($this->inputs) === count($cached)) {
-            return new EmbeddingsResponse(array_values($cached), 0, new Meta($provider->name(), $model));
+            return new EmbeddingsResponse(array_values($cached), new Usage(), new Meta($provider->name(), $model));
         }
 
         $uncachedInputs = array_diff_key($this->inputs, $cached);
@@ -252,7 +255,7 @@ class PendingEmbeddingsGeneration
 
         ksort($embeddings);
 
-        return new EmbeddingsResponse(array_values($embeddings), $response->tokens, $response->meta);
+        return new EmbeddingsResponse(array_values($embeddings), $response->usage, $response->meta);
     }
 
     /**
@@ -274,7 +277,7 @@ class PendingEmbeddingsGeneration
         if (!is_null($response)) {
             $response = json_decode((string)$response, true);
 
-            return new EmbeddingsResponse($response['embeddings'], 0, new Meta(
+            return new EmbeddingsResponse($response['embeddings'], new Usage(), new Meta(
                 provider: $response['meta']['provider'],
                 model: $response['meta']['model'],
             ));
@@ -507,7 +510,7 @@ class PendingEmbeddingsGeneration
                     $provider,
                     $model,
                     $this->timeout,
-                    is_array($this->providerOptions) ? $this->providerOptions : [],
+                    $this->queuedProviderOptions(),
                 ),
             );
         }
@@ -556,6 +559,6 @@ class PendingEmbeddingsGeneration
         }
 
         return $this->cacheIndividually
-            ?? (bool)Configure::read('Ai.caching.embeddings.individually', false);
+            ?? (bool)Configure::read('Ai.caching.embeddings.individually', true);
     }
 }

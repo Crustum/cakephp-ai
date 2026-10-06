@@ -14,7 +14,7 @@ beforeEach(function (): void {
     ]);
 });
 
-test('transcription request posts to speech-to-text with model, language, and diarize flag', function (): void {
+test('transcription request posts to speech-to-text with model, language code, and diarize flag', function (): void {
     aiHttpFake(['*' => fakeElevenTranscriptionResponse()]);
 
     Transcription::of(base64_encode('fake-audio'))
@@ -24,7 +24,7 @@ test('transcription request posts to speech-to-text with model, language, and di
     aiAssertHttpSent(fn(AiHttpRequest $request): bool => $request->url() === 'https://api.elevenlabs.io/v1/speech-to-text'
         && $request->isMultipart()
         && multipartField($request, 'model_id') === 'scribe_v2'
-        && multipartField($request, 'language') === 'en'
+        && multipartField($request, 'language_code') === 'en'
         && multipartField($request, 'diarize') === 'false');
 });
 
@@ -103,6 +103,18 @@ test('transcription uses default model when none specified', function (): void {
     );
 });
 
+test('transcription sends enable_logging as a query parameter instead of in the body', function (): void {
+    aiHttpFake(['*' => fakeElevenTranscriptionResponse()]);
+
+    Transcription::of(base64_encode('fake-audio'))
+        ->withProviderOptions(['enable_logging' => false, 'tag_audio_events' => 'true'])
+        ->generate(provider: 'eleven', model: 'scribe_v2');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => $request->url() === 'https://api.elevenlabs.io/v1/speech-to-text?enable_logging=false'
+        && multipartField($request, 'enable_logging') === null
+        && multipartField($request, 'tag_audio_events') === 'true');
+});
+
 test('transcription throws when the API returns an error', function (): void {
     aiHttpFake(['*' => aiHttpResponse(['detail' => 'unauthorized'], 401)]);
 
@@ -122,3 +134,19 @@ function fakeElevenTranscriptionResponse(bool $diarized = false): AiHttpResponse
 
     return aiHttpResponse($body);
 }
+
+test('transcription reports the transcribed audio duration', function (): void {
+    aiHttpFake(['*' => aiHttpResponse(['text' => 'Hello, world!', 'audio_duration_secs' => 41.2])]);
+
+    $response = Transcription::of(base64_encode('fake-audio'))->generate(provider: 'eleven', model: 'scribe_v2');
+
+    expect($response->usage->audioSeconds)->toBe(41.2);
+});
+
+test('transcription leaves the audio duration null when not returned', function (): void {
+    aiHttpFake(['*' => aiHttpResponse(['text' => 'Hello, world!'])]);
+
+    $response = Transcription::of(base64_encode('fake-audio'))->generate(provider: 'eleven', model: 'scribe_v2');
+
+    expect($response->usage->audioSeconds)->toBeNull();
+});

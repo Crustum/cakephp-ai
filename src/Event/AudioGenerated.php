@@ -9,6 +9,8 @@ use Crustum\Ai\Responses\AudioResponse;
 
 /**
  * Dispatched after audio is generated.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class AudioGenerated extends AiEvent
 {
@@ -34,6 +36,6 @@ class AudioGenerated extends AiEvent
             'model' => $model,
             'prompt' => $prompt,
             'response' => $response,
-        ]);
+        ], $provider);
     }
 }

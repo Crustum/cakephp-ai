@@ -6,8 +6,10 @@ namespace Crustum\Ai\Test\Fixtures\ConversationStores;
 use Cake\Collection\Collection;
 use Cake\Utility\Text;
 use Crustum\Ai\Contracts\ConversationStore;
+use Crustum\Ai\Messages\UserMessage;
 use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Responses\AgentResponse;
+use Throwable;
 
 class InMemoryConversationStore implements ConversationStore
 {
@@ -17,7 +19,7 @@ class InMemoryConversationStore implements ConversationStore
 
     public array $approvalResults = [];
 
-    public function latestConversationId(string $participantType, string|int $participantId): ?string
+    public function latestConversationId(string $participantType, string|int $participantId, string $agent): ?string
     {
         $matches = array_filter(
             $this->conversations,
@@ -28,9 +30,9 @@ class InMemoryConversationStore implements ConversationStore
         return $matches === [] ? null : array_key_last($matches);
     }
 
-    public function storeConversation(?string $participantType, string|int|null $participantId, string $title): string
+    public function storeConversation(?string $participantType, string|int|null $participantId, string $title, ?string $id = null): string
     {
-        $id = Text::uuid();
+        $id ??= Text::uuid();
 
         $this->conversations[$id] = [
             'participant_type' => $participantType,
@@ -45,7 +47,8 @@ class InMemoryConversationStore implements ConversationStore
         string $conversationId,
         ?string $participantType,
         string|int|null $participantId,
-        AgentPrompt $prompt,
+        string $agent,
+        UserMessage $message,
     ): string {
         $id = Text::uuid();
 
@@ -55,7 +58,7 @@ class InMemoryConversationStore implements ConversationStore
             'participant_type' => $participantType,
             'participant_id' => $participantId,
             'role' => 'user',
-            'content' => $prompt->prompt,
+            'content' => $message->content,
         ];
 
         return $id;
@@ -67,6 +70,7 @@ class InMemoryConversationStore implements ConversationStore
         string|int|null $participantId,
         AgentPrompt $prompt,
         AgentResponse $response,
+        ?Throwable $exception = null,
     ): ?string {
         $id = Text::uuid();
 
@@ -91,14 +95,10 @@ class InMemoryConversationStore implements ConversationStore
 
     public function storeApprovalResults(
         string $conversationId,
-        ?string $participantType,
-        string|int|null $participantId,
         array $toolResults,
     ): void {
         $this->approvalResults[] = [
             'conversation_id' => $conversationId,
-            'participant_type' => $participantType,
-            'participant_id' => $participantId,
             'tool_results' => $toolResults,
         ];
     }

@@ -121,46 +121,35 @@ function timeoutFakeGroqTextResponse(string $text): AiHttpResponseDefinition
 
 function timeoutFakeGeminiToolCallResponse(): AiHttpResponseDefinition
 {
-    return aiHttpResponse([
-        'candidates' => [[
-            'content' => [
-                'parts' => [[
-                    'functionCall' => [
-                        'id' => 'call_123',
-                        'name' => 'FixedNumberGenerator',
-                        'args' => (object)[],
-                    ],
-                ]],
-                'role' => 'model',
-            ],
-            'finishReason' => 'STOP',
-        ]],
-        'usageMetadata' => [
-            'promptTokenCount' => 10,
-            'candidatesTokenCount' => 5,
-            'totalTokenCount' => 15,
-        ],
-        'modelVersion' => 'gemini-3.5-flash',
-    ]);
+    return aiHttpResponse(timeoutFakeGeminiInteraction([[
+        'type' => 'function_call',
+        'id' => 'call_123',
+        'name' => 'FixedNumberGenerator',
+        'arguments' => (object)[],
+    ]]));
 }
 
 function timeoutFakeGeminiTextResponse(string $text): AiHttpResponseDefinition
 {
-    return aiHttpResponse([
-        'candidates' => [[
-            'content' => [
-                'parts' => [['text' => $text]],
-                'role' => 'model',
-            ],
-            'finishReason' => 'STOP',
-        ]],
-        'usageMetadata' => [
-            'promptTokenCount' => 10,
-            'candidatesTokenCount' => 5,
-            'totalTokenCount' => 15,
+    return aiHttpResponse(timeoutFakeGeminiInteraction([[
+        'type' => 'model_output',
+        'content' => [['type' => 'text', 'text' => $text]],
+    ]]));
+}
+
+function timeoutFakeGeminiInteraction(array $steps): array
+{
+    return [
+        'id' => 'int_timeout',
+        'model' => 'gemini-3.5-flash',
+        'status' => 'completed',
+        'steps' => $steps,
+        'usage' => [
+            'total_input_tokens' => 10,
+            'total_output_tokens' => 5,
+            'total_tokens' => 15,
         ],
-        'modelVersion' => 'gemini-3.5-flash',
-    ]);
+    ];
 }
 
 test('openai timeout is preserved in tool call follow up', function (): void {

@@ -29,6 +29,6 @@ trait NormalizesMcpResultTrait
      */
     protected function json(array $content): string
     {
-        return json_encode($content, JSON_UNESCAPED_UNICODE) ?: '';
+        return json_encode($content, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '';
     }
 }

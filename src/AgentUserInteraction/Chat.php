@@ -1,0 +1,152 @@
+<?php
+declare(strict_types=1);
+
+namespace Crustum\Ai\AgentUserInteraction;
+
+use Crustum\Ai\Approvals\Decisions;
+use Crustum\Ai\Contracts\AgentInput;
+use Crustum\Ai\Messages\UserMessage;
+use Crustum\Ai\Streaming\Protocols\AgentUserInteractionProtocol;
+
+/**
+ * Agent User Interaction chat input.
+ *
+ * Resolves a RunAgentInput payload into the newest user message, the history
+ * preceding it, and any tool approval decisions it resumes with.
+ */
+class Chat implements AgentInput
+{
+    /**
+     * @param array<string, mixed> $input Run agent input
+     */
+    public function __construct(protected array $input)
+    {
+    }
+
+    /**
+     * Get the newest user message, if the input contains one.
+     *
+     * @return \Crustum\Ai\Messages\UserMessage|null
+     */
+    public function message(): ?UserMessage
+    {
+        if (array_key_exists('resume', $this->input)) {
+            return null;
+        }
+
+        $message = $this->trailingUserMessage();
+
+        if ($message === null) {
+            return null;
+        }
+
+        $converted = AgentUserInteraction::fromMessage($message);
+
+        return $converted instanceof UserMessage ? $converted : null;
+    }
+
+    /**
+     * Get the tool approval decisions the input resumes an interrupted run with, if it contains any.
+     *
+     * @return \Crustum\Ai\Approvals\Decisions|null
+     */
+    public function decisions(): ?Decisions
+    {
+        return AgentUserInteraction::decisionsFrom($this->array('resume'));
+    }
+
+    /**
+     * Get every turn before the one this input resolves to.
+     *
+     * @return list<\Crustum\Ai\Messages\Message>
+     */
+    public function history(): array
+    {
+        $messages = $this->messages();
+
+        return AgentUserInteraction::fromMessages($this->message() instanceof UserMessage
+            ? array_slice($messages, 0, -1)
+            : $messages);
+    }
+
+    /**
+     * Get the stream protocol that reports the input's thread and run identity.
+     *
+     * @return \Crustum\Ai\Streaming\Protocols\AgentUserInteractionProtocol
+     */
+    public function protocol(): AgentUserInteractionProtocol
+    {
+        $threadId = $this->threadId();
+        $runId = $this->runId();
+
+        return new AgentUserInteractionProtocol(
+            $threadId === '' ? null : $threadId,
+            $runId === '' ? null : $runId,
+        );
+    }
+
+    /**
+     * Get the ID of the thread the run belongs to.
+     */
+    public function threadId(): string
+    {
+        return $this->string('threadId');
+    }
+
+    /**
+     * Get the ID of the run.
+     */
+    public function runId(): string
+    {
+        return $this->string('runId');
+    }
+
+    /**
+     * Get the AG-UI messages the input was created from.
+     *
+     * @return array<int, mixed>
+     */
+    protected function messages(): array
+    {
+        return array_values($this->array('messages'));
+    }
+
+    /**
+     * Get the newest message when it is a user message.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function trailingUserMessage(): ?array
+    {
+        $messages = $this->messages();
+
+        $message = $messages === [] ? null : $messages[array_key_last($messages)];
+
+        return is_array($message) && ($message['role'] ?? null) === 'user' ? $message : null;
+    }
+
+    /**
+     * Get the given input key as an array.
+     *
+     * @param string $key Input key
+     * @return array<mixed>
+     */
+    protected function array(string $key): array
+    {
+        $value = $this->input[$key] ?? [];
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Get the given input key as a string.
+     *
+     * @param string $key Input key
+     */
+    protected function string(string $key): string
+    {
+        $value = $this->input[$key] ?? '';
+
+        return is_string($value) ? $value : '';
+    }
+}

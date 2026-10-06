@@ -7,8 +7,8 @@ use Cake\Utility\Text;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Streaming\Event\Citation;
 use Crustum\Ai\Streaming\Event\Error;
 use Crustum\Ai\Streaming\Event\ProviderToolEvent;
@@ -126,7 +126,7 @@ trait HandlesTextStreamingTrait
                 continue;
             }
 
-            if ($type === 'response.reasoning_summary_text.delta') {
+            if (in_array($type, ['response.reasoning_summary_text.delta', 'response.reasoning_text.delta'], true)) {
                 $delta = (string)($data['delta'] ?? '');
 
                 if ($delta !== '') {
@@ -188,22 +188,18 @@ trait HandlesTextStreamingTrait
                 }
             }
 
-            if (str_starts_with((string)$type, 'response.') && str_contains((string)$type, '_call.')) {
-                $parts = explode('.', (string)$type, 3);
+            if (preg_match('/^response\.([a-z_]+_call)(_code)?\.(.+)$/', (string)$type, $matches) === 1) {
+                yield (new ProviderToolEvent(
+                    $this->generateEventId(),
+                    $data['item_id'] ?? '',
+                    $matches[1],
+                    $data,
+                    $matches[2] === '' ? $matches[3] : 'code_' . $matches[3],
+                    time(),
+                    provider: $provider->name(),
+                ))->withInvocationId($invocationId);
 
-                if (count($parts) === 3 && str_ends_with($parts[1], '_call')) {
-                    yield (new ProviderToolEvent(
-                        $this->generateEventId(),
-                        $data['item_id'] ?? '',
-                        $parts[1],
-                        $data,
-                        $parts[2],
-                        time(),
-                        provider: $provider->name(),
-                    ))->withInvocationId($invocationId);
-
-                    continue;
-                }
+                continue;
             }
 
             if (($data['item']['type'] ?? '') === 'function_call' && $type === 'response.output_item.added') {
@@ -284,15 +280,7 @@ trait HandlesTextStreamingTrait
                 $response = $data['response'] ?? [];
                 $responseData = $response;
                 $responseId = $response['id'] ?? $responseId;
-                $responseUsage = $response['usage'] ?? [];
-
-                $usage = new Usage(
-                    ($responseUsage['input_tokens'] ?? 0) - ($responseUsage['input_tokens_details']['cached_tokens'] ?? 0),
-                    $responseUsage['output_tokens'] ?? 0,
-                    0,
-                    $responseUsage['input_tokens_details']['cached_tokens'] ?? 0,
-                    $responseUsage['output_tokens_details']['reasoning_tokens'] ?? 0,
-                );
+                $usage = $this->extractUsage($response);
 
                 foreach ($this->extractCitations($response['output'] ?? []) as $citation) {
                     yield (new Citation(
@@ -309,9 +297,10 @@ trait HandlesTextStreamingTrait
             text: $currentText,
             toolCalls: $toolCalls,
             finishReason: $this->extractFinishReason($responseData),
-            usage: $usage ?? new Usage(0, 0),
+            usage: $usage ?? new TextUsage(0, 0),
             meta: new Meta($provider->name(), $responseData['model'] ?? $model),
             continuationToken: $responseId,
+            providerToolCalls: $this->extractProviderToolCalls($responseData['output'] ?? []),
         );
     }
 

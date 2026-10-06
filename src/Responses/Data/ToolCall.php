@@ -22,6 +22,7 @@ class ToolCall implements JsonSerializable
      * @param string|null $reasoningId The ID of the reasoning block.
      * @param array<string, mixed>|null $reasoningSummary Summary of the reasoning process.
      * @param string|null $reasoningEncryptedContent Encrypted reasoning content.
+     * @param string|null $thoughtSignature The Gemini thought signature for the tool call.
      */
     public function __construct(
         public string $id,
@@ -31,6 +32,7 @@ class ToolCall implements JsonSerializable
         public ?string $reasoningId = null,
         public ?array $reasoningSummary = null,
         public ?string $reasoningEncryptedContent = null,
+        public ?string $thoughtSignature = null,
     ) {
     }
 
@@ -50,6 +52,7 @@ class ToolCall implements JsonSerializable
             reasoningId: $data['reasoning_id'] ?? null,
             reasoningSummary: $data['reasoning_summary'] ?? null,
             reasoningEncryptedContent: $data['reasoning_encrypted_content'] ?? null,
+            thoughtSignature: $data['thought_signature'] ?? null,
         );
     }
 
@@ -68,6 +71,7 @@ class ToolCall implements JsonSerializable
             'reasoning_id' => $this->reasoningId,
             'reasoning_summary' => $this->reasoningSummary,
             'reasoning_encrypted_content' => $this->reasoningEncryptedContent,
+            'thought_signature' => $this->thoughtSignature,
         ];
     }
 

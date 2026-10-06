@@ -5,8 +5,11 @@ use Cake\Collection\Collection;
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files;
 use Crustum\Ai\Files\Document;
+use Crustum\Ai\Files\LocalDocument;
 use Crustum\Ai\Files\ProviderDocument;
 use Crustum\Ai\Stores;
+use Crustum\Ai\Test\Support\TestFile;
+use Laminas\Diactoros\UploadedFile;
 
 describe('store operations', function (): void {
     test('stores can be faked', function (): void {
@@ -145,6 +148,34 @@ describe('file operations', function (): void {
         Files::assertStored(
             fn(StorableFile $file): bool => $file->content() === 'Hello, world!',
         );
+    });
+
+    test('can add an uploaded file to store from its path', function (): void {
+        Stores::fake();
+
+        Stores::create('My Store')
+            ->add(TestFile::upload(__DIR__ . '/../Fixtures/report.txt', 'report.txt', 'text/plain'));
+
+        Files::assertStored(fn(StorableFile $file): bool => $file instanceof LocalDocument);
+        Files::assertStored(fn(StorableFile $file): bool => $file->name() === 'report.txt');
+        Files::assertStored(fn(StorableFile $file): bool => $file->mimeType() === 'text/plain');
+        Files::assertStored(fn(StorableFile $file): bool => trim((string)$file) === 'I am an expense report.');
+    });
+
+    test('cannot add an uploaded file that failed to upload to store', function (): void {
+        Stores::fake();
+
+        Stores::create('My Store')
+            ->add(new UploadedFile('', 0, UPLOAD_ERR_NO_TMP_DIR, 'report.txt', 'text/plain'));
+    })->throws(InvalidArgumentException::class);
+
+    test('an added fake upload can still be read after the upload object is gone', function (): void {
+        Stores::fake();
+
+        Stores::create('My Store')
+            ->add(TestFile::upload(__DIR__ . '/../Fixtures/report.txt', 'report.txt', 'text/plain'));
+
+        Files::assertStored(fn(StorableFile $file): bool => trim((string)$file) === 'I am an expense report.');
     });
 });
 

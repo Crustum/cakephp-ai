@@ -8,92 +8,98 @@ use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
 
 trait GeminiHelpersTrait
 {
+    /**
+     * Build a fake Gemini interaction response with the given steps.
+     *
+     * @param array<int, array<string, mixed>> $steps Response steps
+     * @param array<string, mixed> $usage Usage overrides
+     * @param string $status Interaction status
+     */
+    protected function fakeInteraction(array $steps, array $usage = [], string $status = 'completed'): array
+    {
+        return [
+            'id' => 'int_123',
+            'model' => 'gemini-3.7-flash',
+            'status' => $status,
+            'steps' => $steps,
+            'usage' => array_merge([
+                'total_input_tokens' => 10,
+                'total_output_tokens' => 5,
+                'total_tokens' => 15,
+            ], $usage),
+        ];
+    }
+
+    /**
+     * Build a model output step with the given text.
+     *
+     * @param array<int, array<string, mixed>> $annotations Text annotations
+     */
+    protected function modelOutput(string $text, array $annotations = []): array
+    {
+        return [
+            'type' => 'model_output',
+            'status' => 'done',
+            'content' => [array_filter([
+                'type' => 'text',
+                'text' => $text,
+                'annotations' => $annotations ?: null,
+            ])],
+        ];
+    }
+
+    protected function thoughtStep(string $text): array
+    {
+        return [
+            'type' => 'thought',
+            'status' => 'done',
+            'summary' => [['type' => 'text', 'text' => $text]],
+        ];
+    }
+
+    protected function functionCallStep(string $name, array $arguments = [], string $id = 'call_123'): array
+    {
+        return [
+            'type' => 'function_call',
+            'status' => 'done',
+            'id' => $id,
+            'name' => $name,
+            'arguments' => (object)$arguments,
+        ];
+    }
+
     protected function fakeTextResponse(string $text = 'Hello'): AiHttpResponseDefinition
     {
-        return aiHttpResponse([
-            'candidates' => [[
-                'content' => [
-                    'parts' => [['text' => $text]],
-                    'role' => 'model',
-                ],
-                'finishReason' => 'STOP',
-            ]],
-            'usageMetadata' => [
-                'promptTokenCount' => 10,
-                'candidatesTokenCount' => 5,
-                'totalTokenCount' => 15,
-            ],
-            'modelVersion' => 'gemini-3.7-flash',
-        ]);
+        return aiHttpResponse($this->fakeInteraction([$this->modelOutput($text)]));
+    }
+
+    /**
+     * Build a fake Gemini response with the given steps.
+     *
+     * @param array<int, array<string, mixed>> $steps Response steps
+     */
+    protected function fakeThinkingResponse(array $steps): AiHttpResponseDefinition
+    {
+        return aiHttpResponse($this->fakeInteraction($steps, ['total_thought_tokens' => 3, 'total_tokens' => 18]));
     }
 
     protected function fakeToolCallResponse(string $toolName = 'FixedNumberGenerator', ?string $callId = null): AiHttpResponseDefinition
     {
-        return aiHttpResponse([
-            'candidates' => [[
-                'content' => [
-                    'parts' => [[
-                        'functionCall' => [
-                            'id' => $callId ?? 'call_123',
-                            'name' => $toolName,
-                            'args' => (object)[],
-                        ],
-                    ]],
-                    'role' => 'model',
-                ],
-                'finishReason' => 'STOP',
-            ]],
-            'usageMetadata' => [
-                'promptTokenCount' => 10,
-                'candidatesTokenCount' => 5,
-                'totalTokenCount' => 15,
-            ],
-            'modelVersion' => 'gemini-3.7-flash',
-        ]);
+        return aiHttpResponse($this->fakeInteraction([
+            $this->functionCallStep($toolName, [], $callId ?? 'call_123'),
+        ]));
     }
 
     protected function fakeStructuredResponse(array $data): AiHttpResponseDefinition
     {
-        return aiHttpResponse([
-            'candidates' => [[
-                'content' => [
-                    'parts' => [['text' => json_encode($data)]],
-                    'role' => 'model',
-                ],
-                'finishReason' => 'STOP',
-            ]],
-            'usageMetadata' => [
-                'promptTokenCount' => 10,
-                'candidatesTokenCount' => 5,
-                'totalTokenCount' => 15,
-            ],
-            'modelVersion' => 'gemini-3.7-flash',
-        ]);
+        return aiHttpResponse($this->fakeInteraction([$this->modelOutput(json_encode($data))]));
     }
 
     protected function fakeUniqueToolCallResponse(): AiHttpResponseDefinition
     {
-        return aiHttpResponse([
-            'candidates' => [[
-                'content' => [
-                    'parts' => [[
-                        'functionCall' => [
-                            'id' => 'call_' . uniqid(),
-                            'name' => 'FixedNumberGenerator',
-                            'args' => (object)[],
-                        ],
-                    ]],
-                    'role' => 'model',
-                ],
-                'finishReason' => 'STOP',
-            ]],
-            'usageMetadata' => [
-                'promptTokenCount' => 10,
-                'candidatesTokenCount' => 5,
-                'totalTokenCount' => 15,
-            ],
-            'modelVersion' => 'gemini-3.7-flash',
-        ]);
+        return aiHttpResponse($this->fakeInteraction([
+            $this->functionCallStep('FixedNumberGenerator', [], 'call_' . uniqid()),
+        ]));
     }
 
     protected function collectStreamEvents(?object $agent = null): array
@@ -125,36 +131,36 @@ trait GeminiHelpersTrait
         return implode("\n\n", $lines) . "\n\n";
     }
 
-    protected function geminiChunk(array $parts, ?string $modelVersion = null, ?string $finishReason = null): array
+    protected function stepStart(int $index, array $step): array
     {
-        $candidate = [
-            'content' => [
-                'parts' => $parts,
-                'role' => 'model',
-            ],
-        ];
-
-        if ($finishReason !== null) {
-            $candidate['finishReason'] = $finishReason;
-        }
-
-        return [
-            'candidates' => [$candidate],
-            'modelVersion' => $modelVersion ?? 'gemini-3.7-flash',
-        ];
+        return ['event_type' => 'step.start', 'index' => $index, 'step' => $step];
     }
 
-    protected function geminiChunkWithUsage(array $parts, int $promptTokens, int $candidatesTokens, int $cachedTokens = 0, ?string $modelVersion = null, string $finishReason = 'STOP'): array
+    protected function stepDelta(int $index, string $type, string $text): array
     {
-        $chunk = $this->geminiChunk($parts, $modelVersion, $finishReason);
+        return ['event_type' => 'step.delta', 'index' => $index, 'delta' => ['type' => $type, 'text' => $text]];
+    }
 
-        $chunk['usageMetadata'] = array_filter([
-            'promptTokenCount' => $promptTokens,
-            'candidatesTokenCount' => $candidatesTokens,
-            'totalTokenCount' => $promptTokens + $candidatesTokens,
-            'cachedContentTokenCount' => $cachedTokens ?: null,
-        ]);
+    protected function argumentsDelta(int $index, string $partial): array
+    {
+        return ['event_type' => 'step.delta', 'index' => $index, 'delta' => ['type' => 'arguments_delta', 'arguments' => $partial]];
+    }
 
-        return $chunk;
+    protected function stepStop(int $index): array
+    {
+        return ['event_type' => 'step.stop', 'index' => $index];
+    }
+
+    /**
+     * Build a fake interaction completed event carrying usage and status only, never steps.
+     *
+     * @param array<string, mixed> $usage Usage overrides
+     */
+    protected function interactionCompleted(array $usage = [], string $status = 'completed'): array
+    {
+        return [
+            'event_type' => 'interaction.completed',
+            'interaction' => array_diff_key($this->fakeInteraction([], $usage, $status), ['steps' => true]),
+        ];
     }
 }

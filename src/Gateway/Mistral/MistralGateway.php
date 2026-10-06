@@ -5,9 +5,11 @@ namespace Crustum\Ai\Gateway\Mistral;
 
 use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Files\TranscribableAudio;
+use Crustum\Ai\Contracts\Gateway\AudioGateway;
 use Crustum\Ai\Contracts\Gateway\EmbeddingGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Gateway\TranscriptionGateway;
+use Crustum\Ai\Contracts\Providers\AudioProvider;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
@@ -25,16 +27,19 @@ use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\ParsesServerSentEventsTrait;
 use Crustum\Ai\Gateway\Trait\ResolvesAudioFilenamesTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
+use Crustum\Ai\Responses\AudioResponse;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TranscriptionSegment;
+use Crustum\Ai\Responses\Data\TranscriptionUsage;
 use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\EmbeddingsResponse;
 use Crustum\Ai\Responses\TranscriptionResponse;
+use RuntimeException;
 
 /**
  * Mistral Chat, Embeddings, and Transcription API gateway.
  */
-class MistralGateway implements EmbeddingGateway, StepTextGateway, TranscriptionGateway
+class MistralGateway implements AudioGateway, EmbeddingGateway, StepTextGateway, TranscriptionGateway
 {
     use BuildsTextRequestsTrait;
     use CreatesMistralClientTrait;
@@ -55,6 +60,58 @@ class MistralGateway implements EmbeddingGateway, StepTextGateway, Transcription
      */
     public function __construct(protected EventManagerInterface $events)
     {
+    }
+
+    /**
+     * Generate audio from the given text.
+     *
+     * @param \Crustum\Ai\Contracts\Providers\AudioProvider $provider Audio provider
+     * @param string $model Model name
+     * @param string $text Text to convert to audio
+     * @param string $voice Voice to use
+     * @param string|null $instructions Optional instructions
+     * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
+     * @return \Crustum\Ai\Responses\AudioResponse
+     * @throws \RuntimeException When no audio data is received
+     */
+    public function generateAudio(
+        AudioProvider $provider,
+        string $model,
+        string $text,
+        string $voice,
+        ?string $instructions = null,
+        int $timeout = 30,
+        array $providerOptions = [],
+    ): AudioResponse {
+        $voice = match ($voice) {
+            'default-male' => 'en_paul_neutral',
+            'default-female' => 'gb_jane_neutral',
+            default => $voice,
+        };
+
+        $response = $this->withErrorHandling(
+            $provider->name(),
+            fn(): HttpResponseInterface => $this->client($provider, $timeout)->post('audio/speech', [
+                'model' => $model,
+                'input' => $text,
+                'voice_id' => $voice,
+                'response_format' => 'mp3',
+            ]),
+        );
+
+        $encodedAudio = $response->getJson()['audio_data'] ?? null;
+
+        if (!is_string($encodedAudio) || $encodedAudio === '') {
+            throw new RuntimeException('No audio data received from Mistral API.');
+        }
+
+        return new AudioResponse(
+            $encodedAudio,
+            new Usage(),
+            new Meta($provider->name(), $model),
+            'audio/mpeg',
+        );
     }
 
     /**
@@ -112,9 +169,12 @@ class MistralGateway implements EmbeddingGateway, StepTextGateway, Transcription
 
         $data = $response->getJson() ?? [];
 
+        /** @var array<int, array<string, mixed>> $rows */
+        $rows = $data['data'] ?? [];
+
         return new EmbeddingsResponse(
-            collection($data['data'] ?? [])->extract('embedding')->toList(),
-            $data['usage']['total_tokens'] ?? 0,
+            collection($rows)->extract('embedding')->toList(),
+            new Usage($data['usage']['prompt_tokens'] ?? 0),
             new Meta($provider->name(), $model),
         );
     }
@@ -158,17 +218,24 @@ class MistralGateway implements EmbeddingGateway, StepTextGateway, Transcription
 
         $data = $response->getJson() ?? [];
 
+        /** @var array<int, array<string, mixed>> $segments */
+        $segments = $data['segments'] ?? [];
+
+        /** @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\TranscriptionSegment> $mappedSegments */
+        $mappedSegments = collection($segments)->map(fn(array $segment): TranscriptionSegment => new TranscriptionSegment(
+            $segment['text'] ?? '',
+            $segment['speaker_id'] ?? '',
+            $segment['start'] ?? 0,
+            $segment['end'] ?? 0,
+        ));
+
         return new TranscriptionResponse(
             $data['text'] ?? '',
-            collection($data['segments'] ?? [])->map(fn(array $segment): TranscriptionSegment => new TranscriptionSegment(
-                $segment['text'] ?? '',
-                $segment['speaker_id'] ?? '',
-                $segment['start'] ?? 0,
-                $segment['end'] ?? 0,
-            )),
-            new Usage(
-                $data['usage']['prompt_tokens'] ?? 0,
-                $data['usage']['completion_tokens'] ?? 0,
+            $mappedSegments,
+            new TranscriptionUsage(
+                inputTokens: $data['usage']['prompt_tokens'] ?? 0,
+                outputTokens: $data['usage']['completion_tokens'] ?? 0,
+                audioSeconds: $data['usage']['prompt_audio_seconds'] ?? null,
             ),
             new Meta($provider->name(), $model),
         );

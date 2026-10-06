@@ -4,10 +4,12 @@ declare(strict_types=1);
 namespace Crustum\Ai\Gateway\Gemini\Trait;
 
 use Crustum\Ai\Contracts\Providers\Provider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsFileSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebFetch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Tool;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\ProviderTool;
 use Crustum\Ai\Providers\Tools\WebFetch;
@@ -32,32 +34,17 @@ trait MapsToolsTrait
      */
     protected function mapTools(array $tools, Provider $provider): array
     {
-        $functionDeclarations = [];
-        $providerTools = [];
+        $mapped = [];
 
         foreach ($tools as $tool) {
             if ($tool instanceof ProviderTool) {
-                $providerTool = $this->mapProviderTool($tool, $provider);
-
-                if (Value::filled($providerTool)) {
-                    $providerTools[] = $providerTool;
-                }
+                $mapped[] = $this->mapProviderTool($tool, $provider);
             } elseif ($tool instanceof Tool) {
-                $functionDeclarations[] = $this->mapTool($tool);
+                $mapped[] = $this->mapTool($tool);
             }
         }
 
-        $toolsArray = [];
-
-        if (Value::filled($functionDeclarations)) {
-            $toolsArray[] = ['function_declarations' => $functionDeclarations];
-        }
-
-        foreach ($providerTools as $providerTool) {
-            $toolsArray[] = $providerTool;
-        }
-
-        return $toolsArray;
+        return $mapped;
     }
 
     /**
@@ -71,6 +58,7 @@ trait MapsToolsTrait
         $schema = $tool->schema(new JsonSchemaTypeFactory());
 
         $definition = [
+            'type' => 'function',
             'name' => ToolNameResolver::resolve($tool),
             'description' => (string)$tool->description(),
         ];
@@ -131,11 +119,28 @@ trait MapsToolsTrait
     protected function mapProviderTool(ProviderTool $tool, Provider $provider): array
     {
         return match (true) {
+            $tool instanceof CodeExecution => $this->mapCodeExecutionTool($tool, $provider),
             $tool instanceof FileSearch => $this->mapFileSearchTool($tool, $provider),
             $tool instanceof WebFetch => $this->mapWebFetchTool($tool, $provider),
             $tool instanceof WebSearch => $this->mapWebSearchTool($tool, $provider),
-            default => [],
+            default => throw new RuntimeException('Provider [' . $provider->name() . '] does not support the [' . class_basename($tool) . '] tool.'),
         };
+    }
+
+    /**
+     * Map a code execution tool to a Gemini code execution definition.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $tool Code execution tool
+     * @param \Crustum\Ai\Contracts\Providers\Provider $provider Provider instance
+     * @return array<string, mixed>
+     */
+    protected function mapCodeExecutionTool(CodeExecution $tool, Provider $provider): array
+    {
+        if (!$provider instanceof SupportsCodeExecution) {
+            throw new RuntimeException('Provider [' . $provider->name() . '] does not support code execution.');
+        }
+
+        return array_merge(['type' => 'code_execution'], $provider->codeExecutionToolOptions($tool));
     }
 
     /**
@@ -151,9 +156,7 @@ trait MapsToolsTrait
             throw new RuntimeException('Provider [' . $provider->name() . '] does not support file search.');
         }
 
-        return [
-            'fileSearch' => $provider->fileSearchToolOptions($tool),
-        ];
+        return array_merge(['type' => 'file_search'], $provider->fileSearchToolOptions($tool));
     }
 
     /**
@@ -169,9 +172,7 @@ trait MapsToolsTrait
             throw new RuntimeException('Provider [' . $provider->name() . '] does not support web fetch.');
         }
 
-        return [
-            'url_context' => (object)$provider->webFetchToolOptions($tool),
-        ];
+        return array_merge(['type' => 'url_context'], $provider->webFetchToolOptions($tool));
     }
 
     /**
@@ -187,8 +188,6 @@ trait MapsToolsTrait
             throw new RuntimeException('Provider [' . $provider->name() . '] does not support web search.');
         }
 
-        return [
-            'google_search' => (object)$provider->webSearchToolOptions($tool),
-        ];
+        return array_merge(['type' => 'google_search'], $provider->webSearchToolOptions($tool));
     }
 }

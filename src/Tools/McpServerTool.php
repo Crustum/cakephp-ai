@@ -3,12 +3,16 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Tools;
 
+use Crustum\Ai\Approvals\Approval;
+use Crustum\Ai\Contracts\Approvable;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Tools\Trait\NormalizesMcpResultTrait;
+use Crustum\Ai\Trait\InteractsWithApprovalsTrait;
 use Crustum\JsonSchema\Contracts\JsonSchema;
 use Crustum\Mcp\Request as McpRequest;
 use Crustum\Mcp\Response as McpResponse;
 use Crustum\Mcp\ResponseFactory as McpResponseFactory;
+use Crustum\Mcp\Server\Content\ResourceLink;
 use Crustum\Mcp\Server\Tool as McpServerToolContract;
 use Crustum\Mcp\Support\ContainerRegistry;
 use Crustum\Mcp\Support\McpContainerBindings;
@@ -18,8 +22,9 @@ use LogicException;
 /**
  * Wraps an MCP server tool as a native tool.
  */
-class McpServerTool implements Tool
+class McpServerTool implements Approvable, Tool
 {
+    use InteractsWithApprovalsTrait;
     use NormalizesMcpResultTrait;
 
     /**
@@ -58,6 +63,16 @@ class McpServerTool implements Tool
     public function description(): string
     {
         return $this->tool->description();
+    }
+
+    /**
+     * Get the MCP annotations describing the tool's behavior.
+     *
+     * @return array<string, mixed>
+     */
+    public function annotations(): array
+    {
+        return $this->tool->annotations();
     }
 
     /**
@@ -169,22 +184,71 @@ class McpServerTool implements Tool
     }
 
     /**
-     * Reduce a list of responses to the last non-notification response's text.
+     * Reduce a list of responses to tool output, preserving MCP App resource links.
+     *
+     * When an MCP tool returns a `ResourceLink` with a `ui://` URI alongside
+     * text, the URI is included as `appResourceUri` in a JSON payload so the
+     * host can fetch the HTML via `resources/read` and render it in an iframe.
+     * Without a `ResourceLink`, returns plain text as before.
      *
      * @param array<int, \Crustum\Mcp\Response> $responses Response objects
      * @return string
      */
     protected function finalResponse(array $responses): string
     {
-        $final = array_find(array_reverse($responses), fn($response): bool => !$response->isNotification());
-        if ($final === null) {
+        $text = '';
+        $appUri = null;
+        $isError = false;
+
+        foreach (array_reverse($responses) as $response) {
+            if ($response->isNotification()) {
+                continue;
+            }
+
+            $content = $response->content();
+
+            if ($content instanceof ResourceLink && str_starts_with((string)$content, 'ui://')) {
+                $appUri ??= (string)$content;
+                $isError = $isError || $response->isError();
+                continue;
+            }
+
+            if ($text === '') {
+                $text = (string)$content;
+                $isError = $response->isError();
+            }
+
+            if ($text !== '' && $appUri !== null) {
+                break;
+            }
+        }
+
+        if ($text === '' && $appUri === null) {
             return '';
         }
 
-        $text = (string)$final->content();
+        if ($isError) {
+            $text = $this->errorMessage($text);
+        }
 
-        return $final->isError()
-            ? $this->errorMessage($text)
-            : $text;
+        if ($appUri !== null) {
+            return json_encode([
+                'text' => $text,
+                'appResourceUri' => $appUri,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+        }
+
+        return $text;
+    }
+
+    /**
+     * Determine whether the tool needs approval for the given request.
+     *
+     * @param \Crustum\Ai\Tools\Request $request Tool request
+     * @return \Crustum\Ai\Approvals\Approval|bool
+     */
+    protected function needsApproval(Request $request): Approval|bool
+    {
+        return false;
     }
 }

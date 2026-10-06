@@ -11,133 +11,121 @@ use Crustum\Ai\Messages\UserMessage;
 use Crustum\Ai\Utility\Value;
 
 /**
- * Maps messages to Gemini contents format.
+ * Maps messages to Gemini interaction input steps.
  */
 trait MapsMessagesTrait
 {
     /**
-     * Map the given messages to Gemini contents format.
+     * Map the given messages to Gemini interaction input steps.
      *
      * @param array<int, mixed> $messages Conversation messages
      * @return array<int, array<string, mixed>>
      */
-    protected function mapMessagesToContents(array $messages): array
+    protected function mapMessagesToInput(array $messages): array
     {
-        $contents = [];
+        /** @var array<int, array<string, mixed>> $input */
+        $input = [];
 
         foreach ($messages as $message) {
             $message = Message::tryFrom($message);
 
             match ($message->role) {
-                MessageRole::User => $this->mapUserMessage($message, $contents),
-                MessageRole::Assistant => $this->mapAssistantMessage($message, $contents),
-                MessageRole::ToolResult => $this->mapToolResultMessage($message, $contents),
+                MessageRole::User => $this->mapUserMessage($message, $input),
+                MessageRole::Assistant => $this->mapAssistantMessage($message, $input),
+                MessageRole::ToolResult => $this->mapToolResultMessage($message, $input),
             };
         }
 
-        return $contents;
+        return $input;
     }
 
     /**
-     * Map a user message to Gemini format.
+     * Map a user message to a Gemini user input step.
      *
      * @param \Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Messages\Message $message User message
-     * @param array<int, array<string, mixed>> $contents Contents
+     * @param array<int, array<string, mixed>> $input Interaction input steps
      * @return void
      */
-    protected function mapUserMessage(UserMessage|Message $message, array &$contents): void
+    protected function mapUserMessage(UserMessage|Message $message, array &$input): void
     {
-        $parts = [['text' => $message->content]];
+        // Gemini rejects a text block without text, so an attachment-only message sends none.
+        $content = Value::filled($message->content) ? [['type' => 'text', 'text' => $message->content]] : [];
 
         if ($message instanceof UserMessage && !$message->attachments->isEmpty()) {
-            $parts = array_merge($parts, $this->mapAttachments($message->attachments));
+            $content = array_merge($content, $this->mapAttachments($message->attachments));
         }
 
-        $contents[] = [
-            'role' => 'user',
-            'parts' => $parts,
+        $input[] = [
+            'type' => 'user_input',
+            'content' => $content,
         ];
     }
 
     /**
-     * Map an assistant message to Gemini format.
+     * Map an assistant message to the Gemini steps that produced it.
      *
      * @param \Crustum\Ai\Messages\AssistantMessage|\Crustum\Ai\Messages\Message $message Assistant message
-     * @param array<int, array<string, mixed>> $contents Contents
+     * @param array<int, array<string, mixed>> $input Interaction input steps
      * @return void
      */
-    protected function mapAssistantMessage(AssistantMessage|Message $message, array &$contents): void
+    protected function mapAssistantMessage(AssistantMessage|Message $message, array &$input): void
     {
-        if ($message instanceof AssistantMessage && Value::filled($message->providerContentBlocks)) {
-            $contents[] = [
-                'role' => 'model',
-                'parts' => $message->providerContentBlocks,
-            ];
+        // Gemini requires its own steps, thought steps included, replayed exactly as it returned them.
+        if ($message instanceof AssistantMessage && Value::filled($message->replayBlocks)) {
+            /** @var array<int, array<string, mixed>> $replayBlocks */
+            $replayBlocks = $message->replayBlocks;
+
+            foreach ($replayBlocks as $step) {
+                // Gemini rejects the empty array PHP decodes an argument-less call's object into.
+                $input[] = isset($step['arguments'])
+                    ? [...$step, 'arguments' => (object)$step['arguments']]
+                    : $step;
+            }
 
             return;
         }
 
-        $parts = [];
-
         if (Value::filled($message->content)) {
-            $parts[] = ['text' => $message->content];
-        }
-
-        if ($message instanceof AssistantMessage && !$message->toolCalls->isEmpty()) {
-            foreach ($message->toolCalls as $toolCall) {
-                $functionCall = ['name' => $toolCall->name];
-
-                if (Value::filled($toolCall->arguments)) {
-                    $functionCall['args'] = $toolCall->arguments;
-                }
-
-                $parts[] = ['functionCall' => $functionCall];
-            }
-        }
-
-        if (Value::filled($parts)) {
-            $contents[] = [
-                'role' => 'model',
-                'parts' => $parts,
+            $input[] = [
+                'type' => 'model_output',
+                'content' => [['type' => 'text', 'text' => $message->content]],
             ];
+        }
+
+        if ($message instanceof AssistantMessage) {
+            // A signature never rides on a function call, so a persisted turn rebuilds the thought step that held it.
+            $signature = $message->toolCalls->first()?->thoughtSignature;
+
+            if (Value::filled($signature)) {
+                $input[] = ['type' => 'thought', 'signature' => $signature];
+            }
+
+            foreach ($message->toolCalls as $toolCall) {
+                $input[] = [
+                    'type' => 'function_call',
+                    'id' => $toolCall->id,
+                    'name' => $toolCall->name,
+                    'arguments' => (object)$toolCall->arguments,
+                ];
+            }
         }
     }
 
     /**
-     * Map a tool result message to Gemini format.
+     * Map a tool result message to Gemini function result steps.
      *
      * @param \Crustum\Ai\Messages\ToolResultMessage|\Crustum\Ai\Messages\Message $message Tool result message
-     * @param array<int, array<string, mixed>> $contents Contents
+     * @param array<int, array<string, mixed>> $input Interaction input steps
      * @return void
      */
-    protected function mapToolResultMessage(ToolResultMessage|Message $message, array &$contents): void
+    protected function mapToolResultMessage(ToolResultMessage|Message $message, array &$input): void
     {
         if (!$message instanceof ToolResultMessage) {
             return;
         }
 
-        $parts = $this->buildFunctionResponseParts($message->toolResults->toList());
-
-        if (Value::filled($parts)) {
-            $contents[] = [
-                'role' => 'user',
-                'parts' => $parts,
-            ];
+        foreach ($this->buildFunctionResultSteps($message->toolResults->toList()) as $step) {
+            $input[] = $step;
         }
-    }
-
-    /**
-     * Serialize a tool result output value to a string.
-     *
-     * @param mixed $output Tool result output
-     * @return string
-     */
-    protected function serializeToolResultOutput(mixed $output): string
-    {
-        if (is_string($output)) {
-            return $output;
-        }
-
-        return is_array($output) ? json_encode($output) : strval($output);
     }
 }

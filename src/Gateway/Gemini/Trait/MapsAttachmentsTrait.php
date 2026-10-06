@@ -27,12 +27,12 @@ use InvalidArgumentException;
 use Laminas\Diactoros\UploadedFile;
 
 /**
- * Maps file attachments to Gemini content parts.
+ * Maps file attachments to Gemini content blocks.
  */
 trait MapsAttachmentsTrait
 {
     /**
-     * Map the given attachments to Gemini content parts.
+     * Map the given attachments to Gemini content blocks.
      *
      * @param \Cake\Collection\CollectionInterface<int, mixed> $attachments Attachments
      * @return array<int, array<string, mixed>>
@@ -43,7 +43,7 @@ trait MapsAttachmentsTrait
     }
 
     /**
-     * Map an attachment to a Gemini content part.
+     * Map an attachment to a Gemini content block.
      *
      * @param mixed $attachment Attachment
      * @return array<string, mixed>
@@ -58,118 +58,132 @@ trait MapsAttachmentsTrait
 
         return match (true) {
             $attachment instanceof ProviderImage => [
-                'fileData' => [
-                    'fileUri' => $attachment->id,
-                ],
+                'type' => 'image',
+                'uri' => $attachment->id,
             ],
             $attachment instanceof Base64Image => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mime,
-                    'data' => $attachment->base64,
-                ],
+                'type' => 'image',
+                'mime_type' => $attachment->mime,
+                'data' => $attachment->base64,
             ],
             $attachment instanceof RemoteImage => [
-                'fileData' => array_filter([
-                    'mimeType' => $attachment->mime,
-                    'fileUri' => $attachment->url,
-                ]),
+                'type' => 'image',
+                'mime_type' => $attachment->mimeType() ?? 'image/png',
+                'data' => base64_encode($attachment->content()),
             ],
             $attachment instanceof LocalImage => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'image/png',
-                    'data' => base64_encode((string)file_get_contents($attachment->path)),
-                ],
+                'type' => 'image',
+                'mime_type' => $attachment->mimeType() ?? 'image/png',
+                'data' => base64_encode((string)file_get_contents($attachment->path)),
             ],
             $attachment instanceof StoredImage => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'image/png',
-                    'data' => base64_encode($attachment->content()),
-                ],
+                'type' => 'image',
+                'mime_type' => $attachment->mimeType() ?? 'image/png',
+                'data' => base64_encode($attachment->content()),
             ],
             $attachment instanceof ProviderDocument => [
-                'fileData' => [
-                    'fileUri' => $attachment->id,
-                ],
+                'type' => 'document',
+                'uri' => $attachment->id,
             ],
             $attachment instanceof Base64Document => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mime,
-                    'data' => $attachment->base64,
-                ],
+                'type' => 'document',
+                'mime_type' => $attachment->mime,
+                'data' => $attachment->base64,
             ],
             $attachment instanceof LocalDocument => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'application/octet-stream',
-                    'data' => base64_encode((string)file_get_contents($attachment->path)),
-                ],
+                'type' => 'document',
+                'mime_type' => $attachment->mimeType() ?? 'application/octet-stream',
+                'data' => base64_encode((string)file_get_contents($attachment->path)),
             ],
             $attachment instanceof RemoteDocument => [
-                'fileData' => array_filter([
-                    'mimeType' => $attachment->mime,
-                    'fileUri' => $attachment->url,
-                ]),
+                'type' => 'document',
+                'mime_type' => $attachment->mimeType() ?? 'application/octet-stream',
+                'data' => base64_encode($attachment->content()),
             ],
             $attachment instanceof StoredDocument => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'application/octet-stream',
-                    'data' => base64_encode($attachment->content()),
-                ],
+                'type' => 'document',
+                'mime_type' => $attachment->mimeType() ?? 'application/octet-stream',
+                'data' => base64_encode($attachment->content()),
             ],
             $attachment instanceof Base64Audio => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mime ?? 'audio/mp3',
-                    'data' => $attachment->base64,
-                ],
+                'type' => 'audio',
+                'mime_type' => $attachment->mime ?? 'audio/mp3',
+                'data' => $attachment->base64,
             ],
             $attachment instanceof LocalAudio => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'audio/mp3',
-                    'data' => base64_encode((string)file_get_contents($attachment->path)),
-                ],
+                'type' => 'audio',
+                'mime_type' => $attachment->mimeType() ?? 'audio/mp3',
+                'data' => base64_encode((string)file_get_contents($attachment->path)),
             ],
             $attachment instanceof StoredAudio => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'audio/mp3',
-                    'data' => base64_encode($attachment->content()),
-                ],
+                'type' => 'audio',
+                'mime_type' => $attachment->mimeType() ?? 'audio/mp3',
+                'data' => base64_encode($attachment->content()),
             ],
             $attachment instanceof RemoteAudio => [
-                'fileData' => array_filter([
-                    'mimeType' => $attachment->mime,
-                    'fileUri' => $attachment->url,
-                ]),
+                'type' => 'audio',
+                'mime_type' => $attachment->mimeType() ?? 'audio/mp3',
+                'data' => base64_encode($attachment->content()),
             ],
             $attachment instanceof Base64Video => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mime ?? 'video/mp4',
-                    'data' => $attachment->base64,
-                ],
+                'type' => 'video',
+                'mime_type' => $attachment->mime ?? 'video/mp4',
+                'data' => $attachment->base64,
             ],
             $attachment instanceof LocalVideo => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'video/mp4',
-                    'data' => base64_encode((string)file_get_contents($attachment->path)),
-                ],
+                'type' => 'video',
+                'mime_type' => $attachment->mimeType() ?? 'video/mp4',
+                'data' => base64_encode((string)file_get_contents($attachment->path)),
             ],
             $attachment instanceof StoredVideo => [
-                'inlineData' => [
-                    'mimeType' => $attachment->mimeType() ?? 'video/mp4',
-                    'data' => base64_encode($attachment->content()),
-                ],
+                'type' => 'video',
+                'mime_type' => $attachment->mimeType() ?? 'video/mp4',
+                'data' => base64_encode($attachment->content()),
             ],
-            $attachment instanceof RemoteVideo => [
-                'fileData' => array_filter([
-                    'mimeType' => $attachment->mime,
-                    'fileUri' => $attachment->url,
-                ]),
+            $attachment instanceof RemoteVideo => $this->isYouTubeUrl($attachment->url) ? array_filter([
+                'type' => 'video',
+                'mime_type' => $attachment->mime,
+                'uri' => $attachment->url,
+            ]) : [
+                'type' => 'video',
+                'mime_type' => $attachment->mimeType() ?? 'video/mp4',
+                'data' => base64_encode($attachment->content()),
             ],
             $attachment instanceof UploadedFile => [
-                'inlineData' => [
-                    'mimeType' => $attachment->getClientMediaType(),
-                    'data' => base64_encode($attachment->getStream()->getContents()),
-                ],
+                'type' => $this->contentTypeFor($attachment->getClientMediaType()),
+                'mime_type' => $attachment->getClientMediaType(),
+                'data' => base64_encode($attachment->getStream()->getContents()),
             ],
             default => throw new InvalidArgumentException('Unsupported attachment type [' . get_debug_type($attachment) . ']'),
         };
+    }
+
+    /**
+     * Resolve the Gemini content block type for the given MIME type.
+     *
+     * @param string|null $mime MIME type
+     * @return string
+     */
+    protected function contentTypeFor(?string $mime): string
+    {
+        return match (strtok((string)$mime, '/')) {
+            'image' => 'image',
+            'audio' => 'audio',
+            'video' => 'video',
+            default => 'document',
+        };
+    }
+
+    /**
+     * Determine if the given URL is a YouTube URL, which Gemini accepts as a file URI.
+     *
+     * @param string $url URL to inspect
+     * @return bool
+     */
+    protected function isYouTubeUrl(string $url): bool
+    {
+        return in_array(strtolower((string)parse_url($url, PHP_URL_HOST)), [
+            'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'www.youtu.be',
+        ], true);
     }
 }

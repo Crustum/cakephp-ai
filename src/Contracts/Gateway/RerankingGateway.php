@@ -21,6 +21,8 @@ interface RerankingGateway
      * @param array<int, string> $documents Array of documents to rerank
      * @param string $query The query to use for relevance scoring
      * @param int|null $limit Maximum number of results to return
+     * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\RerankingResponse
      */
     public function rerank(
@@ -29,5 +31,7 @@ interface RerankingGateway
         array $documents,
         string $query,
         ?int $limit = null,
+        int $timeout = 30,
+        array $providerOptions = [],
     ): RerankingResponse;
 }

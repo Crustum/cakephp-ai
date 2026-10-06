@@ -7,6 +7,7 @@ use Closure;
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files\Base64Document;
 use Crustum\Ai\Files\Document;
+use Crustum\Ai\Files\LocalDocument;
 use Crustum\Ai\Gateway\FakeFileGateway;
 use Crustum\Ai\Responses\FileResponse;
 use Crustum\Ai\Responses\StoredFileResponse;
@@ -48,7 +49,7 @@ class Files
     ): StoredFileResponse {
         $file = match (true) {
             is_string($file) => new Base64Document(base64_encode($file), $mimeType),
-            $file instanceof UploadedFile => Base64Document::fromUpload($file)->as($file->getClientFilename()),
+            $file instanceof UploadedFile => LocalDocument::fromUploadedFile($file),
             default => $file,
         };
 

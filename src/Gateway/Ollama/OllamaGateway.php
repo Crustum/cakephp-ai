@@ -22,6 +22,7 @@ use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\EmbeddingsResponse;
 use Crustum\Ai\Utility\Value;
 use Generator;
@@ -169,7 +170,7 @@ class OllamaGateway implements EmbeddingGateway, StepTextGateway
 
         return new EmbeddingsResponse(
             $data['embeddings'] ?? [],
-            $data['prompt_eval_count'] ?? 0,
+            new Usage($data['prompt_eval_count'] ?? 0),
             new Meta($provider->name(), $model),
         );
     }

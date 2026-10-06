@@ -7,32 +7,39 @@ use Cake\Event\EventManager;
 use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Gateway\EmbeddingGateway;
 use Crustum\Ai\Contracts\Gateway\ImageGateway;
+use Crustum\Ai\Contracts\Gateway\RerankingGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
+use Crustum\Ai\Contracts\Providers\RerankingProvider;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Gateway\Bedrock\BedrockImageGateway;
+use Crustum\Ai\Gateway\Bedrock\BedrockRerankingGateway;
 use Crustum\Ai\Gateway\Bedrock\BedrockTextGateway;
 use Crustum\Ai\Providers\Trait\GeneratesEmbeddingsTrait;
 use Crustum\Ai\Providers\Trait\GeneratesImagesTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
 use Crustum\Ai\Providers\Trait\HasEmbeddingGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasImageGatewayTrait;
+use Crustum\Ai\Providers\Trait\HasRerankingGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasTextGatewayTrait;
+use Crustum\Ai\Providers\Trait\ReranksTrait;
 use Crustum\Ai\Providers\Trait\StreamsTextTrait;
 use Override;
 
 /**
  * AWS Bedrock text, image, and embeddings provider.
  */
-class BedrockProvider extends Provider implements EmbeddingProvider, ImageProvider, TextProvider
+class BedrockProvider extends Provider implements EmbeddingProvider, ImageProvider, RerankingProvider, TextProvider
 {
     use GeneratesEmbeddingsTrait;
     use GeneratesImagesTrait;
     use GeneratesTextTrait;
     use HasEmbeddingGatewayTrait;
     use HasImageGatewayTrait;
+    use HasRerankingGatewayTrait;
     use HasTextGatewayTrait;
+    use ReranksTrait;
     use StreamsTextTrait;
 
     /**
@@ -158,7 +165,7 @@ class BedrockProvider extends Provider implements EmbeddingProvider, ImageProvid
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
+        return $this->config['models']['text']['default'] ?? 'global.anthropic.claude-sonnet-5-5';
     }
 
     /**
@@ -168,7 +175,7 @@ class BedrockProvider extends Provider implements EmbeddingProvider, ImageProvid
      */
     public function cheapestTextModel(): string
     {
-        return $this->config['models']['text']['cheapest'] ?? 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+        return $this->config['models']['text']['cheapest'] ?? 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
     }
 
     /**
@@ -178,7 +185,7 @@ class BedrockProvider extends Provider implements EmbeddingProvider, ImageProvid
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'us.anthropic.claude-opus-4-6-v1';
+        return $this->config['models']['text']['smartest'] ?? 'global.anthropic.claude-opus-5-5';
     }
 
     /**
@@ -209,6 +216,30 @@ class BedrockProvider extends Provider implements EmbeddingProvider, ImageProvid
     public function defaultImageModel(): string
     {
         return $this->config['models']['image']['default'] ?? 'amazon.nova-canvas-v1:0';
+    }
+
+    /**
+     * Get the name of the default reranking model.
+     *
+     * @return string
+     */
+    public function defaultRerankingModel(): string
+    {
+        return $this->config['models']['reranking']['default'] ?? 'cohere.rerank-v3-5:0';
+    }
+
+    /**
+     * Get the provider's reranking gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\RerankingGateway
+     */
+    public function rerankingGateway(): RerankingGateway
+    {
+        if (!isset($this->rerankingGateway)) {
+            $this->rerankingGateway = new BedrockRerankingGateway();
+        }
+
+        return $this->rerankingGateway;
     }
 
     /**

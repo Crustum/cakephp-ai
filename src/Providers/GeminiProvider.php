@@ -18,14 +18,17 @@ use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
 use Crustum\Ai\Contracts\Providers\StoreProvider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsFileSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebFetch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
+use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\Gemini\GeminiFileGateway;
 use Crustum\Ai\Gateway\Gemini\GeminiGateway;
 use Crustum\Ai\Gateway\Gemini\GeminiStoreGateway;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\WebFetch;
 use Crustum\Ai\Providers\Tools\WebSearch;
@@ -50,7 +53,7 @@ use Override;
 /**
  * Gemini multi-modal provider.
  */
-class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsFileSearch, SupportsWebFetch, SupportsWebSearch, TextProvider, TranscriptionProvider
+class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsCodeExecution, SupportsFileSearch, SupportsWebFetch, SupportsWebSearch, TextProvider, TranscriptionProvider
 {
     use GeneratesAudioTrait;
     use GeneratesEmbeddingsTrait;
@@ -114,6 +117,17 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
     }
 
     /**
+     * Get the code execution tool options for the provider.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $codeExecution Code execution tool
+     * @return array<string, mixed>
+     */
+    public function codeExecutionToolOptions(CodeExecution $codeExecution): array
+    {
+        return $codeExecution->providerOptions(Lab::Gemini);
+    }
+
+    /**
      * Get the file search tool options for the provider.
      *
      * @param \Crustum\Ai\Providers\Tools\FileSearch $search File search tool
@@ -122,8 +136,8 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
     public function fileSearchToolOptions(FileSearch $search): array
     {
         return array_filter([
-            'fileSearchStoreNames' => $search->ids(),
-            'metadataFilter' => $search->filters === []
+            'file_search_store_names' => $search->ids(),
+            'metadata_filter' => $search->filters === []
                 ? null
                 : $this->formatMetadataFilter($search->filters),
         ]);
@@ -266,7 +280,7 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? 'gemini-3.7-flash';
+        return $this->config['models']['text']['default'] ?? 'gemini-3.8-flash';
     }
 
     /**
@@ -276,7 +290,7 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function cheapestTextModel(): string
     {
-        return $this->config['models']['text']['cheapest'] ?? 'gemini-3.5-flash-lite';
+        return $this->config['models']['text']['cheapest'] ?? 'gemini-3.1-flash-lite';
     }
 
     /**
@@ -286,7 +300,7 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'gemini-3.7-flash';
+        return $this->config['models']['text']['smartest'] ?? 'gemini-3.8-flash';
     }
 
     /**
@@ -296,7 +310,7 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function defaultImageModel(): string
     {
-        return $this->config['models']['image']['default'] ?? 'gemini-3.1-flash-image-preview';
+        return $this->config['models']['image']['default'] ?? 'gemini-3.1-flash-image';
     }
 
     /**
@@ -332,7 +346,7 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function defaultAudioModel(): string
     {
-        return $this->config['models']['audio']['default'] ?? 'gemini-2.5-flash-preview-tts';
+        return $this->config['models']['audio']['default'] ?? 'gemini-3.8-flash-lite-tts';
     }
 
     /**
@@ -342,7 +356,7 @@ class GeminiProvider extends Provider implements AudioProvider, EmbeddingProvide
      */
     public function defaultTranscriptionModel(): string
     {
-        return $this->config['models']['transcription']['default'] ?? 'gemini-3.5-flash';
+        return $this->config['models']['transcription']['default'] ?? 'gemini-3.5-transcribe';
     }
 
     /**

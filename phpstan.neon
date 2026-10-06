@@ -1,5 +1,5 @@
 parameters:
-    level: 5
+    level: 6
     paths:
         - src
     bootstrapFiles:
@@ -12,6 +12,8 @@ parameters:
         - src/Trait/RemembersConversationsTrait.php
         - src/Trait/InteractsWithApprovalsTrait.php
     ignoreErrors:
+        -
+            identifier: missingType.iterableValue
         -
             identifier: new.static
             path: src/Trait/PromptableTrait.php

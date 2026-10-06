@@ -8,6 +8,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched before a transcription is generated.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class GeneratingTranscription extends AiEvent
 {
@@ -30,6 +32,6 @@ class GeneratingTranscription extends AiEvent
             'provider' => $provider,
             'model' => $model,
             'prompt' => $prompt,
-        ]);
+        ], $provider);
     }
 }

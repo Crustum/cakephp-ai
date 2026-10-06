@@ -503,7 +503,7 @@ test('non-empty tool arguments preserve shape on assistant replay', function ():
     expect($toolUse['input'])->toBe(['query' => 'test']);
 });
 
-test('assistant message with provider content blocks is replayed verbatim preserving order', function (): void {
+test('assistant message with replay blocks is replayed verbatim preserving order', function (): void {
     $contentBlocks = [
         ['type' => 'text', 'text' => 'Let me consult the advisor.'],
         [
@@ -550,7 +550,7 @@ test('assistant message with provider content blocks is replayed verbatim preser
     expect($serverToolUse['input'])->toBeInstanceOf(stdClass::class);
 });
 
-test('parsed response populates provider content blocks on the assistant message', function (): void {
+test('parsed response populates replay blocks on the assistant message', function (): void {
     aiHttpFake([
         'api.anthropic.com/*' => aiHttpResponse([
             'id' => 'msg_1',
@@ -580,7 +580,7 @@ test('parsed response populates provider content blocks on the assistant message
     $response = (new AssistantAgent())->prompt('hi', provider: 'anthropic');
 
     $assistant = $response->messages->filter(fn($m): bool => $m instanceof AssistantMessage)->first();
-    $blocks = $assistant->providerContentBlocks;
+    $blocks = $assistant->replayBlocks;
 
     expect($assistant)->not->toBeNull()
         ->and($blocks)->toHaveCount(4)
@@ -651,7 +651,7 @@ test('assistant message produced by parser round-trips through mapping with serv
         ->and($content[3])->toBe(['type' => 'text', 'text' => 'Found it.']);
 });
 
-test('assistant message without provider content blocks falls back to text plus tool calls rebuild', function (): void {
+test('assistant message without replay blocks falls back to text plus tool calls rebuild', function (): void {
     $assistant = new AssistantMessage('Hello');
 
     $gateway = new AnthropicGateway(EventManager::instance());
@@ -703,4 +703,23 @@ test('system instructions are not in messages array', function (): void {
 
         return isset($body['system']) && is_string($body['system']);
     });
+});
+
+test('another provider reasoning on a replayed tool call is dropped rather than rebuilt as a thinking block', function (): void {
+    $assistant = new AssistantMessage('Checking.', collection([
+        new ToolCall(
+            id: 'toolu_1',
+            name: 'getWeather',
+            arguments: ['city' => 'Lisbon'],
+            reasoningId: 'rs_1',
+            reasoningSummary: [['type' => 'summary_text', 'text' => 'They want the weather.']],
+        ),
+    ]));
+
+    $gateway = new AnthropicGateway(EventManager::instance());
+    $method = (new ReflectionClass($gateway))->getMethod('mapMessages');
+
+    $mapped = $method->invoke($gateway, [$assistant]);
+
+    expect(array_column($mapped[0]['content'], 'type'))->toBe(['text', 'tool_use']);
 });

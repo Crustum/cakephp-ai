@@ -6,12 +6,13 @@ namespace Crustum\Ai\Responses;
 use Cake\Collection\Collection;
 use Cake\Collection\CollectionInterface;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Streaming\Event\Citation;
+use Crustum\Ai\Streaming\Event\ReasoningDelta;
 use Crustum\Ai\Streaming\Event\StreamEnd;
 use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Streaming\Event\ToolApprovalRequest;
 use Crustum\Ai\Streaming\Event\ToolCall;
 use Crustum\Ai\Streaming\Event\ToolResult;
-use Override;
 
 /**
  * Streamed agent response.
@@ -47,7 +48,9 @@ class StreamedAgentResponse extends AgentResponse
         /** @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolCall> $toolCalls */
         $toolCalls = $events->filter(fn($e): bool => $e instanceof ToolCall)->map(fn($e) => $e->toolCall);
         /** @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolResult> $toolResults */
-        $toolResults = $events->filter(fn($e): bool => $e instanceof ToolResult)->map(fn($e) => $e->toolResult);
+        $toolResults = $events->filter(fn($e): bool => $e instanceof ToolResult)
+            ->reject(fn(ToolResult $event): bool => $event->preliminary)
+            ->map(fn($e) => $e->toolResult);
 
         $this->withToolCallsAndResults(
             toolCalls: $toolCalls,
@@ -56,31 +59,24 @@ class StreamedAgentResponse extends AgentResponse
 
         $this->events = $events;
 
+        $this->reasoning = ReasoningDelta::combine($events);
+        $this->meta->citations = Citation::combine($events)->toList();
+
         $pendingApprovals = $events
             ->filter(fn($e): bool => $e instanceof ToolApprovalRequest)
             ->unfold(fn(ToolApprovalRequest $event): CollectionInterface => $event->pendingApprovals)
             ->toList();
 
         $this->withPendingApprovals(collection($pendingApprovals));
-    }
 
-    /**
-     * Get the raw provider replay state for the paused assistant turn, if any.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    #[Override]
-    public function pausedProviderContentBlocks(): array
-    {
-        /** @var \Crustum\Ai\Streaming\Event\ToolApprovalRequest|null $last */
-        $last = $this->events
-            ->filter(fn($e): bool => $e instanceof ToolApprovalRequest)
+        $lastStepEvent = $events
+            ->filter(fn($e): bool => $e instanceof StreamEnd || $e instanceof ToolApprovalRequest)
             ->last();
-
-        if (!$last instanceof ToolApprovalRequest) {
-            return [];
+        $steps = collection([]);
+        if ($lastStepEvent instanceof StreamEnd || $lastStepEvent instanceof ToolApprovalRequest) {
+            $steps = $lastStepEvent->steps;
         }
 
-        return $last->providerContentBlocks;
+        $this->withSteps($steps);
     }
 }

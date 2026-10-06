@@ -7,7 +7,6 @@ use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Files\Trait\CanBeUploadedToProviderTrait;
 use InvalidArgumentException;
 use JsonSerializable;
-use Override;
 
 /**
  * Base64-encoded video file.
@@ -44,15 +43,6 @@ class Base64Video extends Video implements JsonSerializable, StorableFile
     public function content(): string
     {
         return base64_decode($this->base64);
-    }
-
-    /**
-     * Get the file's MIME type.
-     */
-    #[Override]
-    public function mimeType(): ?string
-    {
-        return $this->mime;
     }
 
     /**

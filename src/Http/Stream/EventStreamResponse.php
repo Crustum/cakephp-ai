@@ -45,7 +45,8 @@ class EventStreamResponse extends AbstractStreamResponse
     protected function applyStreamingHeaders(): void
     {
         parent::applyStreamingHeaders();
-        $this->_setHeader('Cache-Control', 'no-cache');
+        $this->_setHeader('Cache-Control', 'no-cache, no-transform');
+        $this->_setHeader('X-Accel-Buffering', 'no');
         ob_implicit_flush(true);
     }
 

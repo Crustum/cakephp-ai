@@ -16,8 +16,11 @@ use Crustum\Ai\Event\ToolInvoked;
 use Crustum\Ai\Files;
 use Crustum\Ai\Files\LocalImage;
 use Crustum\Ai\Messages\UserMessage;
+use Crustum\Ai\PendingStep;
 use Crustum\Ai\Responses\StreamedAgentResponse;
+use Crustum\Ai\Skills\Skill;
 use Crustum\Ai\Streaming\Event\TextDelta;
+use Crustum\Ai\Support\ToolChoice;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ConversationalAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
@@ -27,6 +30,7 @@ use Crustum\Ai\Test\Support\Event\EventRecorder;
 use Crustum\Ai\Test\Support\IntegrationPrompts;
 use Crustum\Ai\Test\Support\Skips\ApiKey;
 use Crustum\Ai\Test\Support\Storage\LocalDisk;
+use Crustum\Ai\Tools\LoadSkill;
 use Crustum\Ai\Trait\PromptableTrait;
 use Crustum\JsonSchema\Contracts\JsonSchema;
 
@@ -52,6 +56,28 @@ test('agents can get a simple text response', function (string $provider, string
 
     $recorder->assertDispatched(PromptingAgent::class);
     $recorder->assertDispatched(AgentPrompted::class);
+})->with('agent-providers');
+
+test('agents can load a skill from a catalog longer than 1024 characters', function (string $provider, string $apiKey, string $model): void {
+    ApiKey::required($apiKey);
+
+    $skills = collection(range(1, 4))->map(fn(int $index): Skill => new Skill(
+        name: "filler-{$index}",
+        description: str_repeat('Use when the user asks about an unrelated filler topic. ', 9),
+        instructions: 'Reply with the word filler.',
+    ))->appendItem(new Skill(
+        name: 'secret-word',
+        description: 'Use when the user asks for the secret word.',
+        instructions: 'The secret word is pomegranate.',
+    ))->toList();
+
+    $response = agent(tools: [new LoadSkill($skills)])->prompt(
+        'Load the secret-word skill and tell me the secret word.',
+        provider: $provider,
+        model: $model,
+    );
+
+    expect(strtolower($response->text))->toContain('pomegranate');
 })->with('agent-providers');
 
 test('ad hoc agents can be prompted', function (string $provider, string $apiKey, string $model): void {
@@ -222,6 +248,26 @@ test('agents can use tools', function (string $provider, string $apiKey, string 
     expect($response['number'])->toBe(72019);
 })->with('agent-providers');
 
+test('agent middleware can steer each generation step', function (string $provider, string $apiKey, string $model): void {
+    ApiKey::required($apiKey);
+
+    $steps = [];
+
+    $response = (new AssistantAgent())
+        ->withTools([new FixedNumberGenerator()])
+        ->withMiddleware([function (PendingStep $step, Closure $next) use (&$steps) {
+            $steps[] = $step->number;
+
+            return $next($step->withToolChoice($step->isFirstStep() ? ToolChoice::tool('FixedNumberGenerator') : ToolChoice::NONE));
+        }])
+        ->prompt('Fetch a number with the tool, then reply with it.', provider: $provider, model: $model);
+
+    expect($steps)->toBe([0, 1])
+        ->and($response->toolCalls)->toHaveCount(1)
+        ->and($response->toolResults->first()->result)->toBe('72019')
+        ->and($response->text)->not->toBe('');
+})->with('agent-providers');
+
 test('agents can replay empty tool arguments', function (string $provider, string $apiKey, string $model): void {
     ApiKey::required($apiKey);
 
@@ -295,7 +341,7 @@ test('agents can analyze text document attachments', function (string $provider,
     LocalDisk::put('docs', 'document-three.txt', 'The capital of Australia is Canberra.');
 
     try {
-        $record = ['name' => 'Taylor', 'role' => 'creator of CakePHP'];
+        $record = ['name' => 'Larry Masters', 'role' => 'creator of CakePHP'];
 
         $response = agent('Answer using only the attached documents.')->prompt(
             'List the three capital cities mentioned across the attached documents and name the person in the JSON record.',
@@ -312,7 +358,7 @@ test('agents can analyze text document attachments', function (string $provider,
         expect($response->text)->toContain('Paris')
             ->and($response->text)->toContain('Tokyo')
             ->and($response->text)->toContain('Canberra')
-            ->and($response->text)->toContain('Taylor');
+            ->and($response->text)->toContain('Larry');
     } finally {
         LocalDisk::cleanup('docs');
     }
@@ -358,3 +404,56 @@ test('agent tool exception handling is not magical', function (string $provider,
 
     expect($caught)->toBeTrue();
 })->with('agent-providers');
+
+test('agents surface the reasoning a prompted turn produced', function (string $provider, string $apiKey, string $model, array $options): void {
+    ApiKey::required($apiKey);
+
+    $response = reasoningAgent($options)->prompt(
+        reasoningPrompt(),
+        provider: $provider,
+        model: $model,
+    );
+
+    expect($response->reasoning)->not->toBe('')
+        ->and($response->text)->toContain('10')
+        ->and($response->steps->last()->reasoning)->not->toBe('');
+})->with('reasoning-providers');
+
+test('agents surface the same reasoning whether prompted or streamed', function (string $provider, string $apiKey, string $model, array $options): void {
+    ApiKey::required($apiKey);
+
+    $streamed = reasoningAgent($options)->stream(reasoningPrompt(), provider: $provider, model: $model);
+
+    iterator_to_array($streamed);
+
+    expect($streamed->reasoning)->not->toBe('')
+        ->and($streamed->text)->toContain('10');
+})->with('reasoning-providers');
+
+function reasoningPrompt(): string
+{
+    return 'Box A has twice as many balls as box B. Box C has five fewer balls than box A. '
+        . 'The three boxes hold 45 balls in total. How many balls are in box B? Answer with just the number.';
+}
+
+function reasoningAgent(array $options): object
+{
+    return new class ($options) implements Agent, HasProviderOptions
+    {
+        use PromptableTrait;
+
+        public function __construct(public array $options)
+        {
+        }
+
+        public function instructions(): string
+        {
+            return 'You are a helpful assistant that responds extremely concisely to all queries.';
+        }
+
+        public function providerOptions(Lab|string $provider): array
+        {
+            return $this->options;
+        }
+    };
+}

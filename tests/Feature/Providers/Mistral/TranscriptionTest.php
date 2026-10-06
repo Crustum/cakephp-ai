@@ -40,7 +40,7 @@ test('transcription includes model in request', function (): void {
     Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')
         ->generate(provider: 'mistral');
 
-    aiAssertHttpSent(fn(AiHttpRequest $request): bool => str_contains($request->body(), 'voxtral-mini-latest'));
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => str_contains($request->body(), 'voxtral-mini-2602'));
 });
 
 test('transcription sends language when provided', function (): void {
@@ -102,8 +102,8 @@ test('transcription usage is correctly parsed', function (): void {
     $response = Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')
         ->generate(provider: 'mistral');
 
-    expect($response->usage->promptTokens)->toBe(100)
-        ->and($response->usage->completionTokens)->toBe(50);
+    expect($response->usage->inputTokens)->toBe(100)
+        ->and($response->usage->outputTokens)->toBe(50);
 });
 
 test('transcription omits language and sends diarize flag when diarizing', function (): void {
@@ -164,3 +164,16 @@ function fakeTranscriptionResponse(string $text = 'Hello, world!'): AiHttpRespon
         ],
     ]);
 }
+
+test('transcription reports the prompt audio seconds', function (): void {
+    aiHttpFake(['*' => aiHttpResponse([
+        'text' => 'Hello, world!',
+        'usage' => ['prompt_audio_seconds' => 203, 'prompt_tokens' => 12, 'completion_tokens' => 8],
+    ])]);
+
+    $response = Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')
+        ->generate(provider: 'mistral');
+
+    expect($response->usage->audioSeconds)->toBe(203.0)
+        ->and($response->usage->inputTokens)->toBe(12);
+});

@@ -122,7 +122,7 @@ class FakeStoreGateway implements StoreGateway
      * @param \Crustum\Ai\Contracts\Providers\StoreProvider $provider The store provider instance
      * @param string $name The name of the store
      * @param string|null $description Optional store description
-     * @param \Cake\Collection\CollectionInterface|null $fileIds Initial file IDs to add to the store
+     * @param \Cake\Collection\CollectionInterface<int, string>|null $fileIds Initial file IDs to add to the store
      * @param \DateInterval|null $expiresWhenIdleFor Expiration time when idle
      * @return \Crustum\Ai\Store
      */

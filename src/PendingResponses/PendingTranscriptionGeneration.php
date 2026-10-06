@@ -8,7 +8,7 @@ use Cake\Event\EventManager;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Contracts\Files\TranscribableAudio;
 use Crustum\Ai\Enums\Lab;
-use Crustum\Ai\Event\ProviderFailedOverEvent;
+use Crustum\Ai\Event\ProviderFailedOver;
 use Crustum\Ai\Exception\FailoverableException;
 use Crustum\Ai\Files\LocalAudio;
 use Crustum\Ai\Files\StoredAudio;
@@ -117,14 +117,16 @@ class PendingTranscriptionGeneration
 
             $model ??= $provider->defaultTranscriptionModel();
 
-            $providerOptions = $this->resolveProviderOptions($provider);
+            [$providerOptions, $headers] = $this->resolveProviderOptionsAndHeaders($provider);
+
+            $provider = $provider->withHeaders($headers);
 
             try {
                 return $provider->transcribe($this->audio, $this->language, $this->diarize, $model, $this->timeout, $providerOptions);
             } catch (FailoverableException $e) {
                 $lastException = $e;
 
-                EventManager::instance()->dispatch(new ProviderFailedOverEvent($provider->name(), $model, $e));
+                EventManager::instance()->dispatch(new ProviderFailedOver($provider->name(), $model, $e, $provider));
 
                 continue;
             }
@@ -158,7 +160,8 @@ class PendingTranscriptionGeneration
                     $this->diarize,
                     $provider,
                     $model,
-                    is_array($this->providerOptions) ? $this->providerOptions : [],
+                    $this->timeout,
+                    $this->queuedProviderOptions(),
                 ),
             );
         }

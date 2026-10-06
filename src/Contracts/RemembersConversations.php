@@ -34,6 +34,14 @@ interface RemembersConversations extends Conversational
     public function continue(string $conversationId, ?object $as = null): static;
 
     /**
+     * Continue the given conversation for the participant, or start a new one when there is none.
+     *
+     * @param string|null $conversationId Conversation ID
+     * @param object $as Conversation participant
+     */
+    public function continueOrStart(?string $conversationId, object $as): static;
+
+    /**
      * Continue the latest conversation as the given user.
      *
      * @param object $as Conversation participant

@@ -54,15 +54,6 @@ class S3Document extends Document implements JsonSerializable
     }
 
     /**
-     * Get the file's MIME type.
-     */
-    #[Override]
-    public function mimeType(): ?string
-    {
-        return $this->mime;
-    }
-
-    /**
      * Get the instance as an array.
      *
      * @return array<string, mixed>

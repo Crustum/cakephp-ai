@@ -9,8 +9,8 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Utility\Value;
 
 /**
@@ -65,11 +65,9 @@ trait ParsesTextResponsesTrait
             $toolCall['id'] ?? null,
         ), $rawToolCalls);
 
-        $providerContentBlocks = [];
-
-        if (Value::filled($message['reasoning_content'] ?? null)) {
-            $providerContentBlocks['reasoning_content'] = $message['reasoning_content'];
-        }
+        $replayBlocks = Value::filled($message['reasoning_content'] ?? null)
+            ? [['type' => 'reasoning', 'reasoning_content' => $message['reasoning_content']]]
+            : [];
 
         return new StepResponse(
             text: $text,
@@ -78,7 +76,8 @@ trait ParsesTextResponsesTrait
             usage: $this->extractUsage($data),
             meta: new Meta($provider->name(), $model),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
-            providerContentBlocks: $providerContentBlocks,
+            replayBlocks: $replayBlocks,
+            reasoning: (string)($message['reasoning_content'] ?? ''),
         );
     }
 
@@ -86,18 +85,17 @@ trait ParsesTextResponsesTrait
      * Extract usage data from the response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
         $usage = $data['usage'] ?? [];
-        $details = $usage['completion_tokens_details'] ?? [];
 
-        return new Usage(
-            promptTokens: ($usage['prompt_tokens'] ?? 0) - ($usage['prompt_cache_hit_tokens'] ?? 0),
-            completionTokens: $usage['completion_tokens'] ?? 0,
-            cacheReadInputTokens: $usage['prompt_cache_hit_tokens'] ?? 0,
-            reasoningTokens: $details['reasoning_tokens'] ?? 0,
+        return new TextUsage(
+            inputTokens: $usage['prompt_tokens'] ?? 0,
+            outputTokens: $usage['completion_tokens'] ?? 0,
+            cacheReadInputTokens: $usage['prompt_cache_hit_tokens'] ?? null,
+            reasoningTokens: $usage['completion_tokens_details']['reasoning_tokens'] ?? null,
         );
     }
 

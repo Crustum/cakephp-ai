@@ -14,6 +14,8 @@ class AssistantMessage extends Message
 {
     /**
      * The message's tool calls.
+     *
+     * @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolCall>
      */
     public CollectionInterface $toolCalls;
 
@@ -22,31 +24,31 @@ class AssistantMessage extends Message
      *
      * @var array<int|string, mixed>
      */
-    public array $providerContentBlocks = [];
+    public array $replayBlocks = [];
 
     /**
      * The provider the replay state belongs to, or null when it was produced within the current run.
      */
-    public ?string $providerContentBlocksProvider = null;
+    public ?string $replayBlocksProvider = null;
 
     /**
      * Create a new assistant message instance.
      *
      * @param string $content The message content
-     * @param \Cake\Collection\CollectionInterface|null $toolCalls The tool calls made by the assistant
-     * @param array<int, array<string, mixed>> $providerContentBlocks Raw provider content blocks
-     * @param string|null $providerContentBlocksProvider Provider that owns the replay state
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolCall>|null $toolCalls The tool calls made by the assistant
+     * @param array<array-key, mixed> $replayBlocks Raw provider content blocks
+     * @param string|null $replayBlocksProvider Provider that owns the replay state
      */
     public function __construct(
         string $content,
         ?CollectionInterface $toolCalls = null,
-        array $providerContentBlocks = [],
-        ?string $providerContentBlocksProvider = null,
+        array $replayBlocks = [],
+        ?string $replayBlocksProvider = null,
     ) {
         parent::__construct('assistant', $content);
 
         $this->toolCalls = $toolCalls ?: collection([]);
-        $this->providerContentBlocks = $providerContentBlocks;
-        $this->providerContentBlocksProvider = $providerContentBlocksProvider;
+        $this->replayBlocks = $replayBlocks;
+        $this->replayBlocksProvider = $replayBlocksProvider;
     }
 }

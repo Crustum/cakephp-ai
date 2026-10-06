@@ -10,6 +10,7 @@ use Crustum\Ai\Streaming\Event\StreamStart;
 use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Streaming\Event\TextEnd;
 use Crustum\Ai\Streaming\Event\TextStart;
+use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\HistoricalReasoningWithoutToolCallsAgent;
 use Crustum\Ai\Test\Fixtures\Agents\HistoricalToolCallWithEmptyReasoningAgent;
 use Crustum\Ai\Test\Fixtures\Agents\HistoricalToolCallWithoutReasoningAgent;
@@ -23,6 +24,28 @@ beforeEach(function (): void {
         ...(array)Configure::read('Ai.providers.deepseek'),
         'key' => 'test-key',
     ]);
+});
+
+test('prompt reads reasoning content off the response', function (): void {
+    aiHttpFake([
+        'api.deepseek.com/*' => aiHttpResponse([
+            'id' => 'chatcmpl-deepseek-123',
+            'object' => 'chat.completion',
+            'model' => 'deepseek-reasoner',
+            'choices' => [[
+                'index' => 0,
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => 'Hello',
+                    'reasoning_content' => 'Let me think...',
+                ],
+                'finish_reason' => 'stop',
+            ]],
+            'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5],
+        ]),
+    ]);
+
+    expect((new AssistantAgent())->prompt('Hi', provider: 'deepseek')->reasoning)->toBe('Let me think...');
 });
 
 test('preserves reasoning content across tool-call loops', function (): void {

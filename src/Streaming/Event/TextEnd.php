@@ -37,15 +37,4 @@ class TextEnd extends StreamEvent
             'timestamp' => $this->timestamp,
         ];
     }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'text-end',
-            'id' => $this->messageId,
-        ];
-    }
 }

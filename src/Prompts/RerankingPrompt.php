@@ -21,6 +21,8 @@ class RerankingPrompt implements Countable
      * @param int|null $limit The maximum number of results to return
      * @param \Crustum\Ai\Contracts\Providers\RerankingProvider $provider The reranking provider
      * @param string $model The model identifier
+     * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      */
     public function __construct(
         public readonly array $documents,
@@ -28,6 +30,8 @@ class RerankingPrompt implements Countable
         public readonly ?int $limit,
         public readonly RerankingProvider $provider,
         public readonly string $model,
+        public readonly int $timeout = 30,
+        public readonly array $providerOptions = [],
     ) {
     }
 

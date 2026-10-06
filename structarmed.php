@@ -16,13 +16,13 @@ return Architecture::define()
         '/^Crustum\\\\Ai\\\\Approvals\\\\(Approval|Decision|Decisions)$/',
         '/^Crustum\\\\Ai\\\\Prompts\\\\(AgentPrompt|Prompt)$/',
         '/^Crustum\\\\Ai\\\\Gateway\\\\(StepContext|StepResponse|TextGenerationOptions)$/',
-        '/^Crustum\\\\Ai\\\\Providers\\\\Tools\\\\(ProviderTool|FileSearch|FileSearchQuery|ToolSearch|WebFetch|WebSearch)$/',
+        '/^Crustum\\\\Ai\\\\Providers\\\\Tools\\\\(ProviderTool|CodeExecution|FileSearch|FileSearchQuery|ToolSearch|WebFetch|WebSearch)$/',
     ])
     // Public static entrypoints (root FQCN kept for DX; layer is Facades, not Plugin).
     // `Files` stays with the Files layer — DTOs/traits call `Files::put()` / etc.
     // `Ai` is intentionally unregistered: every layer calls Ai::manager(); unregistered
     // classes are treated as external, so refs to it never fail the ruleset.
-    ->layerPattern('Facades', '/^Crustum\\\\Ai\\\\(AiManager|Audio|Embeddings|Image|Reranking|Text|Transcription)$/')
+    ->layerPattern('Facades', '/^Crustum\\\\Ai\\\\(AiManager|Audio|Collections|Embeddings|Image|Reranking|Text|Transcription)$/')
     // Vector-store entry + entity (same idea as root Files with the Files layer).
     ->layerPattern('Stores', '/^Crustum\\\\Ai\\\\Stores?$/')
     // Root agent classes live beside facades on disk but belong with Agents.
@@ -40,9 +40,11 @@ return Architecture::define()
         '/^Crustum\\\\Ai\\\\Command\\\\.*$/',
     ])
     ->layerPattern('Event', '/^Crustum\\\\Ai\\\\Event\\\\.*$/')
+    ->layerPattern('RunContext', '/^Crustum\\\\Ai\\\\Gateway\\\\RunContext$/')
     ->layerPattern('Gateway', '/^Crustum\\\\Ai\\\\Gateway\\\\.*$/')
     ->layerPattern('Providers', '/^Crustum\\\\Ai\\\\Providers\\\\.*$/')
-    ->layerPattern('Files', '/^Crustum\\\\Ai\\\\(Files|Filesystem|Storage)(\\\\.*)?$/')
+    ->layerPattern('Files', '/^Crustum\\\\Ai\\\\(Files|Filesystem)(\\\\.*)?$/')
+    ->layerPattern('Storage', '/^Crustum\\\\Ai\\\\Storage(\\\\.*)?$/')
     ->layerPattern('Middleware', '/^Crustum\\\\Ai\\\\(Middleware|Pipeline)\\\\.*$/')
     ->layerPattern('Model', '/^Crustum\\\\Ai\\\\Model\\\\.*$/')
     ->layerPattern('Tools', '/^Crustum\\\\Ai\\\\Tools\\\\.*$/')
@@ -53,20 +55,22 @@ return Architecture::define()
     // Spine: Foundation ← Approvals ← Prompts.
     // Do not use +Event until Event is Foundation-only.
     ->ruleset([
-        'Foundation' => [],
-        'Model' => [],
+        'Foundation' => ['RunContext'],
+        'RunContext' => ['Foundation', 'Event'],
         'Approvals' => ['Foundation'],
+        'Model' => ['Approvals', 'Foundation'],
         'Prompts' => ['+Approvals'],
-        'Files' => ['Model', '+Prompts'],
+        'Files' => ['Model', '+Prompts', 'PendingResponses'],
         'Tools' => ['Files', 'Foundation'],
-        'Middleware' => ['+Prompts', 'Model'],
+        'Middleware' => ['+Prompts', 'Model', 'RunContext'],
         'Stores' => ['Files', 'Foundation'],
-        'Gateway' => ['+Tools', '+Prompts', 'Stores'],
+        'Storage' => ['Foundation', 'Model', 'Approvals', 'Files'],
+        'Gateway' => ['+Tools', '+Prompts', 'Stores', 'Event', 'RunContext'],
         'Providers' => ['+Gateway', 'Middleware', 'Model', 'Event'],
         'Event' => ['Providers', '+Prompts', 'Stores'],
         'PendingResponses' => ['+Providers'],
         'Agents' => ['+Providers', '+PendingResponses'],
-        'Facades' => ['+Agents'],
+        'Facades' => ['+Agents', '+Storage'],
         'Plugin' => ['+Facades'],
         'TestSuite' => ['+Facades'],
     ])
@@ -79,7 +83,7 @@ return Architecture::define()
     ->skipClassViolation('Crustum\\Ai\\Contracts\\Gateway\\StoreGateway', 'Crustum\\Ai\\Store')
     ->skipClassViolation('Crustum\\Ai\\Providers\\Tools\\FileSearch', 'Crustum\\Ai\\Store')
     // Support helper iterates the Reranking facade.
-    ->skipClassViolation('Crustum\\Ai\\Support\\CollectionReranker', 'Crustum\\Ai\\Reranking')
+    ->skipClassViolation('Crustum\\Ai\\Support\\AiCollection', 'Crustum\\Ai\\Reranking')
     // Vector search behavior generates embeddings for similarity queries.
     ->skipClassViolation('Crustum\\Ai\\Model\\Behavior\\VectorSearchBehavior', 'Crustum\\Ai\\Embeddings')
     // Value wrapper delegates to the Text facade.
@@ -87,15 +91,7 @@ return Architecture::define()
     // Contracts reference the orchestration DTO they drive.
     ->skipClassViolation('Crustum\\Ai\\Contracts\\Providers\\TextProvider', 'Crustum\\Ai\\Gateway\\TextGenerationLoop')
     ->skipClassViolation('Crustum\\Ai\\Contracts\\Files\\TranscribableAudio', 'Crustum\\Ai\\PendingResponses\\PendingTranscriptionGeneration')
-    // Audio DTOs are the subject of async transcription.
-    ->skipClassViolation('Crustum\\Ai\\Files\\LocalAudio', 'Crustum\\Ai\\PendingResponses\\PendingTranscriptionGeneration')
-    ->skipClassViolation('Crustum\\Ai\\Files\\Base64Audio', 'Crustum\\Ai\\PendingResponses\\PendingTranscriptionGeneration')
-    ->skipClassViolation('Crustum\\Ai\\Files\\RemoteAudio', 'Crustum\\Ai\\PendingResponses\\PendingTranscriptionGeneration')
-    ->skipClassViolation('Crustum\\Ai\\Files\\StoredAudio', 'Crustum\\Ai\\PendingResponses\\PendingTranscriptionGeneration')
-    // RunContext dispatches the step / tool lifecycle events on the run's behalf (v4 run-context surface).
-    ->skipClassViolation('Crustum\\Ai\\Gateway\\RunContext', 'Crustum\\Ai\\Event\\InvokingTool')
-    ->skipClassViolation('Crustum\\Ai\\Gateway\\RunContext', 'Crustum\\Ai\\Event\\ToolInvoked')
-    ->skipClassViolation('Crustum\\Ai\\Gateway\\RunContext', 'Crustum\\Ai\\Event\\ToolFailed')
-    ->skipClassViolation('Crustum\\Ai\\Gateway\\RunContext', 'Crustum\\Ai\\Event\\StartingStep')
-    ->skipClassViolation('Crustum\\Ai\\Gateway\\RunContext', 'Crustum\\Ai\\Event\\StepCompleted')
-    ->skipClassViolation('Crustum\\Ai\\Gateway\\RunContext', 'Crustum\\Ai\\Event\\StepFailed');
+    ->skipClassViolation('Crustum\\Ai\\Streaming\\Protocols\\AgentUserInteractionProtocol', 'Crustum\\Ai\\Approvals\\ApprovalMismatchException')
+    ->skipClassViolation('Crustum\\Ai\\Contracts\\PaginatesConversations', 'Crustum\\Ai\\Storage\\ConversationCursor')
+    ->skipClassViolation('Crustum\\Ai\\Contracts\\PaginatesConversations', 'Crustum\\Ai\\Storage\\ConversationMessagePage')
+    ;

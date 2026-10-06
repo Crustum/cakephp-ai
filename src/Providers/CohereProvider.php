@@ -7,24 +7,32 @@ use Cake\Event\EventManager;
 use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Gateway\EmbeddingGateway;
 use Crustum\Ai\Contracts\Gateway\RerankingGateway;
+use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\RerankingProvider;
+use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Gateway\CohereGateway;
 use Crustum\Ai\Providers\Trait\GeneratesEmbeddingsTrait;
+use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
 use Crustum\Ai\Providers\Trait\HasEmbeddingGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasRerankingGatewayTrait;
+use Crustum\Ai\Providers\Trait\HasTextGatewayTrait;
 use Crustum\Ai\Providers\Trait\ReranksTrait;
+use Crustum\Ai\Providers\Trait\StreamsTextTrait;
 use Override;
 
 /**
- * Cohere embeddings and reranking provider.
+ * Cohere embeddings, reranking, and text provider.
  */
-class CohereProvider extends Provider implements EmbeddingProvider, RerankingProvider
+class CohereProvider extends Provider implements EmbeddingProvider, RerankingProvider, TextProvider
 {
     use GeneratesEmbeddingsTrait;
+    use GeneratesTextTrait;
     use HasEmbeddingGatewayTrait;
     use HasRerankingGatewayTrait;
+    use HasTextGatewayTrait;
     use ReranksTrait;
+    use StreamsTextTrait;
 
     /**
      * Provider configuration.
@@ -102,6 +110,46 @@ class CohereProvider extends Provider implements EmbeddingProvider, RerankingPro
     }
 
     /**
+     * Get the provider's text gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\StepTextGateway
+     */
+    public function textGateway(): StepTextGateway
+    {
+        return $this->textGateway ??= $this->cohereGateway();
+    }
+
+    /**
+     * Get the name of the default text model.
+     *
+     * @return string
+     */
+    public function defaultTextModel(): string
+    {
+        return $this->config['models']['text']['default'] ?? 'command-a-03-2025';
+    }
+
+    /**
+     * Get the name of the cheapest text model.
+     *
+     * @return string
+     */
+    public function cheapestTextModel(): string
+    {
+        return $this->config['models']['text']['cheapest'] ?? 'command-r7b-12-2024';
+    }
+
+    /**
+     * Get the name of the smartest text model.
+     *
+     * @return string
+     */
+    public function smartestTextModel(): string
+    {
+        return $this->config['models']['text']['smartest'] ?? 'command-a-plus-05-2026';
+    }
+
+    /**
      * Get the name of the default embeddings model.
      *
      * @return string
@@ -128,6 +176,6 @@ class CohereProvider extends Provider implements EmbeddingProvider, RerankingPro
      */
     public function defaultRerankingModel(): string
     {
-        return $this->config['models']['reranking']['default'] ?? 'rerank-v3.5';
+        return $this->config['models']['reranking']['default'] ?? 'rerank-v4.0-pro';
     }
 }

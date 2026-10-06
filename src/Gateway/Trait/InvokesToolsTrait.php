@@ -5,6 +5,7 @@ namespace Crustum\Ai\Gateway\Trait;
 
 use Cake\Utility\Text;
 use Crustum\Ai\Contracts\Tool;
+use Crustum\Ai\Exception\ValidationException;
 use Crustum\Ai\Gateway\ParentInvocation;
 use Crustum\Ai\Gateway\RunContext;
 use Crustum\Ai\Providers\Tools\ToolSearch;
@@ -41,6 +42,9 @@ trait InvokesToolsTrait
 
             try {
                 $result = $tool->handle(new Request($arguments, $toolCallId, $toolInvocationId));
+            } catch (ValidationException $exception) {
+                // Validation failures are returned to the model so it can correct the arguments and retry.
+                $result = implode(' ', $exception->messages()) ?: $exception->getMessage();
             } catch (Throwable $throwable) {
                 $context?->toolFailed($tool, $arguments, $throwable, $toolInvocationId, $this->elapsedMilliseconds($startedAt));
 

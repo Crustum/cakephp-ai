@@ -22,6 +22,7 @@ interface AudioGateway
      * @param string $voice The voice to use for audio generation
      * @param string|null $instructions Optional instructions for audio generation
      * @param int $timeout Timeout in seconds (default: 30)
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\AudioResponse
      */
     public function generateAudio(
@@ -31,5 +32,6 @@ interface AudioGateway
         string $voice,
         ?string $instructions = null,
         int $timeout = 30,
+        array $providerOptions = [],
     ): AudioResponse;
 }

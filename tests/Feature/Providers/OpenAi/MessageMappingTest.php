@@ -268,7 +268,7 @@ test('reasoning blocks are interleaved with associated tool calls on assistant r
             new UserMessage('search'),
             new AssistantMessage('Searching.', collection([
                 new ToolCall(
-                    id: 'call_1',
+                    id: 'fc_1',
                     name: 'FixedNumberGenerator',
                     arguments: ['q' => 'foo'],
                     resultId: 'call_1',
@@ -276,7 +276,7 @@ test('reasoning blocks are interleaved with associated tool calls on assistant r
                     reasoningSummary: [],
                 ),
                 new ToolCall(
-                    id: 'call_2',
+                    id: 'fc_2',
                     name: 'FixedNumberGenerator',
                     arguments: ['q' => 'bar'],
                     resultId: 'call_2',
@@ -284,7 +284,7 @@ test('reasoning blocks are interleaved with associated tool calls on assistant r
                     reasoningSummary: [],
                 ),
                 new ToolCall(
-                    id: 'call_3',
+                    id: 'fc_3',
                     name: 'FixedNumberGenerator',
                     arguments: ['q' => 'baz'],
                     resultId: 'call_3',
@@ -292,7 +292,7 @@ test('reasoning blocks are interleaved with associated tool calls on assistant r
             ])),
             new ToolResultMessage(collection([
                 new ToolResult(
-                    id: 'call_1',
+                    id: 'fc_1',
                     name: 'FixedNumberGenerator',
                     arguments: ['q' => 'foo'],
                     result: '42',
@@ -319,10 +319,10 @@ test('reasoning blocks are interleaved with associated tool calls on assistant r
         };
 
         $rs1Index = $searchIndex($input, fn($i): bool => ($i['type'] ?? '') === 'reasoning' && ($i['id'] ?? '') === 'rs_1');
-        $call1Index = $searchIndex($input, fn($i): bool => ($i['id'] ?? '') === 'call_1');
+        $call1Index = $searchIndex($input, fn($i): bool => ($i['id'] ?? '') === 'fc_1');
         $rs2Index = $searchIndex($input, fn($i): bool => ($i['type'] ?? '') === 'reasoning' && ($i['id'] ?? '') === 'rs_2');
-        $call2Index = $searchIndex($input, fn($i): bool => ($i['id'] ?? '') === 'call_2');
-        $call3Index = $searchIndex($input, fn($i): bool => ($i['id'] ?? '') === 'call_3');
+        $call2Index = $searchIndex($input, fn($i): bool => ($i['id'] ?? '') === 'fc_2');
+        $call3 = collect($input)->filter(fn($i): bool => ($i['call_id'] ?? '') === 'call_3')->first();
 
         return $rs1Index !== false
             && $call1Index !== false
@@ -330,7 +330,31 @@ test('reasoning blocks are interleaved with associated tool calls on assistant r
             && $rs2Index !== false
             && $call2Index !== false
             && $rs2Index + 1 === $call2Index
-            && $call3Index !== false;
+            // A call with no reasoning of its own goes out without its item id, which the API only accepts beside a reasoning item.
+            && $call3 !== null
+            && !array_key_exists('id', $call3);
+    });
+});
+
+test('a tool call another provider made replays without an item id openai would reject', function (): void {
+    aiHttpFake(['api.openai.com/*' => fakeOpenAiResponse('hi')]);
+
+    agent(
+        instructions: 'Hi.',
+        messages: [
+            new UserMessage('number'),
+            new AssistantMessage('', collection([new ToolCall('toolu_01ABC', 'FixedNumberGenerator', [], 'toolu_01ABC')])),
+            new ToolResultMessage(collection([new ToolResult('toolu_01ABC', 'FixedNumberGenerator', [], '72019', 'toolu_01ABC')])),
+            new UserMessage('again'),
+        ],
+        tools: [(new ToolUsingAgent(fixed: true))->tools()[0]],
+    )->prompt('', provider: 'openai');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $input = json_decode($request->body(), true)['input'];
+        $call = collection($input)->filter(fn($item): bool => is_array($item) && ($item['type'] ?? '') === 'function_call')->first();
+
+        return is_array($call) && !array_key_exists('id', $call) && $call['call_id'] === 'toolu_01ABC';
     });
 });
 

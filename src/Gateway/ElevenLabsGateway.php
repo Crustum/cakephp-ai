@@ -18,6 +18,7 @@ use Crustum\Ai\Http\HttpClientFactory;
 use Crustum\Ai\Responses\AudioResponse;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TranscriptionSegment;
+use Crustum\Ai\Responses\Data\TranscriptionUsage;
 use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\TranscriptionResponse;
 use RuntimeException;
@@ -48,6 +49,13 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
     protected array $elevenLabsHttpAttachments = [];
 
     /**
+     * Query parameters for the pending HTTP request.
+     *
+     * @var array<string, mixed>
+     */
+    protected array $elevenLabsHttpQuery = [];
+
+    /**
      * Generate audio from the given text.
      *
      * @param \Crustum\Ai\Contracts\Providers\AudioProvider $provider Audio provider
@@ -56,6 +64,7 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
      * @param string $voice Voice to use
      * @param string|null $instructions Optional instructions
      * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\AudioResponse
      */
     public function generateAudio(
@@ -65,6 +74,7 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
         string $voice,
         ?string $instructions = null,
         int $timeout = 30,
+        array $providerOptions = [],
     ): AudioResponse {
         $voice = match ($voice) {
             'default-male' => 'onwK4e9ZLuTAKqWW03F9',
@@ -72,18 +82,23 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
             default => $voice,
         };
 
+        [$query, $body] = $this->splitQueryOptions($providerOptions, ['output_format', 'enable_logging', 'optimize_streaming_latency']);
+
         $response = $this->withErrorHandling(
             $provider->name(),
-            fn(): HttpResponseInterface => $this->client($provider, $timeout)->post('text-to-speech/' . $voice, [
-                'model_id' => $model,
-                'text' => $text,
-            ]),
+            fn(): HttpResponseInterface => $this->client($provider, $timeout)
+                ->withQueryParameters($query)
+                ->post('text-to-speech/' . $voice, array_merge($body, [
+                    'model_id' => $model,
+                    'text' => $text,
+                ])),
         );
 
         return new AudioResponse(
             base64_encode((string)$response->getBody()),
+            new Usage(),
             new Meta($provider->name(), $model),
-            'audio/mpeg',
+            $response->getHeaderLine('Content-Type') ?: 'audio/mpeg',
         );
     }
 
@@ -108,13 +123,16 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
         int $timeout = 30,
         array $providerOptions = [],
     ): TranscriptionResponse {
+        [$query, $body] = $this->splitQueryOptions($providerOptions, ['enable_logging']);
+
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider, $timeout)
+                ->withQueryParameters($query)
                 ->attach('file', $audio->content(), 'file', array_filter(['Content-Type' => $audio->mimeType()]))
-                ->post('speech-to-text', array_merge($providerOptions, array_filter([
+                ->post('speech-to-text', array_merge($body, array_filter([
                     'model_id' => $model,
-                    'language' => $language,
+                    'language_code' => $language,
                     'diarize' => $diarize ? 'true' : 'false',
                 ]))),
         );
@@ -137,7 +155,7 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
         return new TranscriptionResponse(
             $data['text'] ?? '',
             $mappedSegments,
-            new Usage(),
+            new TranscriptionUsage(audioSeconds: $data['audio_duration_secs'] ?? null),
             new Meta($provider->name(), $model),
         );
     }
@@ -153,6 +171,19 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
         $this->elevenLabsHttpProvider = $provider;
         $this->elevenLabsHttpTimeout = $timeout;
         $this->elevenLabsHttpAttachments = [];
+        $this->elevenLabsHttpQuery = [];
+
+        return $this;
+    }
+
+    /**
+     * Set the query parameters for the pending HTTP request.
+     *
+     * @param array<string, mixed> $query Query parameters
+     */
+    protected function withQueryParameters(array $query): static
+    {
+        $this->elevenLabsHttpQuery = $query;
 
         return $this;
     }
@@ -178,6 +209,27 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
     }
 
     /**
+     * Split the provider options into query string parameters and the request body.
+     *
+     * @param array<string, mixed> $providerOptions Provider options
+     * @param array<int, string> $queryOptions Option names sent as query parameters
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    protected function splitQueryOptions(array $providerOptions, array $queryOptions): array
+    {
+        $queryKeys = array_flip($queryOptions);
+
+        $query = array_intersect_key($providerOptions, $queryKeys);
+        $body = array_diff_key($providerOptions, $queryKeys);
+
+        foreach ($query as $key => $value) {
+            $query[$key] = is_bool($value) ? ($value ? 'true' : 'false') : $value;
+        }
+
+        return [$query, $body];
+    }
+
+    /**
      * Send a POST request to the ElevenLabs API.
      *
      * @param string $path API path
@@ -193,6 +245,10 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
         }
 
         $url = rtrim($this->baseUrl($provider), '/') . '/' . ltrim($path, '/');
+
+        if ($this->elevenLabsHttpQuery !== []) {
+            $url .= (str_contains($url, '?') ? '&' : '?') . http_build_query($this->elevenLabsHttpQuery);
+        }
 
         $http = HttpClientFactory::create($this->elevenLabsHttpTimeout);
 

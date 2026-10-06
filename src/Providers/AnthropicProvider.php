@@ -8,6 +8,7 @@ use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Gateway\FileGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Providers\FileProvider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsToolSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebFetch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
@@ -15,6 +16,7 @@ use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\Anthropic\AnthropicFileGateway;
 use Crustum\Ai\Gateway\Anthropic\AnthropicGateway;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\WebFetch;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
@@ -27,7 +29,7 @@ use Override;
 /**
  * Anthropic text and file provider.
  */
-class AnthropicProvider extends Provider implements FileProvider, SupportsToolSearch, SupportsWebFetch, SupportsWebSearch, TextProvider
+class AnthropicProvider extends Provider implements FileProvider, SupportsCodeExecution, SupportsToolSearch, SupportsWebFetch, SupportsWebSearch, TextProvider
 {
     use GeneratesTextTrait;
     use HasFileGatewayTrait;
@@ -78,6 +80,17 @@ class AnthropicProvider extends Provider implements FileProvider, SupportsToolSe
     public function providerCredentials(): array
     {
         return ['key' => $this->config['key'] ?? null];
+    }
+
+    /**
+     * Get the code execution tool options for the provider.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $codeExecution Code execution tool
+     * @return array<string, mixed>
+     */
+    public function codeExecutionToolOptions(CodeExecution $codeExecution): array
+    {
+        return $codeExecution->providerOptions(Lab::Anthropic);
     }
 
     /**
@@ -161,7 +174,7 @@ class AnthropicProvider extends Provider implements FileProvider, SupportsToolSe
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? 'claude-sonnet-5';
+        return $this->config['models']['text']['default'] ?? 'claude-sonnet-5-5';
     }
 
     /**
@@ -181,6 +194,6 @@ class AnthropicProvider extends Provider implements FileProvider, SupportsToolSe
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'claude-opus-4-8';
+        return $this->config['models']['text']['smartest'] ?? 'claude-fable-5-1';
     }
 }

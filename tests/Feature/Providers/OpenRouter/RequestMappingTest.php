@@ -6,6 +6,7 @@ use Cake\Utility\Hash;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeToolChoiceAgent;
+use Crustum\Ai\Test\Fixtures\Agents\NestedStructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolChoiceAgent;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
@@ -147,6 +148,20 @@ test('structured output includes json schema response format', function (): void
     });
 });
 
+test('structured output without Strict attribute sends strict false in response format', function (): void {
+    aiHttpFake(['*' => fakeOpenRouterResponse('{"elements": []}')]);
+
+    (new NestedStructuredAgent())->prompt('List elements.', provider: 'openrouter');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $format = Hash::get($body, 'response_format');
+
+        return $format['type'] === 'json_schema'
+            && $format['json_schema']['strict'] === false;
+    });
+});
+
 test('request without schema excludes response format', function (): void {
     aiHttpFake(['*' => fakeOpenRouterResponse('Hello')]);
 
@@ -223,8 +238,8 @@ test('response usage is correctly parsed', function (): void {
 
     $response = agent()->prompt('Hello', provider: 'openrouter');
 
-    expect($response->usage->promptTokens)->toBe(10)
-        ->and($response->usage->completionTokens)->toBe(5);
+    expect($response->usage->inputTokens)->toBe(10)
+        ->and($response->usage->outputTokens)->toBe(5);
 });
 
 test('response usage includes cache and reasoning tokens', function (): void {
@@ -242,7 +257,7 @@ test('response usage includes cache and reasoning tokens', function (): void {
             'completion_tokens' => 50,
             'prompt_tokens_details' => [
                 'cached_tokens' => 20,
-                'cache_write_tokens' => 80,
+                'cache_write_tokens' => 30,
             ],
             'completion_tokens_details' => [
                 'reasoning_tokens' => 10,
@@ -252,10 +267,10 @@ test('response usage includes cache and reasoning tokens', function (): void {
 
     $response = agent()->prompt('Hello', provider: 'openrouter');
 
-    expect($response->usage->promptTokens)->toBe(100)
-        ->and($response->usage->completionTokens)->toBe(50)
+    expect($response->usage->inputTokens)->toBe(100)
+        ->and($response->usage->outputTokens)->toBe(50)
         ->and($response->usage->cacheReadInputTokens)->toBe(20)
-        ->and($response->usage->cacheWriteInputTokens)->toBe(80)
+        ->and($response->usage->cacheWriteInputTokens)->toBe(30)
         ->and($response->usage->reasoningTokens)->toBe(10);
 });
 

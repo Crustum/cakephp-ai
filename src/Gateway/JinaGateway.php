@@ -15,6 +15,8 @@ use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Http\HttpClientFactory;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\RankedDocument;
+use Crustum\Ai\Responses\Data\RerankingUsage;
+use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\EmbeddingsResponse;
 use Crustum\Ai\Responses\RerankingResponse;
 use RuntimeException;
@@ -75,7 +77,7 @@ class JinaGateway implements EmbeddingGateway, RerankingGateway
 
         return new EmbeddingsResponse(
             $embeddings,
-            $data['usage']['total_tokens'] ?? 0,
+            new Usage($data['usage']['total_tokens'] ?? 0),
             new Meta($provider->name(), $model),
         );
     }
@@ -88,6 +90,8 @@ class JinaGateway implements EmbeddingGateway, RerankingGateway
      * @param array<int, string> $documents Documents to rerank
      * @param string $query Query to use for relevance scoring
      * @param int|null $limit Maximum number of results
+     * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\RerankingResponse
      */
     public function rerank(
@@ -96,15 +100,17 @@ class JinaGateway implements EmbeddingGateway, RerankingGateway
         array $documents,
         string $query,
         ?int $limit = null,
+        int $timeout = 30,
+        array $providerOptions = [],
     ): RerankingResponse {
         $response = $this->withErrorHandling(
             $provider->name(),
-            fn(): HttpResponseInterface => $this->client($provider)->post('/rerank', array_filter([
+            fn(): HttpResponseInterface => $this->client($provider, $timeout)->post('/rerank', array_merge($providerOptions, array_filter([
                 'model' => $model,
                 'query' => $query,
                 'documents' => $documents,
                 'top_n' => $limit,
-            ])),
+            ]))),
         );
 
         $data = $response->getJson() ?? [];
@@ -117,6 +123,7 @@ class JinaGateway implements EmbeddingGateway, RerankingGateway
 
         return new RerankingResponse(
             $results,
+            new RerankingUsage($data['usage']['total_tokens'] ?? 0),
             new Meta($provider->name(), $model),
         );
     }

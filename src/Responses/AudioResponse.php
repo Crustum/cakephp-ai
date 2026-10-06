@@ -5,6 +5,7 @@ namespace Crustum\Ai\Responses;
 
 use Cake\Utility\Text;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Trait\StorableTrait;
 use Stringable;
 
@@ -26,11 +27,13 @@ class AudioResponse implements Stringable
      * Constructor
      *
      * @param string $audio The Base64 representation of the audio
+     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage for the request
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata about the response
      * @param string|null $mimeType The MIME type of the audio
      */
     public function __construct(
         public string $audio,
+        public Usage $usage,
         public Meta $meta,
         ?string $mimeType = null,
     ) {
@@ -44,16 +47,16 @@ class AudioResponse implements Stringable
      */
     protected function randomStorageName(): string
     {
-        static $name = null;
+        $this->randomStorageName ??= Text::uuid() . match ($this->mime) {
+            'audio/wav', 'audio/x-wav' => '.wav',
+            'audio/opus' => '.opus',
+            'audio/pcm' => '.pcm',
+            'audio/ulaw' => '.ulaw',
+            'audio/alaw' => '.alaw',
+            default => '.mp3',
+        };
 
-        if ($name === null) {
-            $name = Text::uuid() . match ($this->mime) {
-                'audio/wav', 'audio/x-wav' => '.wav',
-                default => '.mp3',
-            };
-        }
-
-        return $name;
+        return $this->randomStorageName;
     }
 
     /**

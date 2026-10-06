@@ -48,12 +48,12 @@ class VectorSearchBehavior extends Behavior
      * search string is given, embeddings are generated automatically via the
      * `Embeddings` facade.
      *
-     * @param \Cake\ORM\Query\SelectQuery $query The query to modify.
+     * @param \Cake\ORM\Query\SelectQuery<\Cake\Datasource\EntityInterface|array> $query The query to modify.
      * @param string $column The vector column name.
      * @param float $minSimilarity Minimum cosine similarity (0.0 - 1.0).
      * @param string|null $search Text to embed and search for.
      * @param array<int, float|int>|null $embedding Pre-computed embedding vector.
-     * @return \Cake\ORM\Query\SelectQuery
+     * @return \Cake\ORM\Query\SelectQuery<\Cake\Datasource\EntityInterface|array>
      */
     public function findSimilarTo(
         SelectQuery $query,
@@ -62,9 +62,7 @@ class VectorSearchBehavior extends Behavior
         ?string $search = null,
         ?array $embedding = null,
     ): SelectQuery {
-        if ($embedding === null) {
-            $embedding = $this->embeddingFor((string)$search);
-        }
+        $embedding ??= $this->embeddingFor((string)$search);
 
         $vector = $this->vectorLiteral($embedding);
         $similarity = sprintf('%s <=> %s::vector', $column, $vector);

@@ -7,6 +7,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched after a store is deleted.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class StoreDeleted extends AiEvent
 {
@@ -26,6 +28,6 @@ class StoreDeleted extends AiEvent
             'invocationId' => $invocationId,
             'provider' => $provider,
             'storeId' => $storeId,
-        ]);
+        ], $provider);
     }
 }

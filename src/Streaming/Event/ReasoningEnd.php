@@ -40,15 +40,4 @@ class ReasoningEnd extends StreamEvent
             'summary' => $this->summary,
         ];
     }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'reasoning-end',
-            'id' => $this->reasoningId,
-        ];
-    }
 }

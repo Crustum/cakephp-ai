@@ -112,7 +112,7 @@ class OllamaProvider extends Provider implements EmbeddingProvider, TextProvider
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? 'llama3.1:8b';
+        return $this->config['models']['text']['default'] ?? 'qwen3.5:4b';
     }
 
     /**
@@ -122,7 +122,7 @@ class OllamaProvider extends Provider implements EmbeddingProvider, TextProvider
      */
     public function cheapestTextModel(): string
     {
-        return $this->config['models']['text']['cheapest'] ?? 'llama3.1:8b';
+        return $this->config['models']['text']['cheapest'] ?? 'qwen3.5:0.8b';
     }
 
     /**
@@ -132,7 +132,7 @@ class OllamaProvider extends Provider implements EmbeddingProvider, TextProvider
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'llama3.1:70b';
+        return $this->config['models']['text']['smartest'] ?? 'gemma4:cloud';
     }
 
     /**

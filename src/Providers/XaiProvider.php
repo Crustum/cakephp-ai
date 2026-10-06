@@ -8,12 +8,14 @@ use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Gateway\ImageGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsFileSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\Xai\XaiGateway;
 use Crustum\Ai\Gateway\Xai\XaiImageGateway;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Providers\Trait\GeneratesImagesTrait;
@@ -27,7 +29,7 @@ use Override;
 /**
  * xAI text and image provider.
  */
-class XaiProvider extends Provider implements ImageProvider, SupportsFileSearch, SupportsWebSearch, TextProvider
+class XaiProvider extends Provider implements ImageProvider, SupportsCodeExecution, SupportsFileSearch, SupportsWebSearch, TextProvider
 {
     use GeneratesImagesTrait;
     use GeneratesTextTrait;
@@ -73,6 +75,17 @@ class XaiProvider extends Provider implements ImageProvider, SupportsFileSearch,
     public function providerCredentials(): array
     {
         return ['key' => $this->config['key'] ?? null];
+    }
+
+    /**
+     * Get the code execution tool options for the provider.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $codeExecution Code execution tool
+     * @return array<string, mixed>
+     */
+    public function codeExecutionToolOptions(CodeExecution $codeExecution): array
+    {
+        return $codeExecution->providerOptions(Lab::xAI);
     }
 
     /**
@@ -125,9 +138,7 @@ class XaiProvider extends Provider implements ImageProvider, SupportsFileSearch,
      */
     public function imageGateway(): ImageGateway
     {
-        if (!isset($this->imageGateway)) {
-            $this->imageGateway = new XaiImageGateway($this->events);
-        }
+        $this->imageGateway ??= new XaiImageGateway($this->events);
 
         return $this->imageGateway;
     }
@@ -139,7 +150,7 @@ class XaiProvider extends Provider implements ImageProvider, SupportsFileSearch,
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? 'grok-4.20-non-reasoning';
+        return $this->config['models']['text']['default'] ?? 'grok-4.7';
     }
 
     /**
@@ -159,7 +170,7 @@ class XaiProvider extends Provider implements ImageProvider, SupportsFileSearch,
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'grok-4.3';
+        return $this->config['models']['text']['smartest'] ?? 'grok-4.7';
     }
 
     /**
@@ -169,7 +180,7 @@ class XaiProvider extends Provider implements ImageProvider, SupportsFileSearch,
      */
     public function defaultImageModel(): string
     {
-        return $this->config['models']['image']['default'] ?? 'grok-imagine-image';
+        return $this->config['models']['image']['default'] ?? 'grok-imagine-image-2.0';
     }
 
     /**

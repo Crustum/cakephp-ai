@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Streaming\Event;
 
+use Cake\Collection\Collection;
+use Cake\Collection\CollectionInterface;
 use Crustum\Ai\Responses\Data\Citation as CitationData;
 use Crustum\Ai\Responses\Data\UrlCitation;
 use UnhandledMatchError;
@@ -31,6 +33,28 @@ class Citation extends StreamEvent
     }
 
     /**
+     * Combine citation events into the sources the run cited, in the order it cited them.
+     *
+     * @param \Cake\Collection\Collection<int, \Crustum\Ai\Streaming\Event\StreamEvent>|array<\Crustum\Ai\Streaming\Event\StreamEvent> $events Events
+     * @return \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\Citation>
+     */
+    public static function combine(Collection|array $events): CollectionInterface
+    {
+        $events = is_array($events) ? collection($events) : $events;
+
+        /** @var array<int, \Crustum\Ai\Responses\Data\Citation> $citations */
+        $citations = [];
+
+        foreach ($events as $event) {
+            if ($event instanceof Citation) {
+                $citations[] = $event->citation;
+            }
+        }
+
+        return collection($citations);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toArray(): array
@@ -51,21 +75,5 @@ class Citation extends StreamEvent
             },
             'timestamp' => $this->timestamp,
         ];
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return match (true) {
-            $this->citation instanceof UrlCitation => array_filter([
-                'type' => 'source-url',
-                'sourceId' => $this->citation->url,
-                'url' => $this->citation->url,
-                'title' => $this->citation->title,
-            ], fn($value): bool => $value !== null),
-            default => null,
-        };
     }
 }

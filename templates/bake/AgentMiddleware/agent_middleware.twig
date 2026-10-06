@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace {{ namespace }};
 
 use Closure;
-use Crustum\Ai\Prompts\AgentPrompt;
-use Crustum\Ai\Responses\AgentResponse;
+use Crustum\Ai\Gateway\StepResponse;
+use Crustum\Ai\PendingStep;
 
 /**
  * {{ class }} agent middleware.
@@ -13,15 +13,15 @@ use Crustum\Ai\Responses\AgentResponse;
 class {{ class }}
 {
     /**
-     * Handle the incoming prompt.
+     * Handle the pending generation step.
      *
-     * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
+     * @param \Crustum\Ai\PendingStep $step Pending generation step
      * @param \Closure $next Next middleware callback
      * @return mixed
      */
-    public function handle(AgentPrompt $prompt, Closure $next): mixed
+    public function handle(PendingStep $step, Closure $next): mixed
     {
-        return $next($prompt)->then(function (AgentResponse $response): void {
+        return $next($step)->then(function (StepResponse $response): void {
         });
     }
 }

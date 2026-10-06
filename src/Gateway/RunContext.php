@@ -13,6 +13,11 @@ use Crustum\Ai\Event\StepCompleted;
 use Crustum\Ai\Event\StepFailed;
 use Crustum\Ai\Event\ToolFailed;
 use Crustum\Ai\Event\ToolInvoked;
+use Crustum\Ai\Responses\AgentResponse;
+use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\Step;
+use Crustum\Ai\Responses\Data\TextUsage;
+use Crustum\Ai\Responses\Data\ToolResult;
 use Throwable;
 
 /**
@@ -20,6 +25,11 @@ use Throwable;
  */
 class RunContext
 {
+    /**
+     * @var array<int, \Crustum\Ai\Responses\Data\Step> Steps recorded so far.
+     */
+    protected array $steps = [];
+
     /**
      * Constructor.
      *
@@ -39,20 +49,72 @@ class RunContext
     }
 
     /**
+     * Keep the step the model just produced, so a run that dies later can still be recorded as far as it got.
+     *
+     * @param \Crustum\Ai\Responses\Data\Step $step Completed step
+     */
+    public function recordStep(Step $step): void
+    {
+        $this->steps[] = $step;
+    }
+
+    /**
+     * Answer the step being worked on, one tool at a time, so a step that dies partway keeps the tools that ran.
+     *
+     * @param \Crustum\Ai\Responses\Data\ToolResult $result Tool result
+     */
+    public function recordToolResult(ToolResult $result): void
+    {
+        $step = array_key_last($this->steps);
+
+        if ($step !== null) {
+            $this->steps[$step]->toolResults[] = $result;
+        }
+    }
+
+    /**
+     * The response the run had built by the time it ended, however it ended.
+     *
+     * @return \Crustum\Ai\Responses\AgentResponse
+     */
+    public function recordedResponse(): AgentResponse
+    {
+        $last = $this->steps === [] ? null : $this->steps[array_key_last($this->steps)];
+
+        $usage = new TextUsage();
+
+        foreach ($this->steps as $step) {
+            $usage = $usage->add($step->usage);
+        }
+
+        $response = new AgentResponse(
+            $this->invocationId,
+            $last === null ? '' : $last->text,
+            $usage,
+            $last === null ? new Meta($this->provider->name(), $this->model) : $last->meta,
+        );
+
+        $response->withSteps(collection($this->steps));
+
+        return $response;
+    }
+
+    /**
      * Report that a generation step is about to start.
      *
      * @param \Crustum\Ai\Gateway\StepContext $step Step context
      * @param array<int, \Crustum\Ai\Messages\Message> $messages Messages being sent for this step
      * @param \Crustum\Ai\Gateway\TextGenerationOptions|null $options Resolved options for this step
+     * @param string|null $model Model the step is requested against
      */
-    public function startingStep(StepContext $step, array $messages, ?TextGenerationOptions $options): void
+    public function startingStep(StepContext $step, array $messages, ?TextGenerationOptions $options, ?string $model = null): void
     {
         $this->events->dispatch(new StartingStep(
             $this->invocationId,
             $step->stepNumber,
             $this->agent,
             $this->provider,
-            $this->model,
+            $model ?? $this->model,
             $step->isFinalStep,
             $messages,
             $options,
@@ -62,18 +124,23 @@ class RunContext
     /**
      * Report that a generation step returned a response.
      *
-     * @param \Crustum\Ai\Gateway\StepContext $step Step context
+     * @param \Crustum\Ai\Gateway\StepContext|null $step Step context
      * @param \Crustum\Ai\Gateway\StepResponse $response Step response
      * @param float $time Wall time spent in the provider call, in milliseconds
+     * @param string|null $model Model the step was requested against
      */
-    public function stepCompleted(StepContext $step, StepResponse $response, float $time): void
+    public function stepCompleted(?StepContext $step, StepResponse $response, float $time, ?string $model = null): void
     {
+        if (!$step instanceof StepContext) {
+            return;
+        }
+
         $this->events->dispatch(new StepCompleted(
             $this->invocationId,
             $step->stepNumber,
             $this->agent,
             $this->provider,
-            $this->model,
+            $model ?? $this->model,
             $step->isFinalStep,
             $response,
             $time,
@@ -83,18 +150,23 @@ class RunContext
     /**
      * Report that a generation step ended without producing a response.
      *
-     * @param \Crustum\Ai\Gateway\StepContext $step Step context
+     * @param \Crustum\Ai\Gateway\StepContext|null $step Step context
      * @param \Throwable $exception The failure
      * @param float $time Wall time spent in the provider call before it failed, in milliseconds
+     * @param string|null $model Model the step was requested against
      */
-    public function stepFailed(StepContext $step, Throwable $exception, float $time): void
+    public function stepFailed(?StepContext $step, Throwable $exception, float $time, ?string $model = null): void
     {
+        if (!$step instanceof StepContext) {
+            return;
+        }
+
         $this->events->dispatch(new StepFailed(
             $this->invocationId,
             $step->stepNumber,
             $this->agent,
             $this->provider,
-            $this->model,
+            $model ?? $this->model,
             $step->isFinalStep,
             $exception,
             $time,

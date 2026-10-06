@@ -28,6 +28,11 @@ abstract class File implements HasName, HasProviderOptions
     public ?string $mime = null;
 
     /**
+     * @var \Laravel\SerializableClosure\SerializableClosure|array<string, string>  Request HTTP headers.
+     */
+    protected array|SerializableClosure $headers = [];
+
+    /**
      * @var \Laravel\SerializableClosure\SerializableClosure|array<string, mixed>  Provider-specific options.
      */
     protected array|SerializableClosure $providerOptions = [];
@@ -136,6 +141,21 @@ abstract class File implements HasName, HasProviderOptions
     }
 
     /**
+     * Specify HTTP headers for the file upload.
+     *
+     * @param \Closure((\Crustum\Ai\Enums\Lab|string)): ?array<string, string>|array<string, string> $headers The request headers.
+     * @return $this
+     */
+    public function withHeaders(array|Closure $headers)
+    {
+        $this->headers = $headers instanceof Closure
+            ? new SerializableClosure($headers)
+            : $headers;
+
+        return $this;
+    }
+
+    /**
      * Specify provider-specific options for the file upload.
      *
      * @param \Closure((\Crustum\Ai\Enums\Lab|string)): ?array<string, mixed>|array<string, mixed> $options The provider options.
@@ -158,11 +178,22 @@ abstract class File implements HasName, HasProviderOptions
      */
     public function providerOptions(Lab|string $provider): array
     {
-        if ($this->providerOptions instanceof SerializableClosure) {
-            return ($this->providerOptions)($provider) ?: [];
-        }
+        return $this->providerOptions instanceof SerializableClosure
+            ? ($this->providerOptions)($provider) ?: []
+            : $this->providerOptions;
+    }
 
-        return $this->providerOptions;
+    /**
+     * Get the HTTP headers for the file upload.
+     *
+     * @param \Crustum\Ai\Enums\Lab|string $provider The provider identifier.
+     * @return array<string, string> The request headers.
+     */
+    public function headers(Lab|string $provider): array
+    {
+        return $this->headers instanceof SerializableClosure
+            ? ($this->headers)($provider) ?: []
+            : $this->headers;
     }
 
     /**

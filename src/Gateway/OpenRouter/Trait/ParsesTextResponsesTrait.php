@@ -9,9 +9,11 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\UrlCitation;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Trait\JoinsReasoningTrait;
+use Crustum\Ai\Utility\Value;
 
 /**
  * Parses OpenRouter text generation responses.
@@ -19,6 +21,7 @@ use Crustum\Ai\Responses\Data\Usage;
 trait ParsesTextResponsesTrait
 {
     use DecodesStructuredOutputTrait;
+    use JoinsReasoningTrait;
 
     /**
      * Validate the OpenRouter response data.
@@ -75,7 +78,29 @@ trait ParsesTextResponsesTrait
             usage: $this->extractUsage($data),
             meta: new Meta($provider->name(), $model, $citations),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
+            reasoning: $this->extractReasoning($message),
         );
+    }
+
+    /**
+     * Extract the reasoning text from an assistant message.
+     *
+     * @param array<string, mixed> $message Assistant message
+     */
+    protected function extractReasoning(array $message): string
+    {
+        if (Value::filled($message['reasoning'] ?? '')) {
+            return (string)$message['reasoning'];
+        }
+
+        /** @var array<int, array<string, mixed>> $details */
+        $details = $message['reasoning_details'] ?? [];
+
+        /** @var \Cake\Collection\CollectionInterface<int, string> $texts */
+        $texts = collection($details)
+            ->map(fn(array $detail): string => (string)($detail['text'] ?? $detail['summary'] ?? ''));
+
+        return static::joinReasoning($texts->toList());
     }
 
     /**
@@ -108,18 +133,18 @@ trait ParsesTextResponsesTrait
      * Extract usage data from the response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
         $usage = $data['usage'] ?? [];
 
-        return new Usage(
-            $usage['prompt_tokens'] ?? 0,
-            $usage['completion_tokens'] ?? 0,
-            cacheWriteInputTokens: $usage['prompt_tokens_details']['cache_write_tokens'] ?? 0,
-            cacheReadInputTokens: $usage['prompt_tokens_details']['cached_tokens'] ?? 0,
-            reasoningTokens: $usage['completion_tokens_details']['reasoning_tokens'] ?? 0,
+        return new TextUsage(
+            inputTokens: $usage['prompt_tokens'] ?? 0,
+            outputTokens: $usage['completion_tokens'] ?? 0,
+            cacheReadInputTokens: $usage['prompt_tokens_details']['cached_tokens'] ?? null,
+            cacheWriteInputTokens: $usage['prompt_tokens_details']['cache_write_tokens'] ?? null,
+            reasoningTokens: $usage['completion_tokens_details']['reasoning_tokens'] ?? null,
         );
     }
 

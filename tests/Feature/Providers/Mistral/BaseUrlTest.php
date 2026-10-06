@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Crustum\Ai\Audio;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 
 beforeEach(function (): void {
@@ -40,6 +41,19 @@ test('mistral requests fall back to the default base url', function (): void {
 
     aiAssertHttpSentCount(1);
     mistralAssertRequestSent('POST', 'https://api.mistral.ai/v1/chat/completions');
+});
+
+test('mistral audio requests use the configured base url', function (): void {
+    configureMistralProvider($this->customUrl);
+
+    aiHttpFake([
+        '*' => aiHttpResponse(['audio_data' => base64_encode('fake-audio-bytes')]),
+    ]);
+
+    Audio::of('Hello')->generate(provider: 'mistral');
+
+    aiAssertHttpSentCount(1);
+    mistralAssertRequestSent('POST', "{$this->customUrl}/audio/speech");
 });
 
 function configureMistralProvider(?string $url = null): void

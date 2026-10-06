@@ -9,6 +9,7 @@ use Crustum\Ai\Contracts\Providers\AudioProvider;
 use Crustum\Ai\Prompts\AudioPrompt;
 use Crustum\Ai\Responses\AudioResponse;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\Usage;
 use RuntimeException;
 
 /**
@@ -47,6 +48,7 @@ class FakeAudioGateway implements AudioGateway
      * @param string $voice The voice to use for audio generation
      * @param string|null $instructions Optional instructions for audio generation
      * @param int $timeout Timeout in seconds (default: 30)
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\AudioResponse
      */
     public function generateAudio(
@@ -56,8 +58,9 @@ class FakeAudioGateway implements AudioGateway
         string $voice,
         ?string $instructions = null,
         int $timeout = 30,
+        array $providerOptions = [],
     ): AudioResponse {
-        $audioPrompt = new AudioPrompt($text, $voice, $instructions, $provider, $model, $timeout);
+        $audioPrompt = new AudioPrompt($text, $voice, $instructions, $provider, $model, $timeout, $providerOptions);
 
         return $this->nextResponse($provider, $model, $audioPrompt);
     }
@@ -110,7 +113,7 @@ class FakeAudioGateway implements AudioGateway
         }
 
         if (is_string($response)) {
-            return new AudioResponse($response, new Meta($provider->name(), $model));
+            return new AudioResponse($response, new Usage(), new Meta($provider->name(), $model));
         }
 
         return $response;

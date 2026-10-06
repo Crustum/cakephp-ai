@@ -4,16 +4,22 @@ declare(strict_types=1);
 namespace Crustum\Ai\Tools\Filesystem;
 
 use Cake\Core\Configure;
+use Crustum\Ai\Approvals\Approval;
+use Crustum\Ai\Contracts\Approvable;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Filesystem\LocalFlysystem;
+use Crustum\Ai\Tools\Request;
+use Crustum\Ai\Trait\InteractsWithApprovalsTrait;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\FilesystemOperator;
 
 /**
  * Base class for filesystem tools backed by league/flysystem.
  */
-abstract class FilesystemTool implements Tool
+abstract class FilesystemTool implements Approvable, Tool
 {
+    use InteractsWithApprovalsTrait;
+
     /**
      * @param \League\Flysystem\FilesystemOperator|string|null $filesystem Flysystem operator or absolute root path.
      */
@@ -122,5 +128,16 @@ abstract class FilesystemTool implements Tool
     protected function normalize(string $path): string
     {
         return ltrim(str_replace('\\', '/', $path), '/');
+    }
+
+    /**
+     * Determine whether the tool needs approval for the given request.
+     *
+     * @param \Crustum\Ai\Tools\Request $request Tool request
+     * @return \Crustum\Ai\Approvals\Approval|bool
+     */
+    protected function needsApproval(Request $request): Approval|bool
+    {
+        return false;
     }
 }

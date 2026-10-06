@@ -3,9 +3,11 @@ declare(strict_types=1);
 
 use Cake\Console\TestSuite\ConsoleIntegrationTestTrait;
 use Crustum\Ai\Ai;
+use Crustum\Ai\Support\Sleeper;
 use Crustum\Ai\Test\Feature\Providers\Anthropic\AnthropicHelpersTrait;
 use Crustum\Ai\Test\Feature\Providers\AzureOpenAi\AzureOpenAiHelpersTrait;
 use Crustum\Ai\Test\Feature\Providers\Bedrock\BedrockHelpersTrait;
+use Crustum\Ai\Test\Feature\Providers\Cohere\CohereHelpersTrait;
 use Crustum\Ai\Test\Feature\Providers\DeepSeek\DeepSeekHelpersTrait;
 use Crustum\Ai\Test\Feature\Providers\Gemini\GeminiHelpersTrait;
 use Crustum\Ai\Test\Feature\Providers\Groq\GroqHelpersTrait;
@@ -16,18 +18,12 @@ use Crustum\Ai\Test\Feature\Providers\OpenRouter\OpenRouterHelpersTrait;
 use Crustum\Ai\Test\Feature\Providers\Xai\XaiHelpersTrait;
 use Crustum\Ai\Test\Support\Http\AiHttp;
 use Crustum\Ai\Test\TestCase\AiTestCase;
-use Crustum\Ai\Test\TestCase\ConversationRelationshipTestCase;
-use Crustum\Ai\Test\TestCase\DatabaseConversationStoreTestCase;
 use Crustum\Ai\TestSuite\AiFlowTrait;
+use JMac\Testing\Integrations\PHPUnit\VerifiesDoubles;
 use TestApp\Application;
 
 pest()->extend(AiTestCase::class)->in('TestCase', 'Feature', 'Integration');
-
-pest()->extend(ConversationRelationshipTestCase::class)
-    ->in('ConversationRelationshipTest.php');
-
-pest()->extend(DatabaseConversationStoreTestCase::class)
-    ->in('DatabaseConversationStoreTest.php');
+pest()->use(VerifiesDoubles::class)->in('TestCase', 'Feature', 'Integration', 'Unit');
 
 uses(AiFlowTrait::class)->in('Feature');
 
@@ -38,6 +34,7 @@ pest()->use(BedrockHelpersTrait::class)->in('Feature/Providers/Bedrock');
 pest()->use(DeepSeekHelpersTrait::class)->in('Feature/Providers/DeepSeek');
 pest()->use(MistralHelpersTrait::class)->in('Feature/Providers/Mistral');
 pest()->use(AnthropicHelpersTrait::class)->in('Feature/Providers/Anthropic');
+pest()->use(CohereHelpersTrait::class)->in('Feature/Providers/Cohere');
 pest()->use(GeminiHelpersTrait::class)->in('Feature/Providers/Gemini');
 pest()->use(XaiHelpersTrait::class)->in('Feature/Providers/Xai');
 pest()->use(AzureOpenAiHelpersTrait::class)->in('Feature/Providers/AzureOpenAi');
@@ -71,4 +68,5 @@ pest()->afterEach(function (): void {
 pest()->afterEach(function (): void {
     Ai::manager()->resetFakeState();
     AiHttp::stop();
+    Sleeper::reset();
 })->in('Feature', 'Integration');

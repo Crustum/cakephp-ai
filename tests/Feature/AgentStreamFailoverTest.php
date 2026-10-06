@@ -4,7 +4,7 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Cake\Event\EventManager;
 use Crustum\Ai\Ai;
-use Crustum\Ai\Event\AgentFailedOverEvent;
+use Crustum\Ai\Event\AgentFailedOver;
 use Crustum\Ai\Event\AgentStreamed;
 use Crustum\Ai\Exception\RateLimitedException;
 use Crustum\Ai\Providers\GroqProvider;
@@ -38,7 +38,7 @@ test('stream fails over to next provider when primary is rate limited', function
         ->and($response->text)->toBe('Hello');
 
     $this->assertProviderFailedOver('primary');
-    $this->assertAiEventDispatched(AgentFailedOverEvent::class);
+    $this->assertAiEventDispatched(AgentFailedOver::class);
     $this->assertAiEventDispatched(
         AgentStreamed::class,
         fn(AgentStreamed $event): bool => $event->invocationId === $response->invocationId,
@@ -113,7 +113,7 @@ test('stream does not fail over when primary succeeds', function (): void {
 
     expect($response->text)->toBe('Hello');
 
-    $this->assertAiEventNotDispatched(AgentFailedOverEvent::class);
+    $this->assertAiEventNotDispatched(AgentFailedOver::class);
     $this->assertStreamTextContains('Hello');
 });
 
@@ -139,7 +139,7 @@ test('single provider stream does not dispatch failover event when rate limited'
         }
     })->toThrow(RateLimitedException::class);
 
-    $this->assertAiEventNotDispatched(AgentFailedOverEvent::class);
+    $this->assertAiEventNotDispatched(AgentFailedOver::class);
 });
 
 test('stream does not fail over when primary emits event then throws', function (): void {
@@ -183,7 +183,7 @@ test('stream does not fail over when primary emits event then throws', function 
         }
     })->toThrow(RateLimitedException::class);
 
-    $this->assertAiEventNotDispatched(AgentFailedOverEvent::class);
+    $this->assertAiEventNotDispatched(AgentFailedOver::class);
 });
 
 test('stream does not fail over when primary throws non failoverable exception', function (): void {
@@ -232,7 +232,7 @@ test('stream does not fail over when primary throws non failoverable exception',
     })->toThrow(InvalidArgumentException::class, 'Malformed stream response.');
 
     expect($backupStreamed)->toBeFalse();
-    $this->assertAiEventNotDispatched(AgentFailedOverEvent::class);
+    $this->assertAiEventNotDispatched(AgentFailedOver::class);
 });
 
 test('stream conversation state survives failover', function (): void {
@@ -259,7 +259,31 @@ test('stream conversation state survives failover', function (): void {
     }
 
     expect($thenResponse->conversationId)->toBe($existingConversationId)
-        ->and($thenResponse->conversationUser)->toBe($user);
+        ->and($thenResponse->conversationUser)->toBe($user)
+        ->and($response->userMessageId)->not->toBeNull()
+        ->and($response->assistantMessageId)->not->toBeNull()
+        ->and(collection($store->messages)->filter(fn(array $message): bool => $message['id'] === $response->userMessageId)->first()['role'])->toBe('user')
+        ->and(collection($store->messages)->filter(fn(array $message): bool => $message['id'] === $response->assistantMessageId)->first()['role'])->toBe('assistant');
+});
+
+test('first turn stream failover persists its reserved conversation', function (): void {
+    $store = new InMemoryConversationStore();
+    Ai::manager()->setConversationStore($store);
+
+    aiConfigureGroqFailoverProviders();
+    aiFakeGroqStreamFailoverHttp();
+
+    $agent = (new RememberingAssistantAgent())->forUser((object)['id' => 'user-1']);
+    $response = $agent->stream('Hello', provider: ['primary', 'backup']);
+
+    foreach ($response as $_) {
+    }
+
+    expect($store->conversations)->toHaveCount(1)
+        ->and($store->conversations)->toHaveKey($agent->currentConversation())
+        ->and($response->conversationId)->toBe($agent->currentConversation())
+        ->and(collection($store->messages)->extract('conversation_id')->filter()->unique()->toList())
+        ->toBe([$agent->currentConversation()]);
 });
 
 function aiConfigureGroqFailoverProviders(): void

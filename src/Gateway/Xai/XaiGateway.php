@@ -152,6 +152,7 @@ class XaiGateway implements Gateway, StepTextGateway
      * @param string|null $size Image size
      * @param 'low'|'medium'|'high'|null $quality Image quality
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      * @throws \LogicException
      */
@@ -163,6 +164,7 @@ class XaiGateway implements Gateway, StepTextGateway
         ?string $size = null,
         ?string $quality = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse {
         throw new LogicException('Use XaiImageGateway for image generation.');
     }
@@ -176,6 +178,7 @@ class XaiGateway implements Gateway, StepTextGateway
      * @param string $voice Voice to use
      * @param string|null $instructions Optional instructions
      * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\AudioResponse
      * @throws \LogicException
      */
@@ -186,6 +189,7 @@ class XaiGateway implements Gateway, StepTextGateway
         string $voice,
         ?string $instructions = null,
         int $timeout = 30,
+        array $providerOptions = [],
     ): AudioResponse {
         throw new LogicException('xAI does not support audio generation.');
     }

@@ -9,6 +9,8 @@ use Psr\Http\Message\RequestInterface;
 
 /**
  * Recorded provider HTTP request for test assertions.
+ *
+ * @implements \ArrayAccess<string, mixed>
  */
 class RecordedHttp implements ArrayAccess
 {

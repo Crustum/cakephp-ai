@@ -90,7 +90,7 @@ class AzureOpenAiGateway implements EmbeddingGateway, ImageGateway, StepTextGate
 
         return new EmbeddingsResponse(
             (new Collection($data['data'] ?? []))->extract('embedding')->toList(),
-            $data['usage']['prompt_tokens'] ?? 0,
+            new Usage($data['usage']['prompt_tokens'] ?? 0),
             new Meta($provider->name(), $model),
         );
     }
@@ -105,6 +105,7 @@ class AzureOpenAiGateway implements EmbeddingGateway, ImageGateway, StepTextGate
      * @param '3:2'|'2:3'|'1:1'|null $size Image size
      * @param 'low'|'medium'|'high'|null $quality Image quality
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      * @throws \LogicException
      */
@@ -116,6 +117,7 @@ class AzureOpenAiGateway implements EmbeddingGateway, ImageGateway, StepTextGate
         ?string $size = null,
         ?string $quality = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse {
         if (Value::filled($attachments)) {
             throw new LogicException('Azure OpenAI does not support image editing.');
@@ -124,6 +126,7 @@ class AzureOpenAiGateway implements EmbeddingGateway, ImageGateway, StepTextGate
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider, $timeout ?? 120)->post('images/generations', [
+                ...$providerOptions,
                 'model' => $model,
                 'prompt' => $prompt,
                 'moderation' => 'low',
@@ -140,25 +143,6 @@ class AzureOpenAiGateway implements EmbeddingGateway, ImageGateway, StepTextGate
             )),
             $this->extractImageUsage($data),
             new Meta($provider->name(), $model),
-        );
-    }
-
-    /**
-     * Extract usage data from an image generation HttpResponseInterface.
-     *
-     * @param array<string, mixed> $data HttpResponseInterface data
-     * @return \Crustum\Ai\Responses\Data\Usage
-     */
-    protected function extractImageUsage(array $data): Usage
-    {
-        $usage = $data['usage'] ?? [];
-        $inputTokens = $usage['input_tokens'] ?? 0;
-        $cachedTokens = $usage['input_tokens_details']['cached_tokens'] ?? 0;
-
-        return new Usage(
-            promptTokens: $inputTokens - $cachedTokens,
-            completionTokens: $usage['output_tokens'] ?? 0,
-            cacheReadInputTokens: $cachedTokens,
         );
     }
 

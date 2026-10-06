@@ -100,7 +100,9 @@ trait MapsMessagesTrait
                 fn(ToolCall $toolCall): array => $this->serializeToolCallToChat($toolCall),
             )->toList();
 
-            $msg['reasoning_content'] = $message->providerContentBlocks['reasoning_content'] ?? '';
+            /** @var array<string, mixed>|null $reasoningBlock */
+            $reasoningBlock = collection($message->replayBlocks)->firstMatch(['type' => 'reasoning']);
+            $msg['reasoning_content'] = $reasoningBlock['reasoning_content'] ?? '';
         }
 
         $chatMessages[] = $msg;
@@ -123,7 +125,7 @@ trait MapsMessagesTrait
             $chatMessages[] = [
                 'role' => 'tool',
                 'tool_call_id' => $toolResult->resultId ?? $toolResult->id,
-                'content' => $this->serializeToolResultOutput($toolResult->result),
+                'content' => $toolResult->text(),
             ];
         }
     }
@@ -144,20 +146,5 @@ trait MapsMessagesTrait
                 'arguments' => json_encode($toolCall->arguments ?: (object)[]),
             ],
         ];
-    }
-
-    /**
-     * Serialize a tool result output value to a string.
-     *
-     * @param mixed $output Tool result output
-     * @return string
-     */
-    protected function serializeToolResultOutput(mixed $output): string
-    {
-        if (is_string($output)) {
-            return $output;
-        }
-
-        return is_array($output) ? json_encode($output) : strval($output);
     }
 }

@@ -5,8 +5,8 @@ namespace Crustum\Ai\TestSuite\Capture;
 
 use Cake\Event\EventManager;
 use Crustum\Ai\Event\AddingFileToStore;
-use Crustum\Ai\Event\AgentFailedEvent;
-use Crustum\Ai\Event\AgentFailedOverEvent;
+use Crustum\Ai\Event\AgentFailed;
+use Crustum\Ai\Event\AgentFailedOver;
 use Crustum\Ai\Event\AgentPrompted;
 use Crustum\Ai\Event\AgentStreamed;
 use Crustum\Ai\Event\AudioGenerated;
@@ -23,7 +23,7 @@ use Crustum\Ai\Event\GeneratingTranscription;
 use Crustum\Ai\Event\ImageGenerated;
 use Crustum\Ai\Event\InvokingTool;
 use Crustum\Ai\Event\PromptingAgent;
-use Crustum\Ai\Event\ProviderFailedOverEvent;
+use Crustum\Ai\Event\ProviderFailedOver;
 use Crustum\Ai\Event\RemovingFileFromStore;
 use Crustum\Ai\Event\Reranked;
 use Crustum\Ai\Event\Reranking;
@@ -69,9 +69,9 @@ class EventCapture
         ToolFailed::class,
         ToolApprovalRequested::class,
         ToolApprovalResolved::class,
-        AgentFailedEvent::class,
-        AgentFailedOverEvent::class,
-        ProviderFailedOverEvent::class,
+        AgentFailed::class,
+        AgentFailedOver::class,
+        ProviderFailedOver::class,
         GeneratingEmbeddings::class,
         EmbeddingsGenerated::class,
         GeneratingImage::class,

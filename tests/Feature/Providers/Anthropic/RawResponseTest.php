@@ -26,11 +26,11 @@ test('text responses expose the raw http response', function (): void {
 
 test('structured responses expose the raw http response', function (): void {
     aiHttpFake([
-        'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Taylor', 'age' => 30]),
+        'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Larry', 'age' => 30]),
     ]);
 
     $response = (new StructuredAgent())->prompt(
-        'Tell me about Taylor',
+        'Tell me about Larry',
         provider: 'anthropic',
     );
 

@@ -9,6 +9,8 @@ use Crustum\Ai\Responses\ImageResponse;
 
 /**
  * Dispatched after an image is generated.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class ImageGenerated extends AiEvent
 {
@@ -34,6 +36,6 @@ class ImageGenerated extends AiEvent
             'model' => $model,
             'prompt' => $prompt,
             'response' => $response,
-        ]);
+        ], $provider);
     }
 }

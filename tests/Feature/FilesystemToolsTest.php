@@ -14,14 +14,16 @@ use Crustum\Ai\Tools\Filesystem\FileExists;
 use Crustum\Ai\Tools\Filesystem\GetFileMetadata;
 use Crustum\Ai\Tools\Filesystem\GetFileUrl;
 use Crustum\Ai\Tools\Filesystem\ListFiles;
+use Crustum\Ai\Tools\Filesystem\MoveFile;
 use Crustum\Ai\Tools\Filesystem\ReadFile;
 use Crustum\Ai\Tools\Filesystem\WriteFile;
 use Crustum\Ai\Tools\Request;
 use Crustum\Ai\Tools\ToolNameResolver;
 use Crustum\JsonSchema\JsonSchemaTypeFactory;
+use JMac\Testing\Double;
 use League\Flysystem\FilesystemOperator;
 use League\Flysystem\UnableToDeleteFile;
-use League\Flysystem\UnableToWriteFile;
+use League\Flysystem\UnableToMoveFile;
 
 beforeEach(function (): void {
     $this->fs = Storage::fake('local');
@@ -147,12 +149,9 @@ test('write file creates a file', function (): void {
 });
 
 test('write file reports write failures', function (): void {
-    $filesystem = Mockery::mock(FilesystemOperator::class);
-    $filesystem->shouldReceive('write')->once()->with('out.txt', 'written')->andThrow(
-        UnableToWriteFile::atLocation('out.txt'),
-    );
+    Storage::filesystem()->makeDirectory('out.txt');
 
-    $result = (new WriteFile($filesystem))->handle(new Request(['path' => 'out.txt', 'contents' => 'written']));
+    $result = (new WriteFile($this->fs))->handle(new Request(['path' => 'out.txt', 'contents' => 'written']));
 
     expect($result)->toBe('Unable to write [out.txt].');
 });
@@ -182,9 +181,9 @@ test('delete file does not report directories as files', function (): void {
 });
 
 test('delete file reports delete failures', function (): void {
-    $filesystem = Mockery::mock(FilesystemOperator::class);
-    $filesystem->shouldReceive('fileExists')->once()->with('gone.txt')->andReturnTrue();
-    $filesystem->shouldReceive('delete')->once()->with('gone.txt')->andThrow(
+    $filesystem = Double::for(FilesystemOperator::class);
+    $filesystem->expects('fileExists')->with('gone.txt')->returns(true);
+    $filesystem->expects('delete')->with('gone.txt')->throws(
         UnableToDeleteFile::atLocation('gone.txt'),
     );
 
@@ -208,11 +207,49 @@ test('copy file reports a missing source', function (): void {
     expect($result)->toBe('Unable to copy [missing.txt] to [dst.txt]. The source file may not exist.');
 });
 
+test('move file relocates a file', function (): void {
+    Storage::filesystem()->put('src.txt', 'data');
+
+    $result = (new MoveFile($this->fs))->handle(new Request(['from' => 'src.txt', 'to' => 'dst.txt']));
+
+    expect($result)->toBe('Moved [src.txt] to [dst.txt].');
+    Storage::filesystem()->assertMissing('src.txt');
+    Storage::filesystem()->assertExists('dst.txt');
+});
+
+test('move file reports a missing source', function (): void {
+    $result = (new MoveFile($this->fs))->handle(new Request(['from' => 'missing.txt', 'to' => 'dst.txt']));
+
+    expect($result)->toBe('File [missing.txt] does not exist.');
+});
+
+test('move file does not move directories', function (): void {
+    Storage::filesystem()->makeDirectory('photos');
+
+    $result = (new MoveFile($this->fs))->handle(new Request(['from' => 'photos', 'to' => 'archive/photos']));
+
+    expect($result)->toBe('File [photos] does not exist.');
+    Storage::filesystem()->assertExists('photos');
+    Storage::filesystem()->assertMissing('archive/photos');
+});
+
+test('move file reports move failures', function (): void {
+    $filesystem = Double::for(FilesystemOperator::class);
+    $filesystem->expects('fileExists')->with('a.txt')->returns(true);
+    $filesystem->expects('move')->with('a.txt', 'b.txt')->throws(
+        UnableToMoveFile::fromLocationTo('a.txt', 'b.txt'),
+    );
+
+    $result = (new MoveFile($filesystem))->handle(new Request(['from' => 'a.txt', 'to' => 'b.txt']));
+
+    expect($result)->toBe('Unable to move [a.txt] to [b.txt]: Unable to move file from a.txt to b.txt');
+});
+
 test('file storage tools all returns every tool as a collection', function (): void {
     $tools = FileStorage::all($this->fs);
 
     expect($tools)->toBeInstanceOf(Collection::class)
-        ->toHaveCount(8)
+        ->toHaveCount(9)
         ->and($tools->some(fn($tool): bool => $tool instanceof WriteFile))->toBeTrue();
 });
 
@@ -220,7 +257,7 @@ test('file storage tools can be filtered as a collection', function (): void {
     $tools = FileStorage::all($this->fs)
         ->filter(fn($tool): bool => !($tool instanceof DeleteFile));
 
-    expect($tools)->toHaveCount(7)
+    expect($tools)->toHaveCount(8)
         ->and($tools->some(fn($tool): bool => $tool instanceof DeleteFile))->toBeFalse();
 });
 
@@ -259,7 +296,7 @@ test('every filesystem tool maps to a strict-compliant openai schema', function 
             fn($item): bool => is_array($item) && ($item['type'] ?? null) === 'function',
         );
 
-        if ($tools->count() !== 8) {
+        if ($tools->count() !== 9) {
             return false;
         }
 

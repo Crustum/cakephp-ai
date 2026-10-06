@@ -9,6 +9,8 @@ use Crustum\Ai\Responses\StoredFileResponse;
 
 /**
  * Dispatched after a file is stored.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class FileStored extends AiEvent
 {
@@ -31,6 +33,6 @@ class FileStored extends AiEvent
             'provider' => $provider,
             'file' => $file,
             'response' => $response,
-        ]);
+        ], $provider);
     }
 }

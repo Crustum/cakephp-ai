@@ -9,6 +9,7 @@ use Cake\Http\Client\ClientEvent;
 use Cake\Http\Client\Response as CakeHttpResponse;
 use Crustum\Ai\Http\Contract\HttpClientAdapterInterface;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
+use Crustum\Ai\Http\Stream\TeeStream;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Request as Psr7Request;
@@ -95,7 +96,9 @@ class GuzzleHttpClientAdapter implements HttpClientAdapterInterface
             $options['body'] ?? null,
         );
 
-        $this->dispatchEvent('HttpClient.beforeSend', $psrRequest, null, !empty($options['stream']));
+        $isStreaming = !empty($options['stream']);
+
+        $this->dispatchEvent('HttpClient.beforeSend', $psrRequest, null, $isStreaming);
 
         $response = $client->request($method, $url, $options);
 
@@ -111,10 +114,71 @@ class GuzzleHttpClientAdapter implements HttpClientAdapterInterface
             );
         }
 
-        $isStreaming = !empty($options['stream']);
+        if ($isStreaming) {
+            $result = $this->teeStreamingBody($psrRequest, $result);
+        }
+
         $this->dispatchEvent('HttpClient.afterSend', $psrRequest, $result, $isStreaming);
 
         return $result;
+    }
+
+    /**
+     * Wrap a streaming response body in a tee that captures it for logging.
+     *
+     * The tee is transparent: consumers read from it as they would from the
+     * original stream, while every chunk is captured as a side-effect and
+     * dispatched with the `HttpClient.afterSendStream` event once the stream
+     * reaches EOF. Streaming is never interrupted.
+     *
+     * @param \Psr\Http\Message\RequestInterface $request PSR-7 request
+     * @param \Crustum\Ai\Http\Contract\HttpResponseInterface $response AI response
+     * @return \Crustum\Ai\Http\Contract\HttpResponseInterface
+     */
+    protected function teeStreamingBody(RequestInterface $request, HttpResponseInterface $response): HttpResponseInterface
+    {
+        $body = $response->getBody();
+
+        if (!$body->isReadable()) {
+            return $response;
+        }
+
+        $tee = new TeeStream($body);
+        $tee->onComplete(function (string $captured) use ($request, $response): void {
+            $this->dispatchCapturedStream($request, $response, $captured);
+        });
+
+        return $response->withBody($tee);
+    }
+
+    /**
+     * Dispatch the `HttpClient.afterSendStream` event with the captured body.
+     *
+     * Fired by the tee stream once a streamed response body reaches EOF, so
+     * monitoring tools can record the full response without consuming the
+     * live stream.
+     *
+     * @param \Psr\Http\Message\RequestInterface $request PSR-7 request
+     * @param \Crustum\Ai\Http\Contract\HttpResponseInterface $response AI response
+     * @param string $body Captured response body
+     * @return void
+     */
+    protected function dispatchCapturedStream(RequestInterface $request, HttpResponseInterface $response, string $body): void
+    {
+        $manager = EventManager::instance();
+
+        if ($manager->prioritisedListeners('HttpClient.afterSendStream') === []) {
+            return;
+        }
+
+        $cakeResponse = new CakeHttpResponse($this->formatHeaders($response), $body);
+
+        $event = new ClientEvent('HttpClient.afterSendStream', new CakeHttpClient(), [
+            'request' => $request,
+            'response' => $cakeResponse,
+        ]);
+
+        $manager->dispatch($event);
     }
 
     /**
@@ -141,16 +205,11 @@ class GuzzleHttpClientAdapter implements HttpClientAdapterInterface
         $cakeResponse = null;
 
         if ($response instanceof HttpResponseInterface) {
-            $headers = [];
-            foreach ($response->getHeaders() as $headerName => $values) {
-                $headers[] = $headerName . ': ' . implode(', ', $values);
-            }
-
             $isStreamResponse = $isStreaming
                 || $response->getHeaderLine('Content-Type') === 'text/event-stream';
 
             $cakeResponse = new CakeHttpResponse(
-                $headers,
+                $this->formatHeaders($response),
                 $isStreamResponse ? '' : (string)$response->getBody(),
             );
         }
@@ -158,9 +217,37 @@ class GuzzleHttpClientAdapter implements HttpClientAdapterInterface
         $event = new ClientEvent($name, $subject, [
             'request' => $request,
             'response' => $cakeResponse,
+            'is_streaming' => $isStreaming,
         ]);
 
         $manager->dispatch($event);
+    }
+
+    /**
+     * Format a Cake-compatible header list: status line plus `Name: value`.
+     *
+     * Cake's `Client\Response` derives the status code only from a leading
+     * `HTTP/x.y ZZZ` status line, so it must be included for monitoring to
+     * record the real response status.
+     *
+     * @param \Crustum\Ai\Http\Contract\HttpResponseInterface $response AI response
+     * @return array<int, string>
+     */
+    protected function formatHeaders(HttpResponseInterface $response): array
+    {
+        $statusLine = sprintf(
+            'HTTP/%s %d %s',
+            $response->getProtocolVersion(),
+            $response->getStatusCode(),
+            $response->getReasonPhrase(),
+        );
+
+        $headers = [$statusLine];
+        foreach ($response->getHeaders() as $headerName => $values) {
+            $headers[] = $headerName . ': ' . implode(', ', $values);
+        }
+
+        return $headers;
     }
 
     /**

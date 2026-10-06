@@ -8,7 +8,6 @@ use Closure;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Messages\Message;
-use Crustum\Ai\Model\Entity\Conversation;
 use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Trait\RemembersConversationsTrait;
 use Crustum\Ai\Utility\Reflection;
@@ -36,14 +35,14 @@ trait ResumesToolApprovalsTrait
      * @param array<int, \Crustum\Ai\Messages\Message> $messages Conversation messages
      * @return array<int, \Crustum\Ai\Messages\Message>
      */
-    protected function withoutForeignProviderContentBlocks(array $messages): array
+    protected function withoutForeignReplayBlocks(array $messages): array
     {
         return array_map(function (Message $message): Message {
             if (
                 $message instanceof AssistantMessage
-                && Value::filled($message->providerContentBlocks)
-                && $message->providerContentBlocksProvider !== null
-                && $message->providerContentBlocksProvider !== $this->name()
+                && Value::filled($message->replayBlocks)
+                && $message->replayBlocksProvider !== null
+                && $message->replayBlocksProvider !== $this->name()
             ) {
                 return new AssistantMessage($message->content, $message->toolCalls);
             }
@@ -67,7 +66,7 @@ trait ResumesToolApprovalsTrait
      * Get a callback that captures a resume's resolved approval results, also durably recording them when the store supports it.
      *
      * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
-     * @param \Cake\Collection\CollectionInterface|null $resolvedApprovalResults Reference populated with the resolved results
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolResult>|null $resolvedApprovalResults Reference populated with the resolved results
      * @return \Closure|null
      */
     protected function approvalResultRecorderFor(AgentPrompt $prompt, ?CollectionInterface &$resolvedApprovalResults): ?Closure
@@ -102,22 +101,14 @@ trait ResumesToolApprovalsTrait
         }
 
         /** @var \Crustum\Ai\Contracts\Agent&\Crustum\Ai\Contracts\RemembersConversations $agent */
-        if ($agent->currentConversation() === null) {
+        $conversationId = $agent->currentConversation();
+
+        if ($conversationId === null) {
             return null;
         }
 
         $store = Ai::manager()->conversationStore();
 
-        $conversationId = $agent->currentConversation();
-        $participant = $agent->conversationParticipant();
-        $participantType = $participant === null ? null : Conversation::participantType($participant);
-        $participantId = $participant === null ? null : Conversation::participantKey($participant);
-
-        return fn(array $toolResults) => $store->storeApprovalResults(
-            $conversationId,
-            $participantType,
-            $participantId,
-            $toolResults,
-        );
+        return fn(array $toolResults) => $store->storeApprovalResults($conversationId, $toolResults);
     }
 }

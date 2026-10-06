@@ -70,7 +70,7 @@ trait InteractsWithFakeStoresTrait
      *
      * @param string $name Store name
      * @param string|null $description Store description
-     * @param \Cake\Collection\CollectionInterface|null $fileIds File IDs
+     * @param \Cake\Collection\CollectionInterface<int, string>|null $fileIds File IDs
      * @param \DateInterval|null $expiresWhenIdleFor Expiration interval
      * @return $this
      */

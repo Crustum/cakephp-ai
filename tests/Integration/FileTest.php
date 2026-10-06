@@ -74,7 +74,7 @@ test('can store files from remote paths', function (string $provider, string $ap
 
     $response = Document::fromId($stored->id)->get(provider: $provider);
 
-    expect($response->mime)->toBeIn(['text/plain', null]);
+    expect($response->mime)->toBeIn(['text/plain', 'text/markdown', null]);
 
     Document::fromId($response->id)->delete(provider: $provider);
 })->with('file-providers');

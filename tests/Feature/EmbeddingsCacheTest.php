@@ -195,3 +195,23 @@ test('individual caching throws when the provider returns an embedding count mis
     expect(fn(): EmbeddingsResponse => Embeddings::for(['a', 'b'])->cache(3600, individually: true)->generate())
         ->toThrow(EmbeddingsCountMismatchException::class);
 });
+
+test('individual caching is enabled when the config value is missing', function (): void {
+    Configure::write('Ai.caching.embeddings', [
+        'cache' => false,
+        'store' => 'array',
+    ]);
+
+    $calls = 0;
+
+    Embeddings::fake(function (EmbeddingsPrompt $prompt) use (&$calls): array {
+        $calls++;
+
+        return array_map(fn(): array => array_fill(0, $prompt->dimensions, 0.1), $prompt->inputs);
+    });
+
+    Embeddings::for(['a', 'b'])->cache(3600)->generate();
+    Embeddings::for(['b'])->cache(3600)->generate();
+
+    expect($calls)->toBe(1);
+});

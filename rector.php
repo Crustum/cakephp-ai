@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Rector\CodeQuality\Rector\Isset_\IssetOnPropertyObjectToPropertyExistsRector;
+use Rector\CodeQuality\Rector\New_\NewStaticToNewSelfRector;
 use Rector\Config\RectorConfig;
 use Rector\DeadCode\Rector\For_\RemoveDeadIfForeachForRector;
 use Rector\DeadCode\Rector\For_\RemoveDeadLoopRector;
@@ -22,6 +23,7 @@ use Rector\TypeDeclaration\Rector\FuncCall\AddArrayFunctionClosureParamTypeRecto
 use Rector\TypeDeclaration\Rector\FunctionLike\AddClosureParamTypeForArrayMapRector;
 use Rector\TypeDeclaration\Rector\FunctionLike\AddClosureParamTypeForArrayReduceRector;
 use Rector\TypeDeclaration\Rector\StmtsAwareInterface\SafeDeclareStrictTypesRector;
+use Rector\Php80\Rector\Ternary\TernaryToNullsafeCoalesceRector;
 
 return RectorConfig::configure()
     ->withPaths([
@@ -29,6 +31,12 @@ return RectorConfig::configure()
         __DIR__ . '/tests',
     ])
     ->withSkip([
+        NewStaticToNewSelfRector::class => [
+            __DIR__ . '/src/Support/AiCollection.php',
+        ],
+		TernaryToNullsafeCoalesceRector::class => [
+            __DIR__ . '/src/Gateway/RunContext.php',		
+		],
         ReadOnlyPropertyRector::class,
         ClassPropertyAssignToConstructorPromotionRector::class,
         AddClosureParamTypeForArrayMapRector::class,

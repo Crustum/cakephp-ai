@@ -70,36 +70,18 @@ trait MapsMessagesTrait
      */
     protected function mapAssistantMessage(AssistantMessage|Message $message, array &$mapped): void
     {
-        if ($message instanceof AssistantMessage && Value::filled($message->providerContentBlocks)) {
+        if ($message instanceof AssistantMessage && Value::filled($message->replayBlocks)) {
             $mapped[] = [
                 'role' => 'assistant',
-                'content' => $this->ensureToolInputIsObject($message->providerContentBlocks),
+                'content' => $this->ensureToolInputIsObject($message->replayBlocks),
             ];
 
             return;
         }
 
+        // Reasoning a step did not replay verbatim is dropped rather than rebuilt as a thinking block, which Anthropic rejects without the signature it issued.
         $content = [];
         $hasToolCalls = $message instanceof AssistantMessage && !$message->toolCalls->isEmpty();
-
-        if ($hasToolCalls) {
-            $thinkingBlocks = [];
-
-            foreach ($message->toolCalls as $toolCall) {
-                if ($toolCall->reasoningId === null) {
-                    continue;
-                }
-
-                $thinkingBlocks[$toolCall->reasoningId] = [
-                    'type' => 'thinking',
-                    'thinking' => is_array($toolCall->reasoningSummary)
-                        ? implode("\n", array_column($toolCall->reasoningSummary, 'text'))
-                        : ($toolCall->reasoningSummary ?? ''),
-                ];
-            }
-
-            $content = array_merge($content, array_values($thinkingBlocks));
-        }
 
         if (Value::filled($message->content)) {
             $content[] = [
@@ -146,7 +128,7 @@ trait MapsMessagesTrait
             $content[] = [
                 'type' => 'tool_result',
                 'tool_use_id' => $toolResult->id,
-                'content' => $this->serializeToolResultOutput($toolResult->result),
+                'content' => $toolResult->text(),
             ];
         }
 
@@ -171,20 +153,5 @@ trait MapsMessagesTrait
 
             return $block;
         }, $content);
-    }
-
-    /**
-     * Serialize a tool result output value to a string.
-     *
-     * @param mixed $output Tool result output
-     * @return string
-     */
-    protected function serializeToolResultOutput(mixed $output): string
-    {
-        return match (true) {
-            is_string($output) => $output,
-            is_array($output) => json_encode($output),
-            default => strval($output),
-        };
     }
 }

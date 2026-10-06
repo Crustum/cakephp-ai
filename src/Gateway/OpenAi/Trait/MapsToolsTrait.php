@@ -5,10 +5,12 @@ namespace Crustum\Ai\Gateway\OpenAi\Trait;
 
 use Crustum\Ai\Attributes\Strict;
 use Crustum\Ai\Contracts\Providers\Provider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsFileSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\ProviderTool;
 use Crustum\Ai\Providers\Tools\ToolSearch;
@@ -47,7 +49,7 @@ trait MapsToolsTrait
 
                 $mapped[] = [
                     'type' => 'tool_search',
-                    ...array_diff_key($tool->providerOptions(Lab::OpenAI), ['type' => true]),
+                    ...array_diff_key($tool->providerOptions(Lab::tryFrom($provider->driver()) ?? $provider->driver()), ['type' => true]),
                 ];
 
                 foreach ($tool->tools as $deferred) {
@@ -123,10 +125,30 @@ trait MapsToolsTrait
     protected function mapProviderTool(ProviderTool $tool, Provider $provider): array
     {
         return match (true) {
+            $tool instanceof CodeExecution => $this->mapCodeExecutionTool($tool, $provider),
             $tool instanceof FileSearch => $this->mapFileSearchTool($tool, $provider),
             $tool instanceof WebSearch => $this->mapWebSearchTool($tool, $provider),
             default => throw new RuntimeException('Provider [' . $provider->name() . '] does not support the [' . basename(str_replace('\\', '/', $tool::class)) . '] tool.'),
         };
+    }
+
+    /**
+     * Map a code execution tool to an OpenAI code interpreter definition.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $tool Code execution tool
+     * @param \Crustum\Ai\Contracts\Providers\Provider $provider Provider instance
+     * @return array<string, mixed>
+     */
+    protected function mapCodeExecutionTool(CodeExecution $tool, Provider $provider): array
+    {
+        if (!$provider instanceof SupportsCodeExecution) {
+            throw new RuntimeException('Provider [' . $provider->name() . '] does not support code execution.');
+        }
+
+        return [
+            'type' => 'code_interpreter',
+            ...$provider->codeExecutionToolOptions($tool),
+        ];
     }
 
     /**

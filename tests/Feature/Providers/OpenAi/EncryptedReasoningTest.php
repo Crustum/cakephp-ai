@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Test\Fixtures\Agents\MultiStepToolAgent;
 use Crustum\Ai\Test\Fixtures\Agents\OpenAiAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsWithToolsAgent;
@@ -219,7 +220,7 @@ test('default store true preserves previous response id behaviour', function ():
     expect($followUp)->toHaveKey('previous_response_id')
         ->and($followUp['previous_response_id'])->toBe('resp_tool_1')
         ->and($followUp)->not->toHaveKey('store')
-        ->and($followUp)->not->toHaveKey('include');
+        ->and($followUp['include'] ?? [])->toContain('reasoning.encrypted_content');
 
     $input = collect($followUp['input']);
 
@@ -258,3 +259,55 @@ function fakeOpenAiToolCallResponseWithEncryptedReasoning(string $reasoningId, s
         ],
     ]);
 }
+
+test('default store true still retains replay blocks with encrypted reasoning', function (): void {
+    Configure::write('Ai.providers.openai.store', true);
+
+    aiHttpFake([
+        'api.openai.com/*' => aiHttpSequence([
+            fakeOpenAiToolCallResponseWithEncryptedReasoning('rs_1', 'enc-blob-1', 'fc_1', 'call_1'),
+            fakeOpenAiResponse('Done'),
+        ]),
+    ]);
+
+    $response = (new ToolUsingAgent(fixed: true))->prompt('Generate a number', provider: 'openai');
+
+    $assistant = $response->messages->filter(fn($m): bool => $m instanceof AssistantMessage)->first();
+    $blocks = collection($assistant->replayBlocks);
+
+    expect($blocks->filter(fn($b): bool => ($b['type'] ?? null) === 'reasoning')->first())->toMatchArray(['id' => 'rs_1', 'encrypted_content' => 'enc-blob-1'])
+        ->and(($blocks->filter(fn($b): bool => ($b['type'] ?? null) === 'function_call')->first()['call_id'] ?? null))->toBe('call_1');
+});
+
+test('stateless tool follow up drops file search calls but keeps the surrounding reasoning', function (): void {
+    aiHttpFake([
+        'api.openai.com/*' => aiHttpSequence([
+            aiHttpResponse([
+                'id' => 'resp_tool_1',
+                'status' => 'completed',
+                'model' => 'gpt-5.4',
+                'output' => [
+                    ['type' => 'reasoning', 'id' => 'rs_1', 'summary' => [], 'encrypted_content' => 'enc-blob-1'],
+                    ['type' => 'file_search_call', 'id' => 'fs_1', 'status' => 'completed', 'queries' => ['numbers'], 'results' => null],
+                    ['type' => 'function_call', 'id' => 'fc_1', 'call_id' => 'call_1', 'name' => 'FixedNumberGenerator', 'arguments' => '{}', 'status' => 'completed'],
+                ],
+                'usage' => ['input_tokens' => 10, 'output_tokens' => 5],
+            ]),
+            fakeOpenAiResponse('Done'),
+        ]),
+    ]);
+
+    $response = (new ToolUsingAgent(fixed: true))->prompt('Generate a number', provider: 'openai');
+
+    $recorded = aiHttpRecorded();
+    $input = collect(json_decode((string)$recorded[1][0]->body(), true)['input']);
+
+    expect($input->filter(fn($i): bool => ($i['type'] ?? null) !== null)->extract('type')->toList())
+        ->toBe(['reasoning', 'function_call', 'function_call_output'])
+        ->and($input->firstMatch(['type' => 'reasoning']))->toMatchArray(['id' => 'rs_1', 'encrypted_content' => 'enc-blob-1']);
+
+    $blocks = $response->messages->filter(fn($m): bool => $m instanceof AssistantMessage)->first()->replayBlocks;
+
+    expect(collect($blocks)->firstMatch(['type' => 'file_search_call'])['id'] ?? null)
+        ->toBe('fs_1');
+});

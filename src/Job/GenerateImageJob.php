@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Job;
 
-use Cake\Queue\Job\JobInterface;
 use Cake\Queue\Job\Message;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\PendingResponses\PendingImageGeneration;
@@ -11,8 +10,13 @@ use Interop\Queue\Processor;
 
 /**
  * Generate an image asynchronously via Cake Queue.
+ *
+ * Stateless by contract: the job is built with no constructor arguments
+ * (`AiJobProcessor` / `Message::getCallable()`) and all job data travels in
+ * the message payload. Business logic lives in `run()`; the lifecycle is
+ * owned by `Crustum\Ai\Queue\AiJobProcessor`.
  */
-class GenerateImageJob implements JobInterface
+class GenerateImageJob implements AiJobInterface
 {
     use DispatchableTrait;
 
@@ -60,16 +64,18 @@ class GenerateImageJob implements JobInterface
      */
     public function execute(Message $message): ?string
     {
-        return $this->run($message->getArgument() ?? []);
+        $this->response = $this->run($message->getArgument() ?? []);
+
+        return Processor::ACK;
     }
 
     /**
      * Run the job from a decoded payload (also used by tests).
      *
      * @param array<string, mixed> $data Job payload
-     * @return string
+     * @return mixed The generated image response
      */
-    public function run(array $data): string
+    public function run(array $data): mixed
     {
         /** @var \Crustum\Ai\PendingResponses\PendingImageGeneration $pending */
         $pending = static::unpack($data['pending'] ?? null);
@@ -77,10 +83,6 @@ class GenerateImageJob implements JobInterface
         $provider = static::unpack($data['provider'] ?? null);
         $model = isset($data['model']) && is_string($data['model']) ? $data['model'] : null;
 
-        $response = $pending->generate($provider, $model);
-
-        PendingDispatch::resolve(static::class, $response);
-
-        return Processor::ACK;
+        return $pending->generate($provider, $model);
     }
 }

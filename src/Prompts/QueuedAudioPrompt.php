@@ -22,6 +22,7 @@ class QueuedAudioPrompt
      * @param \Crustum\Ai\Enums\Lab|array<string, string>|string|null $provider Provider specification
      * @param string|null $model Model identifier
      * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      */
     public function __construct(
         public readonly string $text,
@@ -30,6 +31,7 @@ class QueuedAudioPrompt
         public readonly Lab|array|string|null $provider,
         public readonly ?string $model,
         public readonly int $timeout = 30,
+        public readonly array $providerOptions = [],
     ) {
     }
 

@@ -4,10 +4,12 @@ declare(strict_types=1);
 namespace Crustum\Ai\Gateway\Anthropic\Trait;
 
 use Crustum\Ai\Contracts\Providers\Provider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsWebFetch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\ProviderTool;
 use Crustum\Ai\Providers\Tools\ToolSearch;
 use Crustum\Ai\Providers\Tools\WebFetch;
@@ -110,10 +112,31 @@ trait MapsToolsTrait
     protected function mapProviderTool(ProviderTool $tool, Provider $provider): array
     {
         return match (true) {
+            $tool instanceof CodeExecution => $this->mapCodeExecutionTool($tool, $provider),
             $tool instanceof WebFetch => $this->mapWebFetchTool($tool, $provider),
             $tool instanceof WebSearch => $this->mapWebSearchTool($tool, $provider),
             default => throw new LogicException('Provider tool [' . $tool::class . '] is not supported by Anthropic.'),
         };
+    }
+
+    /**
+     * Map a code execution tool to an Anthropic server-side tool definition.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $tool Code execution tool
+     * @param \Crustum\Ai\Contracts\Providers\Provider $provider Provider instance
+     * @return array<string, mixed>
+     */
+    protected function mapCodeExecutionTool(CodeExecution $tool, Provider $provider): array
+    {
+        if (!$provider instanceof SupportsCodeExecution) {
+            throw new RuntimeException('Provider [' . $provider->name() . '] does not support code execution.');
+        }
+
+        return [
+            'type' => 'code_execution_20260120',
+            'name' => 'code_execution',
+            ...$provider->codeExecutionToolOptions($tool),
+        ];
     }
 
     /**

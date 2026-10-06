@@ -3,10 +3,14 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Tools;
 
+use Crustum\Ai\Approvals\Approval;
 use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\Approvable;
 use Crustum\Ai\Contracts\CanActAsTool;
 use Crustum\Ai\Contracts\Tool;
+use Crustum\Ai\Trait\InteractsWithApprovalsTrait;
 use Crustum\JsonSchema\Contracts\JsonSchema;
+use Generator;
 use ReflectionClass;
 use Stringable;
 use Throwable;
@@ -14,8 +18,10 @@ use Throwable;
 /**
  * Wraps an agent as a callable tool.
  */
-class AgentTool implements Tool
+class AgentTool implements Approvable, Tool
 {
+    use InteractsWithApprovalsTrait;
+
     /**
      * @param \Crustum\Ai\Contracts\Agent $agent Underlying agent
      */
@@ -64,6 +70,25 @@ class AgentTool implements Tool
     }
 
     /**
+     * Execute the sub-agent and stream its activity.
+     *
+     * @param \Crustum\Ai\Tools\Request $request Tool request
+     * @return \Generator<int, \Crustum\Ai\Streaming\Event\StreamEvent, mixed, string>
+     */
+    public function stream(Request $request): Generator
+    {
+        try {
+            $stream = $this->agent->stream((string)$request['task']);
+
+            yield from $stream;
+
+            return (string)$stream->text;
+        } catch (Throwable $throwable) {
+            return 'Agent failed: ' . $throwable->getMessage();
+        }
+    }
+
+    /**
      * Get the tool's schema definition.
      *
      * @param \Crustum\JsonSchema\Contracts\JsonSchema $schema Schema builder
@@ -84,5 +109,16 @@ class AgentTool implements Tool
     public function agent(): Agent
     {
         return $this->agent;
+    }
+
+    /**
+     * Determine whether the tool needs approval for the given request.
+     *
+     * @param \Crustum\Ai\Tools\Request $request Tool request
+     * @return \Crustum\Ai\Approvals\Approval|bool
+     */
+    protected function needsApproval(Request $request): Approval|bool
+    {
+        return false;
     }
 }

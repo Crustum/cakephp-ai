@@ -5,7 +5,9 @@ use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\HasTools;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Test\Fixtures\Mcp\FakeMcpServerTool;
+use Crustum\Ai\Tools\McpServerTool;
 use Crustum\Ai\Trait\PromptableTrait;
+use Crustum\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 test('agents can return mcp server tools directly', function (): void {
     $serverTool = new FakeMcpServerTool();
@@ -43,4 +45,11 @@ test('agents can return mcp server tools directly', function (): void {
     expect($response->toolResults->first())->toHaveProperty('result', 'Sunny in Paris.');
 
     expect($serverTool->invocations)->toBe([['city' => 'Paris']]);
+});
+
+test('mcp server tools expose their annotations', function (): void {
+    $tool = new #[IsReadOnly] class extends FakeMcpServerTool {
+    };
+
+    expect((new McpServerTool($tool))->annotations())->toBe(['readOnlyHint' => true]);
 });

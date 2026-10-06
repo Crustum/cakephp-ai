@@ -5,7 +5,7 @@ namespace {{ namespace }};
 
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Tools\Request;
-use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Crustum\JsonSchema\Contracts\JsonSchema;
 use Stringable;
 
 /**
@@ -37,8 +37,8 @@ class {{ class }} implements Tool
     /**
      * Get the tool's schema definition.
      *
-     * @param \Illuminate\Contracts\JsonSchema\JsonSchema $schema Schema builder
-     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     * @param \Crustum\JsonSchema\Contracts\JsonSchema $schema Schema builder
+     * @return array<string, \Crustum\JsonSchema\Types\Type>
      */
     public function schema(JsonSchema $schema): array
     {

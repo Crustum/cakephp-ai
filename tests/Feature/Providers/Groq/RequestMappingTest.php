@@ -6,6 +6,7 @@ use Cake\Utility\Hash;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeToolChoiceAgent;
+use Crustum\Ai\Test\Fixtures\Agents\NestedStructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolChoiceAgent;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
@@ -151,6 +152,20 @@ test('structured output includes json schema response format', function (): void
     });
 });
 
+test('structured output without Strict attribute sends strict false in response format', function (): void {
+    aiHttpFake(['*' => fakeGroqResponse('{"elements": []}')]);
+
+    (new NestedStructuredAgent())->prompt('List elements.', provider: 'groq');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $format = Hash::get($body, 'response_format');
+
+        return $format['type'] === 'json_schema'
+            && $format['json_schema']['strict'] === false;
+    });
+});
+
 test('request without schema excludes response format', function (): void {
     aiHttpFake(['*' => fakeGroqResponse('Hello')]);
 
@@ -234,8 +249,8 @@ test('response usage is correctly parsed', function (): void {
 
     $response = agent()->prompt('Hello', provider: 'groq');
 
-    expect($response->usage->promptTokens)->toBe(10)
-        ->and($response->usage->completionTokens)->toBe(5);
+    expect($response->usage->inputTokens)->toBe(10)
+        ->and($response->usage->outputTokens)->toBe(5);
 });
 
 test('response usage includes reasoning tokens', function (): void {
@@ -260,8 +275,8 @@ test('response usage includes reasoning tokens', function (): void {
 
     $response = agent()->prompt('What is 2+2?', provider: 'groq', model: 'deepseek-r1-distill-llama-70b');
 
-    expect($response->usage->promptTokens)->toBe(100)
-        ->and($response->usage->completionTokens)->toBe(50)
+    expect($response->usage->inputTokens)->toBe(100)
+        ->and($response->usage->outputTokens)->toBe(50)
         ->and($response->usage->reasoningTokens)->toBe(20);
 });
 
@@ -287,8 +302,8 @@ test('response usage includes cached prompt tokens', function (): void {
 
     $response = agent()->prompt('Hello', provider: 'groq');
 
-    expect($response->usage->promptTokens)->toBe(4641)
-        ->and($response->usage->completionTokens)->toBe(1817)
+    expect($response->usage->inputTokens)->toBe(4641)
+        ->and($response->usage->outputTokens)->toBe(1817)
         ->and($response->usage->cacheReadInputTokens)->toBe(4608);
 });
 

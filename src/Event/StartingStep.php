@@ -9,6 +9,8 @@ use Crustum\Ai\Gateway\TextGenerationOptions;
 
 /**
  * Dispatched before a generation step is sent to the provider.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Contracts\Agent>
  */
 class StartingStep extends AiEvent
 {
@@ -43,6 +45,6 @@ class StartingStep extends AiEvent
             'isFinalStep' => $isFinalStep,
             'messages' => $messages,
             'options' => $options,
-        ]);
+        ], $agent);
     }
 }

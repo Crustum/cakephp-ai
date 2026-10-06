@@ -9,6 +9,7 @@ use Crustum\Ai\Ai;
 use Crustum\Ai\Approvals\Decision;
 use Crustum\Ai\Approvals\PendingApproval;
 use Crustum\Ai\Event\AgentPrompted;
+use Crustum\Ai\Event\AiEvent;
 use Crustum\Ai\Event\ToolApprovalRequested;
 use Crustum\Ai\Messages\Message;
 use Crustum\Ai\Messages\MessageRole;
@@ -45,6 +46,7 @@ use Crustum\Ai\TestSuite\Http\HttpResponseDefinition;
 use Crustum\Ai\TestSuite\Http\HttpResponseSequence;
 use Crustum\Ai\TestSuite\Http\RecordedHttp;
 use Crustum\Ai\TestSuite\Tool\RecordedToolInvocation;
+use InvalidArgumentException;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -67,11 +69,17 @@ class AiFlow
     /**
      * Limit captured AI event classes for the current test.
      *
-     * @param list<class-string<\Crustum\Ai\Event\AiEvent>> $eventClasses Event classes
+     * @param list<class-string> $eventClasses Event classes
      * @return void
      */
     public static function captureAiEvents(array $eventClasses): void
     {
+        foreach ($eventClasses as $eventClass) {
+            if (!is_subclass_of($eventClass, AiEvent::class)) {
+                throw new InvalidArgumentException(sprintf('Expected an Ai event class name, got [%s].', $eventClass));
+            }
+        }
+
         EventCapture::capture($eventClasses);
     }
 
@@ -316,7 +324,7 @@ class AiFlow
     /**
      * Assert that an AI event was dispatched.
      *
-     * @param class-string<\Crustum\Ai\Event\AiEvent> $eventClass Event class
+     * @param class-string $eventClass Event class
      * @param callable|null $callback Optional truth test
      * @param string $message Optional assertion message
      * @return void
@@ -332,7 +340,7 @@ class AiFlow
     /**
      * Assert that an AI event was not dispatched.
      *
-     * @param class-string<\Crustum\Ai\Event\AiEvent> $eventClass Event class
+     * @param class-string $eventClass Event class
      * @param string $message Optional assertion message
      * @return void
      */
@@ -344,7 +352,7 @@ class AiFlow
     /**
      * Assert how many times an AI event was dispatched.
      *
-     * @param class-string<\Crustum\Ai\Event\AiEvent> $eventClass Event class
+     * @param class-string $eventClass Event class
      * @param int $count Expected count
      * @param string $message Optional assertion message
      * @return void
@@ -357,7 +365,7 @@ class AiFlow
     /**
      * Assert AI events were dispatched in order as a subsequence.
      *
-     * @param list<class-string<\Crustum\Ai\Event\AiEvent>> $eventClasses Ordered event classes
+     * @param list<class-string> $eventClasses Ordered event classes
      * @param string $message Optional assertion message
      * @return void
      */
@@ -369,7 +377,7 @@ class AiFlow
     /**
      * Get recorded AI events.
      *
-     * @return array<int, \Crustum\Ai\Event\AiEvent>
+     * @return array<int, object>
      */
     public static function getAiEvents(): array
     {
@@ -592,17 +600,17 @@ class AiFlow
         $steps = EventCapture::steps();
         Assert::assertNotEmpty($steps, ($message !== '' ? $message . "\n" : '') . EventCapture::timeline());
 
-        $promptTokens = 0;
-        $completionTokens = 0;
+        $inputTokens = 0;
+        $outputTokens = 0;
 
         foreach ($steps as $step) {
-            $promptTokens += $step->usage->promptTokens;
-            $completionTokens += $step->usage->completionTokens;
+            $inputTokens += $step->usage->inputTokens;
+            $outputTokens += $step->usage->outputTokens;
         }
 
         Assert::assertSame(
-            [$promptTokens, $completionTokens],
-            [$response->usage->promptTokens, $response->usage->completionTokens],
+            [$inputTokens, $outputTokens],
+            [$response->usage->inputTokens, $response->usage->outputTokens],
             ($message !== '' ? $message . "\n" : '') . EventCapture::timeline(),
         );
     }

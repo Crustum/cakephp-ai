@@ -6,6 +6,7 @@ namespace Crustum\Ai\Prompts;
 use Cake\Collection\CollectionInterface;
 use Crustum\Ai\Approvals\Decisions;
 use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Enums\Lab;
 
 /**
@@ -30,15 +31,15 @@ class QueuedAgentPrompt
      *
      * @param \Crustum\Ai\Contracts\Agent $agent The agent instance
      * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
-     * @param \Cake\Collection\CollectionInterface|array<mixed> $attachments The attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile>|array<int, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments The attachments
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Contracts\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      */
     public function __construct(
         public Agent $agent,
         Decisions|string $prompt,
         public CollectionInterface|array $attachments,
-        public Lab|array|string|null $provider,
+        public Lab|array|string|Provider|null $provider,
         public ?string $model,
     ) {
         $this->prompt = is_string($prompt) ? $prompt : '';

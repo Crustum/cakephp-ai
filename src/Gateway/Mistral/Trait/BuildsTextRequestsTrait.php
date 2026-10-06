@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Gateway\Mistral\Trait;
 
+use Crustum\Ai\Attributes\Strict;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Support\ObjectSchema;
@@ -72,7 +73,7 @@ trait BuildsTextRequestsTrait
         }
 
         if (Value::filled($schema)) {
-            $body['response_format'] = $this->buildResponseFormat($schema);
+            $body['response_format'] = $this->buildResponseFormat($schema, Strict::isAppliedTo($options?->agent));
         }
 
         if ($options?->maxTokens !== null) {
@@ -99,9 +100,9 @@ trait BuildsTextRequestsTrait
      * @param array<string, mixed> $schema Structured output schema
      * @return array<string, mixed>
      */
-    protected function buildResponseFormat(array $schema): array
+    protected function buildResponseFormat(array $schema, bool $strict): array
     {
-        $schemaArray = (new ObjectSchema($schema))->toSchema();
+        $schemaArray = (new ObjectSchema($schema, strict: $strict))->toSchema();
         $schemaName = $schemaArray['name'] ?? 'schema_definition';
         $schemaBody = array_diff_key($schemaArray, ['name' => true]);
 
@@ -110,7 +111,7 @@ trait BuildsTextRequestsTrait
             'json_schema' => [
                 'name' => $schemaName,
                 'schema' => $schemaBody,
-                'strict' => true,
+                'strict' => $strict,
             ],
         ];
     }

@@ -77,6 +77,7 @@ test('transcription maps audio mime types to openrouter format values', function
     'ogg via audio/ogg' => ['audio/ogg', 'ogg'],
     'ogg via audio/ogg opus' => ['audio/ogg; codecs=opus', 'ogg'],
     'flac via audio/flac' => ['audio/flac', 'flac'],
+    'aiff via audio/aiff' => ['audio/aiff', 'aiff'],
     'flac via audio/x-flac' => ['audio/x-flac', 'flac'],
     'webm via audio/webm' => ['audio/webm', 'webm'],
     'aac via audio/aac' => ['audio/aac', 'aac'],
@@ -104,9 +105,9 @@ test('transcription wraps raw pcm audio in a wav header and sends as wav format'
 test('transcription throws invalid argument exception for unsupported mime type', function (): void {
     aiHttpFake();
 
-    expect(fn(): TranscriptionResponse => Transcription::fromBase64(base64_encode('fake-audio'), 'audio/x-aiff')
+    expect(fn(): TranscriptionResponse => Transcription::fromBase64(base64_encode('fake-audio'), 'audio/midi')
         ->generate(provider: 'openrouter'))
-        ->toThrow(InvalidArgumentException::class, 'Unsupported audio MIME type [audio/x-aiff]');
+        ->toThrow(InvalidArgumentException::class, 'Unsupported audio MIME type [audio/midi]');
 
     aiAssertHttpNothingSent();
 });
@@ -134,7 +135,7 @@ test('transcription uses default model when none specified', function (): void {
 
     Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')->generate(provider: 'openrouter');
 
-    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'openai/whisper-1');
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'openai/gpt-transcribe');
 });
 
 test('transcription response text is correctly parsed', function (): void {
@@ -145,7 +146,7 @@ test('transcription response text is correctly parsed', function (): void {
     expect($response->text)->toBe('Hello, world!')
         ->and($response->segments)->toHaveCount(0)
         ->and($response->meta->provider)->toBe('openrouter')
-        ->and($response->meta->model)->toBe('openai/whisper-1');
+        ->and($response->meta->model)->toBe('openai/gpt-transcribe');
 });
 
 test('transcription usage is correctly parsed', function (): void {
@@ -162,8 +163,8 @@ test('transcription usage is correctly parsed', function (): void {
 
     $response = Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')->generate(provider: 'openrouter');
 
-    expect($response->usage->promptTokens)->toBe(100)
-        ->and($response->usage->completionTokens)->toBe(50);
+    expect($response->usage->inputTokens)->toBe(100)
+        ->and($response->usage->outputTokens)->toBe(50);
 });
 
 test('transcription request sends bearer token', function (): void {
@@ -215,3 +216,25 @@ test('transcription http error response throws request exception', function (): 
     Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')
         ->generate(provider: 'openrouter', model: 'openai/whisper-1');
 })->throws(RequestException::class);
+
+test('transcription reports the audio duration returned in usage', function (): void {
+    aiHttpFake(['*' => aiHttpResponse([
+        'text' => 'Hello, world!',
+        'usage' => ['seconds' => 9.2, 'input_tokens' => 83, 'output_tokens' => 30],
+    ])]);
+
+    $response = Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')
+        ->generate(provider: 'openrouter', model: 'openai/whisper-1');
+
+    expect($response->usage->audioSeconds)->toBe(9.2)
+        ->and($response->usage->inputTokens)->toBe(83);
+});
+
+test('transcription leaves the audio duration null when not returned', function (): void {
+    aiHttpFake(['*' => aiHttpResponse(['text' => 'Hello, world!'])]);
+
+    $response = Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')
+        ->generate(provider: 'openrouter', model: 'openai/whisper-1');
+
+    expect($response->usage->audioSeconds)->toBeNull();
+});

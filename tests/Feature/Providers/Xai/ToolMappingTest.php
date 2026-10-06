@@ -4,11 +4,13 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Cake\Utility\Hash;
 use Crustum\Ai\Ai;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\WebFetch;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Test\Fixtures\Tools\NamedTool;
+use Crustum\Ai\Test\Fixtures\Tools\NonStrictTool;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
@@ -174,16 +176,40 @@ test('file search tool forwards xai provider options into the tool payload', fun
     });
 });
 
-test('unsupported provider tools are omitted from the tools payload', function (): void {
-    aiHttpFake(['*' => fakeXaiToolMappingResponse('result')]);
+test('provider tools xAI does not support are dropped after failing over to it', function (): void {
+    Configure::write('Ai.providers.anthropic', [
+        ...(array)Configure::read('Ai.providers.anthropic'),
+        'key' => 'test-key',
+    ]);
+    aiHttpFake([
+        'api.anthropic.com/*' => aiHttpResponse([
+            'type' => 'error',
+            'error' => ['type' => 'rate_limit_error', 'message' => 'Rate limited'],
+        ], 429),
+        'api.x.ai/*' => fakeXaiToolMappingResponse('result'),
+    ]);
 
     agent(tools: [new WebFetch(), new WebSearch()])
-        ->prompt('Search', provider: 'xai');
+        ->prompt('Search', provider: ['anthropic', 'xai']);
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => str_contains($request->url(), 'api.x.ai')
+        && Hash::get(json_decode($request->body(), true), 'tools') === [['type' => 'web_search']]);
+});
+
+test('tool without Strict attribute sends strict false', function (): void {
+    aiHttpFake([
+        '*' => fakeXaiToolMappingResponse('ok'),
+    ]);
+
+    agent(tools: [new NonStrictTool()])->prompt('Hi', provider: 'xai');
 
     aiAssertHttpSent(function (AiHttpRequest $request): bool {
         $body = json_decode($request->body(), true);
+        $tool = collect(Hash::get($body, 'tools'))->filter(fn($m): bool => ($m['type'] ?? null) === 'function')->first();
 
-        return Hash::get($body, 'tools') === [['type' => 'web_search']];
+        return $tool['strict'] === false
+            && $tool['parameters']['required'] === ['query']
+            && array_key_exists('limit', $tool['parameters']['properties']);
     });
 });
 
@@ -210,3 +236,15 @@ function fakeXaiToolMappingResponse(string $text): AiHttpResponseDefinition
         ],
     ]);
 }
+
+test('code execution tool sends type code_interpreter', function (): void {
+    aiHttpFake(['*' => fakeXaiToolMappingResponse('result')]);
+
+    agent(tools: [new CodeExecution()])->prompt('Run some code', provider: 'xai');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+
+        return collect(Hash::get($body, 'tools'))->filter(fn($tool): bool => ($tool['type'] ?? null) === 'code_interpreter')->toList() !== [];
+    });
+});

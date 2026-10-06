@@ -155,11 +155,11 @@ test('image response includes usage tokens', function (): void {
 
     $response = Image::of('A red apple')->generate(provider: 'azure', model: 'gpt-image-1');
 
-    expect($response->usage->promptTokens)->toBe(41)
-        ->and($response->usage->completionTokens)->toBe(1024);
+    expect($response->usage->inputTokens)->toBe(41)
+        ->and($response->usage->outputTokens)->toBe(1024);
 });
 
-test('image response subtracts cached tokens from prompt tokens', function (): void {
+test('image response reports cached tokens within the input tokens', function (): void {
     aiHttpFake([
         '*' => aiHttpResponse([
             'data' => [[
@@ -178,9 +178,9 @@ test('image response subtracts cached tokens from prompt tokens', function (): v
 
     $response = Image::of('A red apple')->generate(provider: 'azure', model: 'gpt-image-1');
 
-    expect($response->usage->promptTokens)->toBe(70)
+    expect($response->usage->inputTokens)->toBe(100)
         ->and($response->usage->cacheReadInputTokens)->toBe(30)
-        ->and($response->usage->completionTokens)->toBe(1024);
+        ->and($response->usage->outputTokens)->toBe(1024);
 });
 
 test('image response defaults to zero usage when not returned', function (): void {
@@ -190,11 +190,11 @@ test('image response defaults to zero usage when not returned', function (): voi
 
     $response = Image::of('A red apple')->generate(provider: 'azure', model: 'gpt-image-1');
 
-    expect($response->usage->promptTokens)->toBe(0)
-        ->and($response->usage->completionTokens)->toBe(0);
+    expect($response->usage->inputTokens)->toBe(0)
+        ->and($response->usage->outputTokens)->toBe(0);
 });
 
-test('default image model falls back to gpt-image-1', function (): void {
+test('default image model falls back to gpt-image-2.5-flare', function (): void {
     Configure::write('Ai.providers.azure.image_deployment');
 
     aiHttpFake([
@@ -206,7 +206,7 @@ test('default image model falls back to gpt-image-1', function (): void {
     aiAssertHttpSent(function (AiHttpRequest $request): bool {
         $body = json_decode($request->body(), true);
 
-        return $body['model'] === 'gpt-image-1';
+        return $body['model'] === 'gpt-image-2.5-flare';
     });
 });
 
@@ -255,3 +255,39 @@ test('image http error response throws request exception', function (): void {
 
     Image::of('A red apple')->generate(provider: 'azure', model: 'gpt-image-1');
 })->throws(RequestException::class);
+
+test('image response reports the image token details returned by gpt-image', function (): void {
+    aiHttpFake([
+        '*' => aiHttpResponse([
+            'data' => [[
+                'b64_json' => base64_encode('fake-image'),
+            ]],
+            'usage' => [
+                'input_tokens' => 187,
+                'output_tokens' => 1481,
+                'input_tokens_details' => [
+                    'image_tokens' => 146,
+                ],
+                'output_tokens_details' => [
+                    'image_tokens' => 1272,
+                ],
+            ],
+        ]),
+    ]);
+
+    $response = Image::of('A red apple')->generate(provider: 'azure', model: 'gpt-image-1');
+
+    expect($response->usage->imageInputTokens)->toBe(146)
+        ->and($response->usage->imageOutputTokens)->toBe(1272);
+});
+
+test('image response leaves the image token details null when the api version omits them', function (): void {
+    aiHttpFake([
+        '*' => fakeAzureImageResponse(),
+    ]);
+
+    $response = Image::of('A red apple')->generate(provider: 'azure', model: 'gpt-image-1');
+
+    expect($response->usage->imageInputTokens)->toBeNull()
+        ->and($response->usage->imageOutputTokens)->toBeNull();
+});

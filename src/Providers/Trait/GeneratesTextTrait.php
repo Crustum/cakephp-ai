@@ -8,17 +8,16 @@ use Closure;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\Conversational;
-use Crustum\Ai\Contracts\HasMiddleware;
+use Crustum\Ai\Contracts\HasSkills;
 use Crustum\Ai\Contracts\HasStructuredOutput;
 use Crustum\Ai\Contracts\HasTools;
 use Crustum\Ai\Contracts\Tool;
-use Crustum\Ai\Event\AgentFailedEvent;
+use Crustum\Ai\Event\AgentFailed;
 use Crustum\Ai\Event\AgentPrompted;
 use Crustum\Ai\Event\PromptingAgent;
 use Crustum\Ai\Event\ToolApprovalRequested;
 use Crustum\Ai\Event\ToolApprovalResolved;
 use Crustum\Ai\Exception\ApprovalNotResumableException;
-use Crustum\Ai\Exception\FailoverableException;
 use Crustum\Ai\Gateway\RunContext;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Messages\UserMessage;
@@ -30,10 +29,9 @@ use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Responses\StructuredTextResponse;
 use Crustum\Ai\Tools\AgentTool;
+use Crustum\Ai\Tools\LoadSkill;
 use Crustum\Ai\Tools\McpServerTool;
 use Crustum\Ai\Tools\McpTool;
-use Crustum\Ai\Trait\RemembersConversationsTrait;
-use Crustum\Ai\Utility\Reflection;
 use Crustum\JsonSchema\JsonSchemaTypeFactory;
 use Crustum\Mcp\Client\Primitives\Tool as McpClientTool;
 use Crustum\Mcp\Server\Tool as McpServerToolContract;
@@ -56,22 +54,21 @@ trait GeneratesTextTrait
     {
         $invocationId = $prompt->invocationId ?? Text::uuid();
 
-        $processedPrompt = null;
         $resolvedApprovalResults = null;
 
         try {
             $response = (new Pipeline())
                 ->send($prompt)
                 ->through($this->gatherMiddlewareFor($prompt->agent))
-                ->then(function (AgentPrompt $prompt) use ($invocationId, &$processedPrompt, &$resolvedApprovalResults): AgentResponse {
-                    $processedPrompt = $prompt;
+                ->then(function (AgentPrompt $prompt) use ($invocationId, &$resolvedApprovalResults): AgentResponse {
 
                     $this->events->dispatch(new PromptingAgent($invocationId, $prompt));
 
                     $agent = $prompt->agent;
 
-                    $messages = $this->withoutForeignProviderContentBlocks([
-                    ...($agent instanceof Conversational ? $agent->messages() : []),
+                    $messages = $this->withoutForeignReplayBlocks([
+                        ...($prompt->messages ?? []),
+                        ...($agent instanceof Conversational ? $agent->messages() : []),
                     ]);
 
                     if (!$prompt->hasApprovalDecisions()) {
@@ -85,7 +82,7 @@ trait GeneratesTextTrait
                         $prompt->model,
                         (string)$agent->instructions(),
                         $messages,
-                        $this->resolveTools($agent),
+                        $this->resolveTools($prompt),
                         $schema,
                         TextGenerationOptions::forAgent($agent),
                         $prompt->timeout,
@@ -95,7 +92,7 @@ trait GeneratesTextTrait
                     );
 
                     if ($response->hasPendingApprovals()) {
-                        $this->throwIfNotResumable($agent);
+                        $this->throwIfNotResumable($prompt);
                     }
 
                     $agentResponse = $response instanceof StructuredTextResponse
@@ -103,11 +100,13 @@ trait GeneratesTextTrait
                         ->withMessages($response->messages)
                         ->withToolCallsAndResults($response->toolCalls, $response->toolResults)
                         ->withSteps($response->steps)
+                        ->withReasoning($response->reasoning)
                         ->withRawResponse($response->raw)
                     : (new AgentResponse($invocationId, $response->text, $response->usage, $response->meta))
                         ->withMessages($response->messages)
                         ->withToolCallsAndResults($response->toolCalls, $response->toolResults)
                         ->withSteps($response->steps)
+                        ->withReasoning($response->reasoning)
                         ->withRawResponse($response->raw);
 
                     $agentResponse->withPendingApprovals($response->pendingApprovals);
@@ -115,13 +114,13 @@ trait GeneratesTextTrait
                     return $agentResponse;
                 });
         } catch (Throwable $throwable) {
-            $this->recordAgentFailure($invocationId, $prompt, $throwable, $processedPrompt);
+            $this->recordAgentFailure($invocationId, $prompt, $throwable);
 
             throw $throwable;
         }
 
         $this->events->dispatch(
-            new AgentPrompted($invocationId, $processedPrompt ?? $prompt, $response),
+            new AgentPrompted($invocationId, $prompt, $response),
         );
 
         if ($response->hasPendingApprovals()) {
@@ -148,7 +147,7 @@ trait GeneratesTextTrait
     }
 
     /**
-     * Gather the middleware for the given agent.
+     * Gather the internal run middleware for the given agent.
      *
      * @param \Crustum\Ai\Contracts\Agent $agent Agent instance
      * @return array<int, mixed>
@@ -161,31 +160,38 @@ trait GeneratesTextTrait
             return $next($prompt);
         }] : [];
 
-        if (in_array(RemembersConversationsTrait::class, Reflection::classUsesRecursive($agent), true)) {
+        if (RememberConversation::appliesTo($agent)) {
             $middleware[] = new RememberConversation(Ai::manager()->conversationStore(), $this);
         }
 
-        return $agent instanceof HasMiddleware
-            ? [...$middleware, ...$agent->middleware()]
-            : $middleware;
+        return $middleware;
     }
 
     /**
-     * Resolve the tools for the given agent, wrapping any agent instances as tools.
+     * Resolve the tools for the given prompt, wrapping any agent instances as tools.
+     *
+     * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
+     * @return array<int, mixed>
+     */
+    protected function resolveTools(AgentPrompt $prompt): array
+    {
+        return array_map(
+            fn($tool) => $this->resolveTool($tool),
+            $prompt->tools ?? $this->declaredTools($prompt->agent),
+        );
+    }
+
+    /**
+     * Get the tools the agent declares, including the tool that loads its skills.
      *
      * @param \Crustum\Ai\Contracts\Agent $agent Agent instance
      * @return array<int, mixed>
      */
-    protected function resolveTools(Agent $agent): array
+    protected function declaredTools(Agent $agent): array
     {
-        if (!$agent instanceof HasTools) {
-            return [];
-        }
+        $tools = $agent instanceof HasTools ? [...$agent->tools()] : [];
 
-        return array_map(
-            fn($tool) => $this->resolveTool($tool),
-            [...$agent->tools()],
-        );
+        return $agent instanceof HasSkills ? LoadSkill::mergeInto($tools, $agent) : $tools;
     }
 
     /**
@@ -216,7 +222,11 @@ trait GeneratesTextTrait
      */
     protected function runContextFor(string $invocationId, AgentPrompt $prompt): RunContext
     {
-        return new RunContext($invocationId, $prompt->agent, $this, $prompt->model, $this->events);
+        $context = new RunContext($invocationId, $prompt->agent, $this, $prompt->model, $this->events);
+
+        $prompt->setRunContext($context);
+
+        return $context;
     }
 
     /**
@@ -225,46 +235,31 @@ trait GeneratesTextTrait
      * @param string $invocationId Invocation ID
      * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
      * @param \Throwable $exception The failure
-     * @param \Crustum\Ai\Prompts\AgentPrompt|null $processedPrompt Prompt as processed by middleware
      * @param bool $retryable Whether the caller may retry against another provider
      */
-    protected function recordAgentFailure(string $invocationId, AgentPrompt $prompt, Throwable $exception, ?AgentPrompt $processedPrompt = null, bool $retryable = true): void
+    protected function recordAgentFailure(string $invocationId, AgentPrompt $prompt, Throwable $exception, bool $retryable = true): void
     {
-        if (
-            $retryable &&
-            !$prompt->isFinalAttempt() &&
-            $exception instanceof FailoverableException
-        ) {
+        // A failoverable exception is only terminal once the caller has run out of providers to try.
+        if ($retryable && $prompt->willRetry($exception)) {
             return;
         }
 
         $this->events->dispatch(
-            new AgentFailedEvent($invocationId, $processedPrompt ?? $prompt, $exception),
+            new AgentFailed($invocationId, $prompt, $exception),
         );
     }
 
     /**
-     * Throw when a pause has surfaced on an agent that cannot resume it from persisted history.
+     * Throw when a pause has surfaced on a prompt that cannot be resumed from persisted or replayed history.
      *
-     * @param \Crustum\Ai\Contracts\Agent $agent Agent instance
+     * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
      * @return void
      * @throws \Crustum\Ai\Exception\ApprovalNotResumableException
      */
-    protected function throwIfNotResumable(Agent $agent): void
+    protected function throwIfNotResumable(AgentPrompt $prompt): void
     {
-        if (!$this->agentCanResumeApprovals($agent)) {
+        if (!$prompt->agent instanceof Conversational && $prompt->messages === null) {
             throw ApprovalNotResumableException::make();
         }
-    }
-
-    /**
-     * Determine whether the given agent can resume a paused approval from persisted history.
-     *
-     * @param \Crustum\Ai\Contracts\Agent $agent Agent instance
-     * @return bool
-     */
-    protected function agentCanResumeApprovals(Agent $agent): bool
-    {
-        return $agent instanceof Conversational;
     }
 }

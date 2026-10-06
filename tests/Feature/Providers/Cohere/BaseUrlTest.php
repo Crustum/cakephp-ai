@@ -53,6 +53,20 @@ test('cohere reranking requests use the configured base url', function (): void 
     aiAssertHttpSent(fn(AiHttpRequest $r): bool => $r->url() === 'http://localhost:8080/v2/rerank');
 });
 
+test('cohere text requests use the configured base url', function (): void {
+    Configure::write('Ai.providers.cohere', [
+        ...(array)Configure::read('Ai.providers.cohere'),
+        'key' => 'test-key',
+        'url' => 'http://localhost:8080/v2',
+    ]);
+
+    aiHttpFake(['*' => $this->fakeTextResponse('Hello')]);
+
+    agent()->prompt('Hello', provider: 'cohere');
+
+    aiAssertHttpSent(fn(AiHttpRequest $r): bool => $r->url() === 'http://localhost:8080/v2/chat');
+});
+
 test('cohere requests fall back to the default base url', function (): void {
     Configure::write('Ai.providers.cohere', [
 

@@ -3,13 +3,15 @@ declare(strict_types=1);
 
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\HasProviderOptions;
+use Crustum\Ai\Contracts\HasTools;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsWithToolsAgent;
+use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
 use Crustum\Ai\Trait\PromptableTrait;
 
-test('provider options are included in generation config', function (): void {
+test('provider options are included in the generation config', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
     ]);
@@ -19,13 +21,7 @@ test('provider options are included in generation config', function (): void {
         provider: 'gemini',
     );
 
-    aiAssertHttpSent(function ($request): bool {
-        $body = $request->data();
-        $config = $body['generationConfig'] ?? [];
-
-        return isset($config['thinkingConfig'])
-            && $config['thinkingConfig']['thinkingBudget'] === 10000;
-    });
+    expect(sentRequest()->data()['generation_config'])->toMatchArray(['thinking_level' => 'high']);
 });
 
 test('request body does not contain provider options when agent does not implement interface', function (): void {
@@ -38,11 +34,7 @@ test('request body does not contain provider options when agent does not impleme
         provider: 'gemini',
     );
 
-    aiAssertHttpSent(function ($request): bool {
-        $config = $request->data()['generationConfig'] ?? [];
-
-        return ! isset($config['thinkingConfig']);
-    });
+    expect(sentRequest()->data()['generation_config'] ?? [])->not->toHaveKey('thinking_level');
 });
 
 test('provider options are persisted in tool call follow up requests', function (): void {
@@ -62,24 +54,20 @@ test('provider options are persisted in tool call follow up requests', function 
 
     $recorded = aiHttpRecorded();
 
-    expect($recorded)->toHaveCount(2);
-
-    $firstConfig = $recorded[0][0]->data()['generationConfig'] ?? [];
-    expect($firstConfig['thinkingConfig']['thinkingBudget'])->toBe(10000);
-
-    $secondConfig = $recorded[1][0]->data()['generationConfig'] ?? [];
-    expect($secondConfig)->toHaveKey('thinkingConfig')
-        ->and($secondConfig['thinkingConfig']['thinkingBudget'])->toBe(10000);
+    expect($recorded)->toHaveCount(2)
+        ->and($recorded[0][0]->data()['generation_config']['thinking_level'])->toBe('high')
+        ->and($recorded[1][0]->data()['generation_config']['thinking_level'])->toBe('high');
 });
 
-test('cachedContent is placed at top level of request body, not in generationConfig', function (): void {
-    aiHttpFake([
-        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
-    ]);
-
-    $agent = new class implements Agent, HasProviderOptions
+function geminiOptionsAgent(array $options): Agent
+{
+    return new class ($options) implements Agent, HasProviderOptions
     {
         use PromptableTrait;
+
+        public function __construct(private array $options)
+        {
+        }
 
         public function instructions(): string
         {
@@ -88,20 +76,153 @@ test('cachedContent is placed at top level of request body, not in generationCon
 
         public function providerOptions(Lab|string $provider): array
         {
-            return match ($provider) {
-                Lab::Gemini => ['cachedContent' => 'cachedContents/test-cache-123'],
-                default => [],
-            };
+            return $provider === Lab::Gemini ? $this->options : [];
+        }
+    };
+}
+
+test('nested generation_config inside providerOptions is flattened into the top-level generation config', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent(['generation_config' => ['temperature' => 0.5, 'top_p' => 0.9]])
+        ->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data()['generation_config'])
+        ->toMatchArray(['temperature' => 0.5, 'top_p' => 0.9])
+        ->not->toHaveKey('generation_config');
+});
+
+test('safety settings are placed at the top level of the request body', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent(['safety_settings' => [['category' => 'HARM_CATEGORY_HATE_SPEECH', 'threshold' => 'BLOCK_NONE']]])
+        ->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data()['safety_settings'][0])->toMatchArray(['threshold' => 'BLOCK_NONE'])
+        ->and(sentRequest()->data()['generation_config'] ?? [])->not->toHaveKey('safety_settings');
+});
+
+test('safety settings nested inside a generation_config option are hoisted to the request root', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent(['generation_config' => [
+        'temperature' => 0.2,
+        'safety_settings' => [['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_ONLY_HIGH']],
+    ]])->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data()['safety_settings'][0])->toMatchArray(['threshold' => 'BLOCK_ONLY_HIGH'])
+        ->and(sentRequest()->data()['generation_config'])->toMatchArray(['temperature' => 0.2])
+        ->not->toHaveKey('safety_settings');
+});
+
+test('every top level request field is reachable through provider options', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent([
+        'service_tier' => 'flex',
+        'store' => true,
+        'labels' => ['team' => 'search'],
+        'generation_config' => ['seed' => 7],
+    ])->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data())->toMatchArray([
+        'service_tier' => 'flex',
+        'store' => true,
+        'labels' => ['team' => 'search'],
+    ])->and(sentRequest()->data()['generation_config'])
+        ->toMatchArray(['seed' => 7])
+        ->not->toHaveKey('service_tier');
+});
+
+test('top level fields spelled in camel case are still hoisted', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent([
+        'safetySettings' => [['category' => 'HARM_CATEGORY_HATE_SPEECH', 'threshold' => 'BLOCK_NONE']],
+        'serviceTier' => 'priority',
+        'previousInteractionId' => 'int_abc',
+    ])->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data())->toMatchArray([
+        'service_tier' => 'priority',
+        'previous_interaction_id' => 'int_abc',
+    ])->not->toHaveKey('generation_config')
+        ->and(sentRequest()->data()['safety_settings'][0])->toMatchArray(['threshold' => 'BLOCK_NONE']);
+});
+
+test('user metadata is placed at the top level of the request body', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent(['user_metadata' => ['tenant' => 'acme']])->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data())->toMatchArray(['user_metadata' => ['tenant' => 'acme']])
+        ->not->toHaveKey('generation_config');
+});
+
+test('a generation config spelled in camel case is flattened too', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent(['generationConfig' => ['thinking_level' => 'high']])->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data()['generation_config'])->toBe(['thinking_level' => 'high'])
+        ->and(sentRequest()->data())->not->toHaveKey('generationConfig');
+});
+
+test('a store option overrides the stateless default', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    geminiOptionsAgent(['store' => true])->prompt('Hi', provider: 'gemini');
+
+    expect(sentRequest()->data())->toMatchArray(['store' => true]);
+});
+
+test('a tool choice option replaces the value built from the agent tool choice', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse(),
+    ]);
+
+    $agent = new class implements Agent, HasProviderOptions, HasTools
+    {
+        use PromptableTrait;
+
+        public function instructions(): string
+        {
+            return 'You are a helpful assistant.';
+        }
+
+        public function tools(): iterable
+        {
+            return [new RandomNumberGenerator()];
+        }
+
+        public function toolChoice(): string
+        {
+            return 'required';
+        }
+
+        public function providerOptions(Lab|string $provider): array
+        {
+            return ['generation_config' => ['tool_choice' => 'none']];
         }
     };
 
     $agent->prompt('Hi', provider: 'gemini');
 
-    aiAssertHttpSent(function ($request): bool {
-        $body = $request->data();
-
-        return isset($body['cachedContent'])
-            && $body['cachedContent'] === 'cachedContents/test-cache-123'
-            && ! isset($body['generationConfig']['cachedContent']);
-    });
+    expect(sentRequest()->data()['generation_config'])->toMatchArray(['tool_choice' => 'none']);
 });

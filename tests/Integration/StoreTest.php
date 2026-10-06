@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+use Cake\Core\Configure;
 use Crustum\Ai\Event\CreatingStore;
 use Crustum\Ai\Event\StoreCreated;
 use Crustum\Ai\Event\StoreDeleted;
@@ -9,6 +10,7 @@ use Crustum\Ai\Files\Document;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Store;
 use Crustum\Ai\Stores;
+use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Test\Support\Event\EventRecorder;
 use Crustum\Ai\Test\Support\Skips\ApiKey;
 use Crustum\Ai\Test\Support\Skips\ProviderConfigured;
@@ -185,5 +187,30 @@ describe('file search', function (): void {
         )->prompt($prompt, provider: 'openai');
 
         expect(trim((string)$response))->toStartWith('Yes');
+    });
+
+    test('can follow up a stateless file search and function call made in the same step', function (): void {
+        ApiKey::required('OPENAI_API_KEY');
+        ProviderConfigured::store('openai');
+
+        Configure::write('Ai.providers.openai.store', false);
+
+        $this->provider = 'openai';
+        [$this->fileSearchStore, $this->fileSearchFileIds] = createFileSearchStore('openai');
+
+        $response = agent(
+            instructions: 'In your first step, use the file search tool and the number generator tool together. '
+                . 'Then answer using the results of both.',
+            tools: [
+                new FileSearch([$this->fileSearchStore->id]),
+                new FixedNumberGenerator(),
+            ],
+        )->prompt('Is Valkey mentioned in the sixth month roadmap, and what number does the generator return?', provider: 'openai');
+
+        $firstStep = $response->steps->first();
+
+        expect(collect($firstStep->providerToolCalls)->map(fn($call): string => $call->type)->toList())->toContain('file_search_call')
+            ->and($firstStep->toolCalls)->not->toBeEmpty()
+            ->and((string)$response)->toContain('72019')->toContain('Valkey');
     });
 });

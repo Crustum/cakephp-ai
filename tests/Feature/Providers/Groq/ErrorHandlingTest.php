@@ -63,6 +63,33 @@ test('overloaded response throws provider overloaded exception', function (): vo
     );
 })->throws(ProviderOverloadedException::class);
 
+test('flex tier capacity exceeded response throws provider overloaded exception', function (): void {
+    aiHttpFake([
+        'api.groq.com/*' => aiHttpResponse([
+            'error' => [
+                'type' => 'capacity_exceeded',
+                'message' => 'Flex tier capacity exceeded. Please try again later.',
+            ],
+        ], 498),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'groq',
+    );
+})->throws(ProviderOverloadedException::class);
+
+test('undocumented gateway status code does not fail over', function (): void {
+    aiHttpFake([
+        'api.groq.com/*' => aiHttpResponse('gateway timeout', 524),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'groq',
+    );
+})->throws(RequestException::class);
+
 test('error in 200 response throws ai exception', function (): void {
     aiHttpFake([
         'api.groq.com/*' => aiHttpResponse([

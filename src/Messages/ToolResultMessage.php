@@ -14,13 +14,15 @@ class ToolResultMessage extends Message
 {
     /**
      * The tool results.
+     *
+     * @var \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolResult>
      */
     public CollectionInterface $toolResults;
 
     /**
      * Create a new tool result message instance.
      *
-     * @param \Cake\Collection\CollectionInterface $toolResults The tool results
+     * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolResult> $toolResults The tool results
      */
     public function __construct(CollectionInterface $toolResults)
     {

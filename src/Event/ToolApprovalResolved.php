@@ -8,6 +8,8 @@ use Crustum\Ai\Contracts\Agent;
 
 /**
  * Dispatched after tool approval decisions are resolved.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Contracts\Agent>
  */
 class ToolApprovalResolved extends AiEvent
 {
@@ -31,6 +33,6 @@ class ToolApprovalResolved extends AiEvent
             'toolResults' => $toolResults,
             'conversationId' => $conversationId,
             'conversationUser' => $conversationUser,
-        ]);
+        ], $agent);
     }
 }

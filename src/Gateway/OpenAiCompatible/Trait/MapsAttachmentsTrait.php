@@ -9,6 +9,7 @@ use Crustum\Ai\Files\File;
 use Crustum\Ai\Files\LocalImage;
 use Crustum\Ai\Files\RemoteImage;
 use Crustum\Ai\Files\StoredImage;
+use Crustum\Ai\Utility\Reflection;
 use InvalidArgumentException;
 use Laminas\Diactoros\UploadedFile;
 
@@ -66,7 +67,11 @@ trait MapsAttachmentsTrait
                     ],
                 ],
                 default => throw new InvalidArgumentException(
-                    'This openai-compatible provider does not support document attachments. Only image attachments are supported.',
+                    preg_replace(
+                        '/Gateway$/',
+                        '',
+                        Reflection::classBasename(static::class),
+                    ) . ' does not support document attachments. Only image attachments are supported.',
                 ),
             };
         })->toList();

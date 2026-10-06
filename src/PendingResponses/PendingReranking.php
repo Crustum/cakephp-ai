@@ -7,8 +7,9 @@ use Cake\Core\Configure;
 use Cake\Event\EventManager;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Enums\Lab;
-use Crustum\Ai\Event\ProviderFailedOverEvent;
+use Crustum\Ai\Event\ProviderFailedOver;
 use Crustum\Ai\Exception\FailoverableException;
+use Crustum\Ai\PendingResponses\Trait\ResolvesProviderOptionsTrait;
 use Crustum\Ai\Providers\Provider;
 use Crustum\Ai\Responses\RerankingResponse;
 use Crustum\Ai\Trait\ConditionableTrait;
@@ -23,11 +24,17 @@ use InvalidArgumentException;
 class PendingReranking
 {
     use ConditionableTrait;
+    use ResolvesProviderOptionsTrait;
 
     /**
      * Maximum number of results to return.
      */
     protected ?int $limit = null;
+
+    /**
+     * Timeout in seconds for the reranking request.
+     */
+    protected int $timeout = 30;
 
     /**
      * Create a new pending reranking instance.
@@ -66,6 +73,18 @@ class PendingReranking
     }
 
     /**
+     * Specify the timeout (in seconds) for the reranking request.
+     *
+     * @param int $seconds Timeout in seconds
+     */
+    public function timeout(int $seconds = 30): static
+    {
+        $this->timeout = $seconds;
+
+        return $this;
+    }
+
+    /**
      * Rerank the documents based on their relevance to the query.
      *
      * @param string $query The query to rank documents against
@@ -88,12 +107,16 @@ class PendingReranking
 
             $model ??= $provider->defaultRerankingModel();
 
+            [$providerOptions, $headers] = $this->resolveProviderOptionsAndHeaders($provider);
+
+            $provider = $provider->withHeaders($headers);
+
             try {
-                return $provider->rerank($this->documents, $query, $this->limit, $model);
+                return $provider->rerank($this->documents, $query, $this->limit, $model, $this->timeout, $providerOptions);
             } catch (FailoverableException $e) {
                 $lastException = $e;
 
-                EventManager::instance()->dispatch(new ProviderFailedOverEvent($provider->name(), $model, $e));
+                EventManager::instance()->dispatch(new ProviderFailedOver($provider->name(), $model, $e, $provider));
 
                 continue;
             }

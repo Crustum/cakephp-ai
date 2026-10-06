@@ -8,6 +8,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched before an image is generated.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class GeneratingImage extends AiEvent
 {
@@ -30,6 +32,6 @@ class GeneratingImage extends AiEvent
             'provider' => $provider,
             'model' => $model,
             'prompt' => $prompt,
-        ]);
+        ], $provider);
     }
 }

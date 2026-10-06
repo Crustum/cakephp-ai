@@ -21,6 +21,24 @@ trait AnthropicHelpersTrait
         ]);
     }
 
+    /**
+     * Build a fake Anthropic response with the given content blocks.
+     *
+     * @param array<int, array<string, mixed>> $content Content blocks
+     */
+    protected function fakeThinkingResponse(array $content): AiHttpResponseDefinition
+    {
+        return aiHttpResponse([
+            'id' => 'msg_123',
+            'type' => 'message',
+            'role' => 'assistant',
+            'model' => 'claude-sonnet-4-6',
+            'content' => $content,
+            'stop_reason' => 'end_turn',
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 5],
+        ]);
+    }
+
     protected function fakeToolCallResponse(string $toolName = 'FixedNumberGenerator'): AiHttpResponseDefinition
     {
         return aiHttpResponse([
@@ -160,12 +178,18 @@ trait AnthropicHelpersTrait
         ];
     }
 
-    protected function messageDelta(string $stopReason, int $outputTokens): array
+    protected function messageDelta(string $stopReason, int $outputTokens, ?int $thinkingTokens = null): array
     {
+        $usage = ['output_tokens' => $outputTokens];
+
+        if ($thinkingTokens !== null) {
+            $usage['output_tokens_details'] = ['thinking_tokens' => $thinkingTokens];
+        }
+
         return [
             'type' => 'message_delta',
             'delta' => ['stop_reason' => $stopReason],
-            'usage' => ['output_tokens' => $outputTokens],
+            'usage' => $usage,
         ];
     }
 }

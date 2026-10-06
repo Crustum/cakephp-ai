@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
-use Cake\Utility\Hash;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
 use Crustum\Ai\Files\Base64Image;
@@ -18,49 +17,49 @@ beforeEach(function (): void {
     ]);
 });
 
-function fakeGeminiImageResponse(string $mimeType = 'image/png'): AiHttpResponseDefinition
+function fakeGeminiImageInteraction(array $steps, array $usage = []): AiHttpResponseDefinition
 {
-    return aiHttpResponse([
-        'candidates' => [[
-            'content' => [
-                'parts' => [[
-                    'inlineData' => [
-                        'mimeType' => $mimeType,
-                        'data' => base64_encode('fake-image'),
-                    ],
-                ]],
-            ],
-        ]],
-    ]);
+    return aiHttpResponse(array_filter([
+        'id' => 'int_image',
+        'status' => 'completed',
+        'steps' => $steps,
+        'usage' => $usage ?: null,
+    ]));
 }
 
-test('image request includes prompt in contents', function (): void {
+function geminiImageBlock(string $mimeType = 'image/png'): array
+{
+    return ['type' => 'image', 'mime_type' => $mimeType, 'data' => base64_encode('fake-image')];
+}
+
+function fakeGeminiImageResponse(string $mimeType = 'image/png'): AiHttpResponseDefinition
+{
+    return fakeGeminiImageInteraction([[
+        'type' => 'model_output',
+        'content' => [geminiImageBlock($mimeType)],
+    ]]);
+}
+
+test('image request posts the prompt to the interactions endpoint', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => fakeGeminiImageResponse(),
     ]);
 
     Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    aiAssertHttpSent(function (AiHttpRequest $request): bool {
-        $body = json_decode($request->body(), true);
-
-        return Hash::get($body, 'contents.0.role') === 'user'
-            && Hash::get($body, 'contents.0.parts.0.text') === 'A red apple';
-    });
+    expect(sentRequest()->url())->toEndWith('/interactions')
+        ->and(sentRequest()->data())->toMatchArray(['model' => 'gemini-3.1-flash-image-preview', 'store' => false])
+        ->and(sentRequest()->data()['input'][0])->toMatchArray(['type' => 'text', 'text' => 'A red apple']);
 });
 
-test('image request includes IMAGE and TEXT response modalities', function (): void {
+test('image request asks for an image response format', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => fakeGeminiImageResponse(),
     ]);
 
     Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    aiAssertHttpSent(function (AiHttpRequest $request): bool {
-        $body = json_decode($request->body(), true);
-
-        return Hash::get($body, 'generationConfig.responseModalities') === ['IMAGE', 'TEXT'];
-    });
+    expect(sentRequest()->data()['response_format'])->toMatchArray(['type' => 'image']);
 });
 
 test('image request includes default image size when quality not specified', function (): void {
@@ -70,11 +69,7 @@ test('image request includes default image size when quality not specified', fun
 
     Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    aiAssertHttpSent(function (AiHttpRequest $request): bool {
-        $body = json_decode($request->body(), true);
-
-        return Hash::get($body, 'generationConfig.imageConfig.imageSize') === '1K';
-    });
+    expect(sentRequest()->data()['response_format'])->toMatchArray(['image_size' => '1K']);
 });
 
 test('image request maps quality to image size', function (string $quality, string $expectedSize): void {
@@ -84,11 +79,7 @@ test('image request maps quality to image size', function (string $quality, stri
 
     Image::of('A red apple')->quality($quality)->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    aiAssertHttpSent(function (AiHttpRequest $request) use ($expectedSize): bool {
-        $body = json_decode($request->body(), true);
-
-        return Hash::get($body, 'generationConfig.imageConfig.imageSize') === $expectedSize;
-    });
+    expect(sentRequest()->data()['response_format'])->toMatchArray(['image_size' => $expectedSize]);
 })->with([
     'low maps to 1K' => ['low', '1K'],
     'medium maps to 2K' => ['medium', '2K'],
@@ -102,11 +93,7 @@ test('image request maps size to aspect ratio', function (): void {
 
     Image::of('A red apple')->square()->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    aiAssertHttpSent(function (AiHttpRequest $request): bool {
-        $body = json_decode($request->body(), true);
-
-        return Hash::get($body, 'generationConfig.imageConfig.aspectRatio') === '1:1';
-    });
+    expect(sentRequest()->data()['response_format'])->toMatchArray(['aspect_ratio' => '1:1']);
 });
 
 test('image request does not include aspect ratio when size not specified', function (): void {
@@ -116,14 +103,10 @@ test('image request does not include aspect ratio when size not specified', func
 
     Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    aiAssertHttpSent(function (AiHttpRequest $request): bool {
-        $body = json_decode($request->body(), true);
-
-        return ! array_key_exists('aspectRatio', Hash::get($body, 'generationConfig.imageConfig', []));
-    });
+    expect(sentRequest()->data()['response_format'])->not->toHaveKey('aspect_ratio');
 });
 
-test('image attachment is appended to contents parts', function (): void {
+test('image attachment is appended to the input blocks', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => fakeGeminiImageResponse(),
     ]);
@@ -132,33 +115,20 @@ test('image attachment is appended to contents parts', function (): void {
 
     Image::of('A red apple')->attachments([$attachment])->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    aiAssertHttpSent(function (AiHttpRequest $request): bool {
-        $body = json_decode($request->body(), true);
-        $parts = Hash::get($body, 'contents.0.parts');
-
-        return count($parts) === 2
-            && $parts[0]['text'] === 'A red apple'
-            && Hash::get($parts[1], 'inlineData.mimeType') === 'image/jpeg';
-    });
+    expect(sentRequest()->data()['input'])->toHaveCount(2)
+        ->and(sentRequest()->data()['input'][0])->toMatchArray(['text' => 'A red apple'])
+        ->and(sentRequest()->data()['input'][1])->toMatchArray(['type' => 'image', 'mime_type' => 'image/jpeg']);
 });
 
-test('only inlineData parts are returned when response contains mixed text and image parts', function (): void {
+test('only image blocks are returned when the response mixes text and images', function (): void {
     aiHttpFake([
-        'generativelanguage.googleapis.com/*' => aiHttpResponse([
-            'candidates' => [[
-                'content' => [
-                    'parts' => [
-                        ['text' => 'Here is your image:'],
-                        [
-                            'inlineData' => [
-                                'mimeType' => 'image/png',
-                                'data' => base64_encode('fake-image'),
-                            ],
-                        ],
-                    ],
-                ],
-            ]],
-        ]),
+        'generativelanguage.googleapis.com/*' => fakeGeminiImageInteraction([[
+            'type' => 'model_output',
+            'content' => [
+                ['type' => 'text', 'text' => 'Here is your image:'],
+                geminiImageBlock(),
+            ],
+        ]]),
     ]);
 
     $response = Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
@@ -167,23 +137,15 @@ test('only inlineData parts are returned when response contains mixed text and i
         ->and($response->images->first()->mime)->toBe('image/png');
 });
 
-test('firstImage works when response leads with a text part before the inlineData', function (): void {
+test('firstImage works when the response leads with a text block', function (): void {
     aiHttpFake([
-        'generativelanguage.googleapis.com/*' => aiHttpResponse([
-            'candidates' => [[
-                'content' => [
-                    'parts' => [
-                        ['text' => 'Here is your image:'],
-                        [
-                            'inlineData' => [
-                                'mimeType' => 'image/png',
-                                'data' => base64_encode('fake-image'),
-                            ],
-                        ],
-                    ],
-                ],
-            ]],
-        ]),
+        'generativelanguage.googleapis.com/*' => fakeGeminiImageInteraction([[
+            'type' => 'model_output',
+            'content' => [
+                ['type' => 'text', 'text' => 'Here is your image:'],
+                geminiImageBlock(),
+            ],
+        ]]),
     ]);
 
     $response = Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
@@ -218,40 +180,27 @@ test('request sends x-goog-api-key header', function (): void {
 
 test('image response includes usage metadata when returned', function (): void {
     aiHttpFake([
-        'generativelanguage.googleapis.com/*' => aiHttpResponse([
-            'candidates' => [[
-                'content' => [
-                    'parts' => [[
-                        'inlineData' => [
-                            'mimeType' => 'image/png',
-                            'data' => base64_encode('fake-image'),
-                        ],
-                    ]],
-                ],
-            ]],
-            'usageMetadata' => [
-                'promptTokenCount' => 12,
-                'candidatesTokenCount' => 1290,
-                'totalTokenCount' => 1302,
-            ],
-        ]),
+        'generativelanguage.googleapis.com/*' => fakeGeminiImageInteraction(
+            [['type' => 'model_output', 'content' => [geminiImageBlock()]]],
+            ['total_input_tokens' => 12, 'total_output_tokens' => 1290, 'total_tokens' => 1302],
+        ),
     ]);
 
     $response = Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    expect($response->usage->promptTokens)->toBe(12)
-        ->and($response->usage->completionTokens)->toBe(1290);
+    expect($response->usage->inputTokens)->toBe(12)
+        ->and($response->usage->outputTokens)->toBe(1290);
 });
 
-test('image response defaults to zero usage when usage metadata absent', function (): void {
+test('image response defaults to zero usage when usage is absent', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => fakeGeminiImageResponse(),
     ]);
 
     $response = Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
-    expect($response->usage->promptTokens)->toBe(0)
-        ->and($response->usage->completionTokens)->toBe(0);
+    expect($response->usage->inputTokens)->toBe(0)
+        ->and($response->usage->outputTokens)->toBe(0);
 });
 
 test('image rate limit response throws rate limited exception', function (): void {
@@ -296,13 +245,13 @@ test('image http error response throws request exception', function (): void {
     Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 })->throws(RequestException::class);
 
-test('image response is empty when prompt is blocked and candidates array is empty', function (): void {
+test('image response is empty when the interaction returns no steps', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => aiHttpResponse([
-            'candidates' => [],
-            'promptFeedback' => [
-                'blockReason' => 'SAFETY',
-            ],
+            'id' => 'int_blocked',
+            'status' => 'failed',
+            'steps' => [],
+            'errors' => [['code' => 'BLOCKED_SAFETY', 'message' => 'Blocked for safety reasons.']],
         ]),
     ]);
 
@@ -311,16 +260,61 @@ test('image response is empty when prompt is blocked and candidates array is emp
     expect($response->images)->toHaveCount(0);
 });
 
-test('image response is empty when candidate is blocked with no content parts', function (): void {
+test('image response is empty when the step carries no content', function (): void {
     aiHttpFake([
-        'generativelanguage.googleapis.com/*' => aiHttpResponse([
-            'candidates' => [[
-                'finishReason' => 'PROHIBITED_CONTENT',
-            ]],
-        ]),
+        'generativelanguage.googleapis.com/*' => fakeGeminiImageInteraction([['type' => 'model_output']]),
     ]);
 
     $response = Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
 
     expect($response->images)->toHaveCount(0);
+});
+
+test('a response format provider option is merged beneath the core format', function (): void {
+    aiHttpFake(['generativelanguage.googleapis.com/*' => fakeGeminiImageResponse()]);
+
+    Image::of('A red apple')
+        ->withProviderOptions(['response_format' => ['mime_type' => 'image/jpeg', 'type' => 'text']])
+        ->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
+
+    expect(sentRequest()->data()['response_format'])->toMatchArray([
+        'mime_type' => 'image/jpeg',
+        'type' => 'image',
+    ]);
+});
+
+test('image response reports the image modality token counts', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => fakeGeminiImageInteraction(
+            [['type' => 'model_output', 'content' => [geminiImageBlock()]]],
+            [
+                'total_input_tokens' => 270,
+                'total_output_tokens' => 1290,
+                'total_tokens' => 1560,
+                'input_tokens_by_modality' => [
+                    ['modality' => 'TEXT', 'tokens' => 12],
+                    ['modality' => 'IMAGE', 'tokens' => 258],
+                ],
+                'output_tokens_by_modality' => [
+                    ['modality' => 'IMAGE', 'tokens' => 1290],
+                ],
+            ],
+        ),
+    ]);
+
+    $response = Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
+
+    expect($response->usage->imageInputTokens)->toBe(258)
+        ->and($response->usage->imageOutputTokens)->toBe(1290);
+});
+
+test('image response leaves the image modality counts null when no details are returned', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => fakeGeminiImageResponse(),
+    ]);
+
+    $response = Image::of('A red apple')->generate(provider: 'gemini', model: 'gemini-3.1-flash-image-preview');
+
+    expect($response->usage->imageInputTokens)->toBeNull()
+        ->and($response->usage->imageOutputTokens)->toBeNull();
 });

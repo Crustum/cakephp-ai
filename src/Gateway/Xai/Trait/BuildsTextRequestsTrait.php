@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Gateway\Xai\Trait;
 
+use Crustum\Ai\Attributes\Strict;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\StepContext;
 use Crustum\Ai\Gateway\TextGenerationOptions;
@@ -127,7 +128,7 @@ trait BuildsTextRequestsTrait
         }
 
         if (Value::filled($schema)) {
-            $body['text'] = $this->buildSchemaFormat($schema);
+            $body['text'] = $this->buildSchemaFormat($schema, Strict::isAppliedTo($options?->agent));
         }
 
         if ($options?->maxTokens !== null) {
@@ -182,7 +183,7 @@ trait BuildsTextRequestsTrait
                 $input[] = [
                     'type' => 'function_call_output',
                     'call_id' => $toolResult->resultId,
-                    'output' => $this->serializeToolResultOutput($toolResult->result),
+                    'output' => $toolResult->text(),
                 ];
             }
         }
@@ -196,16 +197,18 @@ trait BuildsTextRequestsTrait
      * @param array<string, mixed> $schema Structured output schema
      * @return array<string, mixed>
      */
-    protected function buildSchemaFormat(array $schema): array
+    protected function buildSchemaFormat(array $schema, bool $strict): array
     {
-        $schemaArray = (new ObjectSchema($schema))->toSchema();
+        $objectSchema = new ObjectSchema($schema, strict: $strict);
+
+        $schemaArray = $objectSchema->toSchema();
 
         return [
             'format' => [
                 'type' => 'json_schema',
                 'name' => $schemaArray['name'] ?? 'schema_definition',
                 'schema' => array_diff_key($schemaArray, ['name' => true]),
-                'strict' => true,
+                'strict' => $strict,
             ],
         ];
     }

@@ -7,6 +7,7 @@ use Cake\Core\Configure;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\ConversationStore;
 use Crustum\Ai\Contracts\Providers\AudioProvider;
+use Crustum\Ai\Contracts\Providers\ClassificationProvider;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
@@ -16,15 +17,19 @@ use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\FakeAudioGateway;
+use Crustum\Ai\Gateway\FakeClassificationGateway;
 use Crustum\Ai\Gateway\FakeEmbeddingGateway;
 use Crustum\Ai\Gateway\FakeFileGateway;
 use Crustum\Ai\Gateway\FakeImageGateway;
 use Crustum\Ai\Gateway\FakeRerankingGateway;
 use Crustum\Ai\Gateway\FakeStoreGateway;
 use Crustum\Ai\Gateway\FakeTranscriptionGateway;
+use Crustum\Ai\Providers\Provider;
 use Crustum\Ai\Registry\ProviderRegistry;
+use Crustum\Ai\Storage\DatabaseConversationStore;
 use Crustum\Ai\Trait\InteractsWithFakeAgentsTrait;
 use Crustum\Ai\Trait\InteractsWithFakeAudioTrait;
+use Crustum\Ai\Trait\InteractsWithFakeClassificationTrait;
 use Crustum\Ai\Trait\InteractsWithFakeEmbeddingsTrait;
 use Crustum\Ai\Trait\InteractsWithFakeFilesTrait;
 use Crustum\Ai\Trait\InteractsWithFakeImagesTrait;
@@ -44,6 +49,7 @@ class AiManager
 {
     use InteractsWithFakeAgentsTrait;
     use InteractsWithFakeAudioTrait;
+    use InteractsWithFakeClassificationTrait;
     use InteractsWithFakeEmbeddingsTrait;
     use InteractsWithFakeFilesTrait;
     use InteractsWithFakeImagesTrait;
@@ -71,6 +77,13 @@ class AiManager
     }
 
     /**
+     * On-demand provider configurations registered at runtime via build(), keyed by provider name.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    protected array $onDemandProviders = [];
+
+    /**
      * Get a provider instance by name
      *
      * @param string|null $name Provider name, or null for default provider
@@ -80,7 +93,85 @@ class AiManager
     {
         $name ??= $this->getDefaultProvider();
 
+        if (!isset($this->onDemandProviders[$name]) && str_starts_with($name, 'ondemand_')) {
+            throw new InvalidArgumentException("On-demand provider [{$name}] was not built in this process. Build it where the work runs, such as the agent's provider() method.");
+        }
+
+        if (isset($this->onDemandProviders[$name]) && !$this->registry->has($name)) {
+            $this->registry->registerInstance($name, $this->instantiateOnDemand($name));
+        }
+
         return $this->registry->load($name);
+    }
+
+    /**
+     * Instantiate an on-demand provider from its stored configuration.
+     *
+     * @param string $name On-demand provider name
+     * @return \Crustum\Ai\Providers\Provider
+     */
+    protected function instantiateOnDemand(string $name): Provider
+    {
+        $config = $this->onDemandProviders[$name];
+        $className = $config['className'];
+
+        return new $className($config);
+    }
+
+    /**
+     * Build an on-demand provider instance from the given configuration.
+     *
+     * @param array<string, mixed> $config Provider configuration with a driver matching a configured provider (or an explicit className)
+     * @return \Crustum\Ai\Providers\Provider
+     * @throws \InvalidArgumentException
+     */
+    public function build(array $config): Provider
+    {
+        $driver = $config['driver'] ?? null;
+
+        if ($driver instanceof Lab) {
+            $driver = $driver->value;
+            $config['driver'] = $driver;
+        }
+
+        $name = $config['name'] ?? 'ondemand_' . md5(json_encode($config, JSON_THROW_ON_ERROR));
+
+        if (Configure::read('Ai.providers.' . $name) !== null || Lab::tryFrom($name) !== null) {
+            throw new InvalidArgumentException("The provider name [{$name}] is already taken.");
+        }
+
+        $className = $config['className'] ?? ($driver !== null ? Configure::read('Ai.providers.' . $driver . '.className') : null);
+
+        if (!is_string($className) || !is_subclass_of($className, Provider::class)) {
+            throw new InvalidArgumentException(sprintf('Cannot build an on-demand provider for driver [%s]. Use a driver matching a configured provider or pass [className].', (string)$driver));
+        }
+
+        $config['driver'] ??= $name;
+
+        $this->onDemandProviders[$name] = [...$config, 'name' => $name, 'className' => $className, 'ondemand' => true];
+
+        $instance = $this->instantiateOnDemand($name);
+        $this->registry->registerInstance($name, $instance);
+
+        return $instance;
+    }
+
+    /**
+     * Flush the on-demand providers built during the current operation.
+     *
+     * Long-lived queue workers should call this between jobs so tenant
+     * configurations do not leak across jobs. Separate worker processes
+     * start with an empty on-demand state by construction.
+     *
+     * @return void
+     */
+    public function flushState(): void
+    {
+        foreach (array_keys($this->onDemandProviders) as $name) {
+            $this->registry->unload($name);
+        }
+
+        $this->onDemandProviders = [];
     }
 
     /**
@@ -128,13 +219,7 @@ class AiManager
      */
     public function audioProvider(?string $name = null): AudioProvider
     {
-        $instance = $this->provider($name);
-
-        if (!$instance instanceof AudioProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support audio generation.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(AudioProvider::class, 'audio generation', $name);
     }
 
     /**
@@ -161,6 +246,41 @@ class AiManager
     }
 
     /**
+     * Get a classification provider instance by name
+     *
+     * @param string|null $name Provider name
+     * @return \Crustum\Ai\Contracts\Providers\ClassificationProvider
+     * @throws \LogicException
+     */
+    public function classificationProvider(?string $name = null): ClassificationProvider
+    {
+        return $this->ensureProviderSupports(ClassificationProvider::class, 'classification', $name);
+    }
+
+    /**
+     * Get a classification provider instance, using a fake gateway if classification is faked
+     *
+     * @param string|null $name Provider name
+     * @return \Crustum\Ai\Contracts\Providers\ClassificationProvider
+     * @throws \LogicException
+     */
+    public function fakeableClassificationProvider(?string $name = null): ClassificationProvider
+    {
+        $provider = $this->classificationProvider($name);
+
+        if ($this->classificationIsFaked()) {
+            $gateway = $this->fakeClassificationGateway();
+            if (!$gateway instanceof FakeClassificationGateway) {
+                throw new LogicException('Fake classification gateway is not initialized.');
+            }
+
+            return (clone $provider)->useClassificationGateway($gateway);
+        }
+
+        return $provider;
+    }
+
+    /**
      * Get an embedding provider instance by name
      *
      * @param string|null $name Provider name
@@ -169,13 +289,7 @@ class AiManager
      */
     public function embeddingProvider(?string $name = null): EmbeddingProvider
     {
-        $instance = $this->provider($name);
-
-        if (!$instance instanceof EmbeddingProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support embedding generation.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(EmbeddingProvider::class, 'embedding generation', $name);
     }
 
     /**
@@ -210,13 +324,7 @@ class AiManager
      */
     public function imageProvider(?string $name = null): ImageProvider
     {
-        $instance = $this->provider($name);
-
-        if (!$instance instanceof ImageProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support image generation.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(ImageProvider::class, 'image generation', $name);
     }
 
     /**
@@ -251,13 +359,7 @@ class AiManager
      */
     public function textProvider(?string $name = null): TextProvider
     {
-        $instance = $this->provider($name);
-
-        if (!$instance instanceof TextProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support text generation.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(TextProvider::class, 'text generation', $name);
     }
 
     /**
@@ -290,13 +392,7 @@ class AiManager
      */
     public function transcriptionProvider(?string $name = null): TranscriptionProvider
     {
-        $instance = $this->provider($name);
-
-        if (!$instance instanceof TranscriptionProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support transcription generation.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(TranscriptionProvider::class, 'transcription generation', $name);
     }
 
     /**
@@ -331,13 +427,7 @@ class AiManager
      */
     public function rerankingProvider(?string $name = null): RerankingProvider
     {
-        $instance = $this->provider($name);
-
-        if (!$instance instanceof RerankingProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support reranking.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(RerankingProvider::class, 'reranking', $name);
     }
 
     /**
@@ -372,13 +462,7 @@ class AiManager
      */
     public function fileProvider(?string $name = null): FileProvider
     {
-        $instance = $this->provider($this->resolveProviderName($name, 'default_for_files'));
-
-        if (!$instance instanceof FileProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support file management.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(FileProvider::class, 'file management', $name, 'default_for_files');
     }
 
     /**
@@ -413,13 +497,7 @@ class AiManager
      */
     public function storeProvider(?string $name = null): StoreProvider
     {
-        $instance = $this->provider($this->resolveProviderName($name, 'default_for_stores'));
-
-        if (!$instance instanceof StoreProvider) {
-            throw new LogicException('Provider [' . $instance::class . '] does not support store management.');
-        }
-
-        return $instance;
+        return $this->ensureProviderSupports(StoreProvider::class, 'store management', $name, 'default_for_stores');
     }
 
     /**
@@ -496,6 +574,8 @@ class AiManager
         $this->fakeAudioGateway = null;
         $this->recordedAudioGenerations = [];
         $this->recordedQueuedAudioGenerations = [];
+        $this->fakeClassificationGateway = null;
+        $this->recordedClassifications = [];
         $this->fakeEmbeddingGateway = null;
         $this->recordedEmbeddingsGenerations = [];
         $this->recordedQueuedEmbeddingsGenerations = [];
@@ -515,16 +595,16 @@ class AiManager
         $this->fakeTranscriptionGateway = null;
         $this->recordedTranscriptionGenerations = [];
         $this->recordedQueuedTranscriptionGenerations = [];
+        $this->flushState();
         $this->clearInstances();
 
         return $this;
     }
 
     /**
-     * Get the configured conversation store.
+     * Get the conversation store.
      *
      * @return \Crustum\Ai\Contracts\ConversationStore
-     * @throws \LogicException
      */
     public function conversationStore(): ConversationStore
     {
@@ -532,25 +612,43 @@ class AiManager
             return $this->conversationStore;
         }
 
-        $class = Configure::read('Ai.conversationStore');
-
-        if (!is_string($class) || $class === '' || !class_exists($class)) {
-            throw new LogicException(
-                'Conversation store is not configured. Set Ai.conversationStore to a ConversationStore implementation class name.',
-            );
+        if (Ai::hasContainer() && Ai::container()->has(ConversationStore::class)) {
+            $store = Ai::container()->get(ConversationStore::class);
+            if ($store instanceof ConversationStore) {
+                return $this->conversationStore = $store;
+            }
         }
 
-        $store = new $class();
+        return $this->conversationStore = new DatabaseConversationStore(
+            Configure::read('Ai.conversations.connection'),
+        );
+    }
 
-        if (!$store instanceof ConversationStore) {
-            throw new LogicException(sprintf(
-                'Configured conversation store [%s] must implement %s.',
-                $class,
-                ConversationStore::class,
-            ));
+    /**
+     * Get a provider instance by name, ensuring it implements the given capability contract.
+     *
+     * @template TProvider
+     * @param class-string<TProvider> $contract Capability contract
+     * @param string $capability Capability name for the exception message
+     * @param string|null $name Provider name
+     * @param string|null $capabilityKey Configure key for the capability default
+     * @return TProvider
+     * @throws \LogicException
+     */
+    protected function ensureProviderSupports(
+        string $contract,
+        string $capability,
+        ?string $name,
+        ?string $capabilityKey = null,
+    ): mixed {
+        $resolved = $capabilityKey !== null ? $this->resolveProviderName($name, $capabilityKey) : $name;
+        $instance = $this->provider($resolved);
+
+        if (!$instance instanceof $contract) {
+            throw new LogicException('Provider [' . $instance::class . '] does not support ' . $capability . '.');
         }
 
-        return $this->conversationStore = $store;
+        return $instance;
     }
 
     /**

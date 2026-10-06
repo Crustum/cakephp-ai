@@ -83,7 +83,7 @@ trait AiFlowTrait
     /**
      * Limit captured AI event classes for the current test.
      *
-     * @param list<class-string<\Crustum\Ai\Event\AiEvent>> $eventClasses Event classes
+     * @param list<class-string> $eventClasses Event classes
      * @return void
      */
     public function captureAiEvents(array $eventClasses): void
@@ -313,7 +313,7 @@ trait AiFlowTrait
     /**
      * Assert that an AI event was dispatched.
      *
-     * @param class-string<\Crustum\Ai\Event\AiEvent> $eventClass Event class
+     * @param class-string $eventClass Event class
      * @param callable|null $callback Optional truth test
      * @param string $message Optional assertion message
      * @return void
@@ -329,7 +329,7 @@ trait AiFlowTrait
     /**
      * Assert that an AI event was not dispatched.
      *
-     * @param class-string<\Crustum\Ai\Event\AiEvent> $eventClass Event class
+     * @param class-string $eventClass Event class
      * @param string $message Optional assertion message
      * @return void
      */
@@ -341,7 +341,7 @@ trait AiFlowTrait
     /**
      * Assert how many times an AI event was dispatched.
      *
-     * @param class-string<\Crustum\Ai\Event\AiEvent> $eventClass Event class
+     * @param class-string $eventClass Event class
      * @param int $count Expected count
      * @param string $message Optional assertion message
      * @return void
@@ -354,7 +354,7 @@ trait AiFlowTrait
     /**
      * Assert AI events were dispatched in order as a subsequence.
      *
-     * @param list<class-string<\Crustum\Ai\Event\AiEvent>> $eventClasses Ordered event classes
+     * @param list<class-string> $eventClasses Ordered event classes
      * @param string $message Optional assertion message
      * @return void
      */
@@ -366,7 +366,7 @@ trait AiFlowTrait
     /**
      * Get recorded AI events.
      *
-     * @return array<int, \Crustum\Ai\Event\AiEvent>
+     * @return array<int, object>
      */
     public function getAiEvents(): array
     {

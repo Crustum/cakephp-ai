@@ -9,6 +9,7 @@ use Crustum\Ai\Exception\ProviderConnectionException;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
 use Crustum\Ai\Providers\GeminiProvider;
+use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
 
@@ -95,21 +96,7 @@ test('connection failure fails over to the next provider', function (): void {
     Configure::write('Ai.providers.primary', ['className' => GeminiProvider::class, 'driver' => 'gemini', 'key' => 'test-key']);
     Configure::write('Ai.providers.backup', ['className' => GeminiProvider::class, 'driver' => 'gemini', 'key' => 'test-key']);
 
-    $backup = aiHttpResponse([
-        'candidates' => [[
-            'content' => [
-                'parts' => [['text' => 'Recovered on the backup provider']],
-                'role' => 'model',
-            ],
-            'finishReason' => 'STOP',
-        ]],
-        'usageMetadata' => [
-            'promptTokenCount' => 10,
-            'candidatesTokenCount' => 5,
-            'totalTokenCount' => 15,
-        ],
-        'modelVersion' => 'gemini-3.5-flash',
-    ]);
+    $backup = $this->fakeTextResponse('Recovered on the backup provider');
 
     $attempts = 0;
 
@@ -146,3 +133,34 @@ test('error in 200 response throws ai exception', function (): void {
         provider: 'gemini',
     );
 })->throws(AiException::class, 'Gemini Error');
+
+test('a failed interaction throws ai exception', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => aiHttpResponse([
+            'id' => 'int_123',
+            'status' => 'failed',
+            'steps' => [],
+            'errors' => [['code' => 'internal', 'message' => 'The model stopped responding.']],
+        ]),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'gemini',
+    );
+})->throws(AiException::class, 'Gemini Error: [internal] The model stopped responding.');
+
+test('a withheld answer is reported as a content filter finish reason', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => aiHttpResponse([
+            'id' => 'int_123',
+            'status' => 'failed',
+            'steps' => [],
+            'errors' => [['code' => 'safety', 'message' => 'The response was blocked.']],
+        ]),
+    ]);
+
+    $response = (new AssistantAgent())->prompt('Hi', provider: 'gemini');
+
+    expect($response->steps->last()->finishReason)->toBe(FinishReason::ContentFilter);
+});

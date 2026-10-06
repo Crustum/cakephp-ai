@@ -5,7 +5,7 @@ namespace Crustum\Ai\Responses;
 
 use ArrayAccess;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Trait\ProvidesStructuredResponseTrait;
 use Override;
 
@@ -14,6 +14,8 @@ use Override;
  *
  * Text response with structured output that conforms to a schema.
  * Implements ArrayAccess for convenient data access.
+ *
+ * @implements \ArrayAccess<string, mixed>
  */
 class StructuredTextResponse extends TextResponse implements ArrayAccess
 {
@@ -24,10 +26,10 @@ class StructuredTextResponse extends TextResponse implements ArrayAccess
      *
      * @param array<string, mixed> $structured Structured output data
      * @param string $text Text representation
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Token usage
      * @param \Crustum\Ai\Responses\Data\Meta $meta Response metadata
      */
-    public function __construct(array $structured, string $text, public Usage $usage, public Meta $meta)
+    public function __construct(array $structured, string $text, public TextUsage $usage, public Meta $meta)
     {
         parent::__construct($text, $usage, $meta);
 

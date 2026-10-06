@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Tools;
 
+use Crustum\Ai\Approvals\Approval;
+use Crustum\Ai\Contracts\Approvable;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Schema\SchemaNormalizer;
 use Crustum\Ai\Tools\Trait\NormalizesMcpResultTrait;
+use Crustum\Ai\Trait\InteractsWithApprovalsTrait;
 use Crustum\JsonSchema\Contracts\JsonSchema;
 use Crustum\JsonSchema\JsonSchema as JsonSchemaFactory;
 use Crustum\JsonSchema\Types\ObjectType;
@@ -16,8 +19,9 @@ use Throwable;
 /**
  * Wraps an MCP client tool primitive as a native tool.
  */
-class McpTool implements Tool
+class McpTool implements Approvable, Tool
 {
+    use InteractsWithApprovalsTrait;
     use NormalizesMcpResultTrait;
 
     protected const NAME_PREFIX = 'mcp_tools_';
@@ -58,6 +62,16 @@ class McpTool implements Tool
     public function description(): string
     {
         return $this->tool->description ?? $this->tool->title ?? $this->tool->name;
+    }
+
+    /**
+     * Get the MCP annotations describing the tool's behavior.
+     *
+     * @return array<string, mixed>
+     */
+    public function annotations(): array
+    {
+        return $this->tool->annotations;
     }
 
     /**
@@ -130,5 +144,16 @@ class McpTool implements Tool
         }
 
         return $this->errorMessage($text);
+    }
+
+    /**
+     * Determine whether the tool needs approval for the given request.
+     *
+     * @param \Crustum\Ai\Tools\Request $request Tool request
+     * @return \Crustum\Ai\Approvals\Approval|bool
+     */
+    protected function needsApproval(Request $request): Approval|bool
+    {
+        return false;
     }
 }

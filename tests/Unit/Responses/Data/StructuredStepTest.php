@@ -4,7 +4,7 @@ declare(strict_types=1);
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\StructuredStep;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TextUsage;
 
 test('structured step stores structured data', function (): void {
     $step = new StructuredStep(
@@ -13,11 +13,14 @@ test('structured step stores structured data', function (): void {
         [],
         [],
         FinishReason::Stop,
-        new Usage(),
+        new TextUsage(),
         new Meta('openai', 'gpt-4o'),
+        'Structuring the answer.',
+        [],
     );
 
     expect($step->text)->toBe('test response')
+        ->and($step->reasoning)->toBe('Structuring the answer.')
         ->and($step->structured)->toBe(['key' => 'value']);
 });
 
@@ -28,8 +31,10 @@ test('structured step to array includes structured data', function (): void {
         [],
         [],
         FinishReason::Stop,
-        new Usage(),
+        new TextUsage(),
         new Meta('anthropic', 'claude-3'),
+        '',
+        [],
     );
 
     $array = $step->toArray();
@@ -45,8 +50,10 @@ test('structured step jsonSerialize includes structured data', function (): void
         [],
         [],
         FinishReason::Stop,
-        new Usage(),
+        new TextUsage(),
         new Meta('openai', 'gpt-4o'),
+        '',
+        [],
     );
 
     $json = json_decode(json_encode($step), true);

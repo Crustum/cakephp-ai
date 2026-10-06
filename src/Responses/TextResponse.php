@@ -8,7 +8,7 @@ use Cake\Collection\CollectionInterface;
 use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Messages\ToolResultMessage;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
 use Stringable;
 
@@ -57,13 +57,18 @@ class TextResponse implements Stringable
     public CollectionInterface $pendingApprovals;
 
     /**
+     * Reasoning the model produced before answering, if any
+     */
+    public string $reasoning = '';
+
+    /**
      * Constructor
      *
      * @param string $text The generated text
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Token usage information
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Token usage information
      * @param \Crustum\Ai\Responses\Data\Meta $meta Metadata about the response
      */
-    public function __construct(public string $text, public Usage $usage, public Meta $meta)
+    public function __construct(public string $text, public TextUsage $usage, public Meta $meta)
     {
         $this->messages = collection([]);
         $this->toolCalls = collection([]);
@@ -129,6 +134,18 @@ class TextResponse implements Stringable
     public function withSteps(CollectionInterface $steps): static
     {
         $this->steps = $steps;
+
+        return $this;
+    }
+
+    /**
+     * Provide the reasoning emitted across every step of the response.
+     *
+     * @param string $reasoning Reasoning text
+     */
+    public function withReasoning(string $reasoning): static
+    {
+        $this->reasoning = $reasoning;
 
         return $this;
     }

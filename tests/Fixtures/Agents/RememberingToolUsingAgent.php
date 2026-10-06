@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Test\Fixtures\Agents;
 
+use Crustum\Ai\Attributes\MaxSteps;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\Conversational;
 use Crustum\Ai\Contracts\HasTools;
@@ -10,6 +11,7 @@ use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Trait\PromptableTrait;
 use Crustum\Ai\Trait\RemembersConversationsTrait;
 
+#[MaxSteps(4)]
 class RememberingToolUsingAgent implements Agent, Conversational, HasTools
 {
     use PromptableTrait;

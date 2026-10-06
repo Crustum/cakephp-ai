@@ -7,8 +7,8 @@ use Cake\Utility\Text;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Streaming\Event\Error;
 use Crustum\Ai\Streaming\Event\ReasoningDelta;
 use Crustum\Ai\Streaming\Event\ReasoningEnd;
@@ -149,13 +149,11 @@ trait HandlesTextStreamingTrait
                 foreach ($delta['tool_calls'] as $tcDelta) {
                     $idx = $tcDelta['index'];
 
-                    if (!isset($pendingToolCalls[$idx])) {
-                        $pendingToolCalls[$idx] = [
-                            'id' => $tcDelta['id'] ?? '',
-                            'name' => $tcDelta['function']['name'] ?? '',
-                            'arguments' => '',
-                        ];
-                    }
+                    $pendingToolCalls[$idx] ??= [
+                        'id' => $tcDelta['id'] ?? '',
+                        'name' => $tcDelta['function']['name'] ?? '',
+                        'arguments' => '',
+                    ];
 
                     if (isset($tcDelta['function']['arguments'])) {
                         $pendingToolCalls[$idx]['arguments'] .= $tcDelta['function']['arguments'];
@@ -202,19 +200,17 @@ trait HandlesTextStreamingTrait
             }
         }
 
-        $providerContentBlocks = [];
-
-        if (Value::filled($currentReasoning)) {
-            $providerContentBlocks['reasoning_content'] = $currentReasoning;
-        }
+        $replayBlocks = Value::filled($currentReasoning)
+            ? [['type' => 'reasoning', 'reasoning_content' => $currentReasoning]]
+            : [];
 
         return new StepResponse(
             text: $currentText,
             toolCalls: $toolCalls,
             finishReason: $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
-            usage: $usage ?? new Usage(0, 0),
+            usage: $usage ?? new TextUsage(0, 0),
             meta: new Meta($provider->name(), $responseModel),
-            providerContentBlocks: $providerContentBlocks,
+            replayBlocks: $replayBlocks,
         );
     }
 

@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\TestSuite\Constraint\Event;
 
+use Crustum\Ai\Event\AiEvent;
 use Crustum\Ai\TestSuite\Capture\EventCapture;
+use InvalidArgumentException;
 use PHPUnit\Framework\Constraint\Constraint;
 
 /**
@@ -14,13 +16,16 @@ use PHPUnit\Framework\Constraint\Constraint;
 class AiEventDispatched extends Constraint
 {
     /**
-     * @param class-string<\Crustum\Ai\Event\AiEvent> $eventClass Event class
+     * @param class-string $eventClass Event class
      * @param callable|null $callback Optional truth test
      */
     public function __construct(
         protected string $eventClass,
         protected $callback = null,
     ) {
+        if (!is_subclass_of($eventClass, AiEvent::class)) {
+            throw new InvalidArgumentException(sprintf('Expected an Ai event class name, got [%s].', $eventClass));
+        }
     }
 
     /**

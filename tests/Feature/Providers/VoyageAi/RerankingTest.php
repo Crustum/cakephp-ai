@@ -104,3 +104,13 @@ function fakeVoyageRerankingResponse(): AiHttpResponseDefinition
         'usage' => ['total_tokens' => 25],
     ]);
 }
+
+test('reranking response reports the total tokens', function (): void {
+    aiHttpFake(['*' => fakeVoyageRerankingResponse()]);
+
+    $response = Reranking::of(IntegrationPrompts::documents('rerank'))
+        ->rerank(IntegrationPrompts::question('rerank'), provider: 'voyageai', model: 'rerank-2.5-lite');
+
+    expect($response->usage->inputTokens)->toBe(25)
+        ->and($response->usage->searchUnits)->toBeNull();
+});

@@ -8,10 +8,13 @@ use Crustum\Ai\Exception\AiException;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
+use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\ProviderToolCall;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\UrlCitation;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Trait\JoinsReasoningTrait;
 
 /**
  * Parses OpenAI Responses API text generation responses.
@@ -19,6 +22,7 @@ use Crustum\Ai\Responses\Data\Usage;
 trait ParsesTextResponsesTrait
 {
     use DecodesStructuredOutputTrait;
+    use JoinsReasoningTrait;
 
     /**
      * Validate the OpenAI response data.
@@ -72,12 +76,14 @@ trait ParsesTextResponsesTrait
             meta: new Meta($provider->name(), $data['model'] ?? '', $this->extractCitations($output)),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
             continuationToken: $data['id'] ?? '',
-            providerContentBlocks: $this->isStateless($provider) ? $this->extractReplayBlocks($output) : [],
+            replayBlocks: $this->extractReplayBlocks($output),
+            reasoning: $this->extractReasoning($output),
+            providerToolCalls: $this->extractProviderToolCalls($output),
         );
     }
 
     /**
-     * Extract the ordered response output for stateless (store=false) replay.
+     * Extract the ordered response output for full-history replay.
      *
      * @param array<int, mixed> $output Response output
      * @return array<int, array<string, mixed>>
@@ -88,18 +94,19 @@ trait ParsesTextResponsesTrait
     }
 
     /**
-     * Serialize a tool result output value to a string.
+     * Extract the provider-hosted tool items from the output array.
      *
-     * @param mixed $output Tool result output
-     * @return string
+     * @param array<int, mixed> $output Response output
+     * @return array<int, \Crustum\Ai\Responses\Data\ProviderToolCall>
      */
-    protected function serializeToolResultOutput(mixed $output): string
+    protected function extractProviderToolCalls(array $output): array
     {
-        return match (true) {
-            is_string($output) => $output,
-            is_array($output) => (string)json_encode($output),
-            default => (string)$output,
-        };
+        return array_values(array_map(
+            fn(array $item): ProviderToolCall => new ProviderToolCall($item['id'] ?? '', $item['type'], $item),
+            array_filter($output, fn(mixed $item): bool => is_array($item)
+                && ($item['type'] ?? '') !== 'function_call'
+                && str_ends_with((string)($item['type'] ?? ''), '_call')),
+        ));
     }
 
     /**
@@ -113,6 +120,36 @@ trait ParsesTextResponsesTrait
         $lastOutput = end($output);
 
         return is_array($lastOutput) ? ($lastOutput['content'][0]['text'] ?? '') : '';
+    }
+
+    /**
+     * Extract the reasoning text from the output array.
+     *
+     * @param array<int, array<string, mixed>> $output Output items
+     */
+    protected function extractReasoning(array $output): string
+    {
+        /** @var \Cake\Collection\CollectionInterface<int, string> $texts */
+        $texts = collection($output)
+            ->filter(fn(mixed $item): bool => is_array($item) && ($item['type'] ?? '') === 'reasoning')
+            ->map(function (array $item): array {
+                /** @var array<int, array<string, mixed>> $summary */
+                $summary = $item['summary'] ?? [];
+                /** @var array<int, array<string, mixed>> $content */
+                $content = $item['content'] ?? [];
+                /** @var \Cake\Collection\CollectionInterface<int, string> $summaryTexts */
+                $summaryTexts = collection($summary)->map(fn(array $entry): string => $entry['text'] ?? '');
+                /** @var \Cake\Collection\CollectionInterface<int, string> $contentTexts */
+                $contentTexts = collection($content)->map(fn(array $entry): string => $entry['text'] ?? '');
+
+                return [
+                    implode('', $summaryTexts->toList()),
+                    implode('', $contentTexts->toList()),
+                ];
+            })
+            ->unfold();
+
+        return static::joinReasoning($texts->toList());
     }
 
     /**
@@ -153,21 +190,37 @@ trait ParsesTextResponsesTrait
      * Extract usage data from the response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
         $usage = $data['usage'] ?? [];
-        $inputTokens = $usage['input_tokens'] ?? 0;
-        $cachedTokens = $usage['input_tokens_details']['cached_tokens'] ?? 0;
-        $cacheWriteTokens = $usage['input_tokens_details']['cache_write_tokens'] ?? 0;
 
-        return new Usage(
-            $inputTokens - $cachedTokens - $cacheWriteTokens,
-            $usage['output_tokens'] ?? 0,
-            $cacheWriteTokens,
-            $cachedTokens,
-            $usage['output_tokens_details']['reasoning_tokens'] ?? 0,
+        return new TextUsage(
+            inputTokens: $usage['input_tokens'] ?? 0,
+            outputTokens: $usage['output_tokens'] ?? 0,
+            cacheReadInputTokens: $usage['input_tokens_details']['cached_tokens'] ?? null,
+            cacheWriteInputTokens: $usage['input_tokens_details']['cache_write_tokens'] ?? null,
+            reasoningTokens: $usage['output_tokens_details']['reasoning_tokens'] ?? null,
+        );
+    }
+
+    /**
+     * Extract usage data from an image generation response.
+     *
+     * @param array<string, mixed> $data Response data
+     * @return \Crustum\Ai\Responses\Data\ImageUsage
+     */
+    protected function extractImageUsage(array $data): ImageUsage
+    {
+        $usage = $data['usage'] ?? [];
+
+        return new ImageUsage(
+            inputTokens: $usage['input_tokens'] ?? 0,
+            outputTokens: $usage['output_tokens'] ?? 0,
+            cacheReadInputTokens: $usage['input_tokens_details']['cached_tokens'] ?? null,
+            imageInputTokens: $usage['input_tokens_details']['image_tokens'] ?? null,
+            imageOutputTokens: $usage['output_tokens_details']['image_tokens'] ?? null,
         );
     }
 

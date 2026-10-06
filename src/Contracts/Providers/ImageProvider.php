@@ -22,6 +22,7 @@ interface ImageProvider extends Provider
      * @param 'low'|'medium'|'high'|null $quality Image quality
      * @param string|null $model Model to use for image generation
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      */
     public function image(
@@ -31,6 +32,7 @@ interface ImageProvider extends Provider
         ?string $quality = null,
         ?string $model = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse;
 
     /**

@@ -15,16 +15,22 @@ use Crustum\Ai\Attributes\Timeout as TimeoutAttribute;
 use Crustum\Ai\Attributes\UseCheapestModel;
 use Crustum\Ai\Attributes\UseSmartestModel;
 use Crustum\Ai\Attributes\WithoutBroadcasting;
+use Crustum\Ai\Contracts\AgentInput;
+use Crustum\Ai\Contracts\Conversational;
+use Crustum\Ai\Contracts\HasSkills;
+use Crustum\Ai\Contracts\HasTools;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Enums\Lab;
-use Crustum\Ai\Event\AgentFailedOverEvent;
+use Crustum\Ai\Event\AgentFailedOver;
 use Crustum\Ai\Exception\FailoverableException;
 use Crustum\Ai\Gateway\FakeTextGateway;
 use Crustum\Ai\Gateway\ParentInvocation;
 use Crustum\Ai\Job\BroadcastAgentJob;
 use Crustum\Ai\Job\InvokeAgentJob;
 use Crustum\Ai\Job\PendingDispatch;
+use Crustum\Ai\Messages\Message;
+use Crustum\Ai\Messages\UserMessage;
 use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Prompts\QueuedAgentPrompt;
 use Crustum\Ai\Providers\Provider as AbstractProvider;
@@ -34,8 +40,12 @@ use Crustum\Ai\Responses\QueuedAgentResponse;
 use Crustum\Ai\Responses\StreamableAgentResponse;
 use Crustum\Ai\Responses\StreamedAgentResponse;
 use Crustum\Ai\Streaming\Event\StreamEvent;
+use Crustum\Ai\Tools\LoadSkill;
+use Crustum\Ai\Vercel\Vercel;
 use Generator;
 use InvalidArgumentException;
+use Laravel\SerializableClosure\SerializableClosure;
+use LogicException;
 use ReflectionClass;
 use RuntimeException;
 
@@ -46,6 +56,18 @@ use RuntimeException;
  */
 trait PromptableTrait
 {
+    /**
+     * The ad-hoc message history to send ahead of the next prompt.
+     *
+     * @var list<\Crustum\Ai\Messages\Message>|null
+     */
+    protected ?array $adHocMessages = null;
+
+    /**
+     * The runtime tool override, replacing the tools the agent declares.
+     */
+    protected ?SerializableClosure $runtimeTools = null;
+
     /**
      * Create a new instance of the agent.
      *
@@ -66,21 +88,25 @@ trait PromptableTrait
     /**
      * Invoke the agent with a given prompt, or resume a paused run with tool approval decisions.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @param int|null $timeout Request timeout in seconds
      * @return \Crustum\Ai\Responses\AgentResponse
      */
     public function prompt(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
         ?int $timeout = null,
     ): AgentResponse {
-        [$text, $approvalDecisions] = $this->extractPromptInput($prompt);
+        [$text, $approvalDecisions, $attachments] = $this->extractPromptInput($prompt, $attachments);
+
+        $messages = $this->flushAdHocMessages();
+
+        $tools = $this->resolveAgentTools();
 
         $invocationId = Text::uuid();
 
@@ -103,6 +129,8 @@ trait PromptableTrait
                 $parentInvocationId,
                 $parentToolInvocationId,
                 $isFinalAttempt,
+                $messages,
+                $tools,
             ),
         ));
 
@@ -118,23 +146,27 @@ trait PromptableTrait
     /**
      * Invoke the agent with a given prompt and return a streamable response.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @param int|null $timeout Request timeout in seconds
      * @return \Crustum\Ai\Responses\StreamableAgentResponse
      */
     public function stream(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
         ?int $timeout = null,
     ): StreamableAgentResponse {
-        [$text, $approvalDecisions] = $this->extractPromptInput($prompt);
+        [$text, $approvalDecisions, $attachments] = $this->extractPromptInput($prompt, $attachments);
 
-        return $this->streamPrompt($text, $approvalDecisions, $attachments, $provider, $model, $timeout);
+        $messages = $this->flushAdHocMessages();
+
+        $tools = $this->resolveAgentTools();
+
+        return $this->streamPrompt($text, $approvalDecisions, $attachments, $provider, $model, $timeout, $messages, $tools);
     }
 
     /**
@@ -143,18 +175,22 @@ trait PromptableTrait
      * @param string $prompt The prompt text
      * @param \Crustum\Ai\Approvals\Decisions|null $approvalDecisions Approval decisions to resume with
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @param int|null $timeout Request timeout in seconds
+     * @param list<\Crustum\Ai\Messages\Message>|null $messages Ad-hoc message history
+     * @param array<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>|null $tools Runtime tool overrides
      * @return \Crustum\Ai\Responses\StreamableAgentResponse
      */
     private function streamPrompt(
         string $prompt,
         ?Decisions $approvalDecisions,
         array $attachments,
-        Lab|array|string|null $provider,
+        Lab|array|string|AbstractProvider|null $provider,
         ?string $model,
         ?int $timeout,
+        ?array $messages = null,
+        ?array $tools = null,
     ): StreamableAgentResponse {
         $providers = $approvalDecisions instanceof Decisions
             ? $this->providersForApprovalContinuation($provider, $model)
@@ -169,7 +205,7 @@ trait PromptableTrait
             [$resolved, $resolvedModel] = $this->iterateProvidersWithFailover($providers)->current();
 
             return $resolved->stream(
-                new AgentPrompt($this, $prompt, $attachments, $resolved, $resolvedModel, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId),
+                new AgentPrompt($this, $prompt, $attachments, $resolved, $resolvedModel, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId, true, $messages, $tools),
             );
         }
 
@@ -178,7 +214,7 @@ trait PromptableTrait
 
         $outer = new StreamableAgentResponse(
             $invocationId,
-            function () use ($providers, $prompt, $approvalDecisions, $attachments, $resolvedTimeout, $invocationId, $parentInvocationId, $parentToolInvocationId, &$outer) {
+            function () use ($providers, $prompt, $approvalDecisions, $attachments, $resolvedTimeout, $invocationId, $parentInvocationId, $parentToolInvocationId, $messages, $tools, &$outer) {
                 $lastException = null;
 
                 foreach ($this->iterateProvidersWithFailover($providers) as [$provider, $model, $isFinalAttempt]) {
@@ -186,10 +222,14 @@ trait PromptableTrait
 
                     try {
                         $innerResponse = $provider->stream(
-                            new AgentPrompt($this, $prompt, $attachments, $provider, $model, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId, $isFinalAttempt),
+                            new AgentPrompt($this, $prompt, $attachments, $provider, $model, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId, $isFinalAttempt, $messages, $tools),
                         );
 
                         $innerResponse->then(fn(StreamedAgentResponse $response): StreamableAgentResponse => $outer->adoptStateFrom($response));
+
+                        if ($innerResponse->conversationId !== null) {
+                            $outer->withinConversation($innerResponse->conversationId, $innerResponse->conversationUser);
+                        }
 
                         foreach ($innerResponse as $event) {
                             yield $event;
@@ -218,18 +258,19 @@ trait PromptableTrait
     /**
      * Invoke the agent in a queued job.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return \Crustum\Ai\Responses\QueuedAgentResponse
      */
     public function queue(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
     ): QueuedAgentResponse {
+        [$prompt, $attachments] = $this->queueablePrompt($prompt, $attachments);
         if (static::isFaked()) {
             Ai::manager()->recordPrompt(
                 new QueuedAgentPrompt($this, $prompt, $attachments, $provider, $model),
@@ -247,20 +288,20 @@ trait PromptableTrait
     /**
      * Invoke the agent with a given prompt and broadcast the streamed events.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param mixed $channels The broadcast channels
      * @param array<mixed> $attachments Optional attachments
      * @param bool $now Whether to broadcast immediately
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return \Crustum\Ai\Responses\StreamableAgentResponse
      */
     public function broadcast(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         mixed $channels,
         array $attachments = [],
         bool $now = false,
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
     ): StreamableAgentResponse {
         $without = WithoutBroadcasting::eventsFor($this);
@@ -278,18 +319,18 @@ trait PromptableTrait
     /**
      * Invoke the agent with a given prompt and broadcast the streamed events immediately.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param mixed $channels The broadcast channels
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return \Crustum\Ai\Responses\StreamableAgentResponse
      */
     public function broadcastNow(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         mixed $channels,
         array $attachments = [],
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
     ): StreamableAgentResponse {
         return $this->broadcast($prompt, $channels, $attachments, now: true, provider: $provider, model: $model);
@@ -298,20 +339,21 @@ trait PromptableTrait
     /**
      * Invoke the agent with a given prompt and broadcast the streamed events on a queue.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
      * @param mixed $channels The broadcast channels
      * @param array<mixed> $attachments Optional attachments
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return \Crustum\Ai\Responses\QueuedAgentResponse
      */
     public function broadcastOnQueue(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         mixed $channels,
         array $attachments = [],
-        Lab|array|string|null $provider = null,
+        Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
     ): QueuedAgentResponse {
+        [$prompt, $attachments] = $this->queueablePrompt($prompt, $attachments);
         if (static::isFaked()) {
             Ai::manager()->recordPrompt(
                 new QueuedAgentPrompt($this, $prompt, $attachments, $provider, $model),
@@ -327,28 +369,132 @@ trait PromptableTrait
     }
 
     /**
-     * Split a prompt input into its text and tool approval decisions.
+     * Resolve a prompt input into its queueable prompt value and attachments.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The prompt text or approval decisions
-     * @return array{0: string, 1: \Crustum\Ai\Approvals\Decisions|null}
+     * @return array{0: \Crustum\Ai\Approvals\Decisions|string, 1: list<mixed>}
      */
-    private function extractPromptInput(Decisions|string $prompt): array
+    private function queueablePrompt(AgentInput|UserMessage|Decisions|string $prompt, array $attachments): array
     {
-        if (is_string($prompt)) {
-            return [$prompt, null];
+        [$text, $approvalDecisions, $attachments] = $this->extractPromptInput($prompt, $attachments);
+
+        return [$approvalDecisions ?? $text, $attachments];
+    }
+
+    /**
+     * Split a prompt input into its text, tool approval decisions, and attachments.
+     *
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The prompt input
+     * @param array<mixed> $attachments Existing attachments
+     * @return array{0: string, 1: \Crustum\Ai\Approvals\Decisions|null, 2: list<mixed>}
+     */
+    private function extractPromptInput(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = []): array
+    {
+        if ($prompt instanceof AgentInput) {
+            $prompt = $prompt->decisions()
+                ?? $prompt->message()
+                ?? throw new InvalidArgumentException('The agent input contains no user message or approval decisions.');
         }
 
-        return ['', $prompt];
+        return match (true) {
+            $prompt instanceof UserMessage => [$prompt->content ?? '', null, [...iterator_to_array($prompt->attachments), ...$attachments]],
+            $prompt instanceof Decisions => ['', $prompt, $attachments],
+            default => [$prompt, null, $attachments],
+        };
+    }
+
+    /**
+     * Set the ad-hoc message history to send ahead of the next prompt.
+     *
+     * @param iterable<int, mixed> $messages Ad-hoc messages
+     * @return $this
+     * @throws \LogicException When combined with a conversational agent
+     */
+    public function withMessages(iterable $messages)
+    {
+        if ($this instanceof Conversational) {
+            throw new LogicException('Ad-hoc message history may not be combined with a conversational agent.');
+        }
+
+        $converted = [];
+
+        foreach ($messages as $message) {
+            if (is_array($message) && isset($message['parts'])) {
+                array_push($converted, ...Vercel::fromUiMessages([$message]));
+            } else {
+                $converted[] = Message::tryFrom($message);
+            }
+        }
+
+        $this->adHocMessages = $converted;
+
+        return $this;
+    }
+
+    /**
+     * Flush and return any ad-hoc message history, resetting it for the next prompt.
+     *
+     * @return list<\Crustum\Ai\Messages\Message>|null
+     */
+    protected function flushAdHocMessages(): ?array
+    {
+        $messages = $this->adHocMessages;
+
+        $this->adHocMessages = null;
+
+        return $messages;
+    }
+
+    /**
+     * Replace the agent's declared tools for this instance.
+     *
+     * @param \Closure(array<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>): iterable<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>|iterable<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> $tools Runtime tools
+     * @return $this
+     */
+    public function withTools(Closure|iterable $tools)
+    {
+        if (!$tools instanceof Closure) {
+            $replacements = [...$tools];
+
+            $tools = fn(): array => $replacements;
+        }
+
+        $this->runtimeTools = new SerializableClosure($tools);
+
+        return $this;
+    }
+
+    /**
+     * Resolve the runtime tools for the next invocation, or null when the agent's declared tools apply.
+     *
+     * @return array<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>|null
+     */
+    protected function resolveAgentTools(): ?array
+    {
+        return $this->runtimeTools !== null
+            ? [...($this->runtimeTools)($this->declaredTools())]
+            : null;
+    }
+
+    /**
+     * Get the tools the agent declares via its own tools method.
+     *
+     * @return array<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>
+     */
+    private function declaredTools(): array
+    {
+        $tools = $this instanceof HasTools ? [...$this->tools()] : [];
+
+        return $this instanceof HasSkills ? LoadSkill::mergeInto($tools, $this) : $tools;
     }
 
     /**
      * Get the single provider / model pair an approval continuation must run against, since it may not fail over to a different provider.
      *
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return array<string, string|null>
      */
-    private function providersForApprovalContinuation(Lab|array|string|null $provider, ?string $model): array
+    private function providersForApprovalContinuation(Lab|array|string|AbstractProvider|null $provider, ?string $model): array
     {
         return array_slice($this->getProvidersAndModelsForFailover($provider, $model), 0, 1, true);
     }
@@ -380,11 +526,11 @@ trait PromptableTrait
     /**
      * Get the configured providers and models for failover.
      *
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return array<string, string|null>
      */
-    private function getProvidersAndModelsForFailover(Lab|array|string|null $provider, ?string $model): array
+    private function getProvidersAndModelsForFailover(Lab|array|string|AbstractProvider|null $provider, ?string $model): array
     {
         $providers = $this->getProvidersAndModels($provider, $model);
 
@@ -423,7 +569,7 @@ trait PromptableTrait
      */
     private function recordAgentFailover(string $invocationId, Provider $provider, string $model, FailoverableException $exception): FailoverableException
     {
-        EventManager::instance()->dispatch(new AgentFailedOverEvent($invocationId, $this, $provider, $model, $exception));
+        EventManager::instance()->dispatch(new AgentFailedOver($invocationId, $this, $provider, $model, $exception));
 
         return $exception;
     }
@@ -431,11 +577,11 @@ trait PromptableTrait
     /**
      * Get the providers and models array for the given initial provider and model values.
      *
-     * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The provider to use
+     * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @return array<string, string|null>
      */
-    protected function getProvidersAndModels(Lab|array|string|null $provider, ?string $model): array
+    protected function getProvidersAndModels(Lab|array|string|AbstractProvider|null $provider, ?string $model): array
     {
         if (is_null($provider)) {
             if (method_exists($this, 'provider')) {
@@ -459,7 +605,7 @@ trait PromptableTrait
 
         $resolved = $provider ?? Configure::read('Ai.defaultProvider');
 
-        if (is_array($resolved) && array_intersect(array_keys($resolved), ['text', 'image', 'audio', 'transcription', 'embedding', 'reranking'])) {
+        if (is_array($resolved) && array_intersect(array_keys($resolved), ['text', 'image', 'audio', 'transcription', 'embedding', 'reranking', 'classification'])) {
             throw new InvalidArgumentException('The "ai.default" config value must be a string provider name or a Lab enum, not an array.');
         }
 

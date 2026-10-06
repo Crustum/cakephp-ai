@@ -3,56 +3,71 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Job;
 
+use Cake\Log\Log;
 use Cake\Queue\QueueManager;
 use Closure;
+use Crustum\Ai\Contracts\PendingDispatchInterface;
+use Crustum\Ai\Queue\AiQueue;
 use Crustum\Queue\Sync\SyncJobRunner;
 use Crustum\Queue\Sync\SyncModeResolver;
+use InvalidArgumentException;
+use Laravel\SerializableClosure\SerializableClosure;
 use Throwable;
 
 /**
  * Pending queued job dispatch handle.
  *
- * Mirrors Laravel's PendingDispatch: holds the job + payload and defers the actual
- * dispatch until the handle is destroyed, so `then()` / `catch()` callbacks can be
- * registered in between. When CrustumQueue's sync mode is enabled the job runs
- * in-process (via its SyncJobRunner) and the produced response is forwarded to the
- * "then" callbacks; otherwise the payload is pushed onto Cake Queue.
+ * PendingDispatch holds the job + payload and defers the actual dispatch
+ * until the handle is destroyed, so `then()` / `catch()` callbacks can be
+ * registered in between. Completion callbacks travel inside the payload
+ * (packed `SerializableClosure` strings under the `then` / `catch` keys, only
+ * present when callbacks were registered) and are executed by
+ * `Crustum\Ai\Queue\AiJobProcessor` wherever the job runs — worker, sync, or
+ * tests. When CrustumQueue's sync mode is enabled the job runs in-process via
+ * its SyncJobRunner (which honors the configured processor); otherwise the
+ * payload is pushed onto Cake Queue.
  */
-class PendingDispatch
+class PendingDispatch implements PendingDispatchInterface
 {
     /**
-     * The currently executing sync dispatch context (nested dispatch guard).
+     * Packed "then" callbacks invoked after the job resolves.
      *
-     * @var array{jobClass: class-string, then: array<int, \Closure>, catch: array<int, \Closure>}|null
-     */
-    protected static ?array $active = null;
-
-    /**
-     * "then" callbacks invoked after the job resolves.
+     * Stored packed (not raw) so unserializable callbacks — e.g. closures
+     * with by-reference captures, which PHP cannot transport — fail fast at
+     * registration with a clear message instead of dropping silently.
      *
-     * @var array<int, \Closure>
+     * @var array<int, string>
      */
     protected array $thenCallbacks = [];
 
     /**
-     * "catch" callbacks invoked if the job fails.
+     * Packed "catch" callbacks invoked if the job fails.
      *
-     * @var array<int, \Closure>
+     * @var array<int, string>
      */
     protected array $catchCallbacks = [];
 
     /**
      * Constructor.
      *
+     * The queue contract is enforced here (not at destruction): a destructor
+     * must never throw, so misconfiguration surfaces at the `queue()` call
+     * site with a clear, catchable exception.
+     *
      * @param class-string $jobClass Job class
      * @param array<string, mixed> $payload Serialized job payload
      * @param array<string, mixed> $config Queue / dispatch configuration
+     * @throws \InvalidArgumentException When Ai jobs would land outside a properly configured Ai queue
      */
     public function __construct(
         protected string $jobClass,
         protected array $payload = [],
         protected array $config = [],
     ) {
+        $options = array_merge(static::queueConfig(), $this->config);
+        AiQueue::assertConfigured(
+            isset($options['config']) && is_string($options['config']) ? $options['config'] : null,
+        );
     }
 
     /**
@@ -102,86 +117,84 @@ class PendingDispatch
      * Register a callback invoked after the job resolves.
      *
      * @param \Closure $callback Response callback
+     * @throws \InvalidArgumentException When the callback cannot be serialized for transport
      */
     public function addThen(Closure $callback): void
     {
-        $this->thenCallbacks[] = $callback;
+        $this->thenCallbacks[] = self::packCallback($callback);
     }
 
     /**
      * Register a callback invoked if the job fails.
      *
      * @param \Closure $callback Failure callback
+     * @throws \InvalidArgumentException When the callback cannot be serialized for transport
      */
     public function addCatch(Closure $callback): void
     {
-        $this->catchCallbacks[] = $callback;
-    }
-
-    /**
-     * Forward a successfully produced response to the active "then" callbacks.
-     *
-     * Called by jobs at the end of their in-process run.
-     *
-     * @param class-string $jobClass Job class
-     * @param mixed $response Job response
-     */
-    public static function resolve(string $jobClass, mixed $response): void
-    {
-        if (static::$active === null || static::$active['jobClass'] !== $jobClass) {
-            return;
-        }
-
-        foreach (static::$active['then'] as $callback) {
-            $callback($response);
-        }
-    }
-
-    /**
-     * Forward a failure to the active "catch" callbacks.
-     *
-     * @param class-string $jobClass Job class
-     * @param \Throwable $exception The failure
-     */
-    public static function fail(string $jobClass, Throwable $exception): void
-    {
-        if (static::$active === null || static::$active['jobClass'] !== $jobClass) {
-            return;
-        }
-
-        foreach (static::$active['catch'] as $callback) {
-            $callback($exception);
-        }
+        $this->catchCallbacks[] = self::packCallback($callback);
     }
 
     /**
      * Dispatch the job when the handle is destroyed.
+     *
+     * Destructors must not throw, so dispatch failures are logged and
+     * swallowed. Note this intentionally does not fire "catch" callbacks:
+     * those observe job failures, not dispatch failures.
      */
     public function __destruct()
     {
-        if (static::$active !== null) {
-            return;
+        $payload = $this->payload;
+
+        if ($this->thenCallbacks !== []) {
+            $payload['then'] = $this->thenCallbacks;
         }
 
-        static::$active = [
-            'jobClass' => $this->jobClass,
-            'then' => $this->thenCallbacks,
-            'catch' => $this->catchCallbacks,
-        ];
+        if ($this->catchCallbacks !== []) {
+            $payload['catch'] = $this->catchCallbacks;
+        }
 
         try {
-            if (self::syncEnabled($this->jobClass, $this->payload, $this->config)) {
+            $options = array_merge(static::queueConfig(), $this->config);
+
+            if (self::syncEnabled($this->jobClass, $payload, $options)) {
                 $runner = SyncJobRunner::class;
-                $runner::run($this->jobClass, $this->payload, $this->config);
+                $runner::run($this->jobClass, $payload, $options);
             } else {
-                QueueManager::push($this->jobClass, $this->payload, array_merge(static::queueConfig(), $this->config));
+                QueueManager::push($this->jobClass, $payload, $options);
             }
         } catch (Throwable $throwable) {
-            foreach (static::$active['catch'] as $callback) {
-                $callback($throwable);
-            }
-        } finally {
-            static::$active = null;
+            Log::warning(sprintf(
+                'Pending dispatch of [%s] failed: %s',
+                $this->jobClass,
+                $throwable->getMessage(),
+            ));
+        }
+    }
+
+    /**
+     * Pack a completion callback for queue transport.
+     *
+     * Mirrors `DispatchableTrait::pack()` for a `SerializableClosure` value:
+     * closures can only cross the process boundary via PHP serialization.
+     * Serializability is verified here (not at dispatch) so untransportable
+     * callbacks fail fast with a clear message.
+     *
+     * @param \Closure $callback Response or failure callback
+     * @return string Packed callback
+     * @throws \InvalidArgumentException When the callback cannot be serialized
+     */
+    protected static function packCallback(Closure $callback): string
+    {
+        try {
+            return base64_encode(serialize(new SerializableClosure($callback)));
+        } catch (Throwable $throwable) {
+            throw new InvalidArgumentException(
+                'Queued completion callbacks must be serializable for transport: '
+                . 'avoid by-reference captures and unserializable bound state.',
+                0,
+                $throwable,
+            );
         }
     }
 
@@ -192,10 +205,7 @@ class PendingDispatch
      */
     protected static function queueConfig(): array
     {
-        return [
-            'queue' => 'default',
-            'config' => 'default',
-        ];
+        return AiQueue::defaultOptions();
     }
 
     /**

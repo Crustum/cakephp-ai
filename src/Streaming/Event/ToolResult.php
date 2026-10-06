@@ -21,6 +21,7 @@ class ToolResult extends StreamEvent
      * @param string|null $error Error message if failed
      * @param int $timestamp Unix timestamp
      * @param bool $denied Whether the tool call was denied / not approved
+     * @param bool $preliminary Whether the result reports unfinished output that a settled result will replace
      */
     public function __construct(
         public string $id,
@@ -29,6 +30,7 @@ class ToolResult extends StreamEvent
         public ?string $error,
         public int $timestamp,
         public bool $denied = false,
+        public bool $preliminary = false,
     ) {
     }
 
@@ -47,34 +49,8 @@ class ToolResult extends StreamEvent
             'successful' => $this->successful,
             'error' => $this->error,
             'denied' => $this->denied,
+            ...($this->preliminary ? ['preliminary' => true] : []),
             'timestamp' => $this->timestamp,
-        ];
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        if ($this->denied) {
-            return [
-                'type' => 'tool-output-denied',
-                'toolCallId' => $this->toolResult->id,
-            ];
-        }
-
-        if (!$this->successful) {
-            return [
-                'type' => 'tool-output-error',
-                'toolCallId' => $this->toolResult->id,
-                'errorText' => $this->error ?? 'The tool call failed.',
-            ];
-        }
-
-        return [
-            'type' => 'tool-output-available',
-            'toolCallId' => $this->toolResult->id,
-            'output' => $this->toolResult->result,
         ];
     }
 }

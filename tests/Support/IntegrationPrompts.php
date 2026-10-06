@@ -22,7 +22,7 @@ class IntegrationPrompts
      * Get a prompt definition by id.
      *
      * @param string $id Prompt id
-     * @return array{id: string, question: string, expected: array<int, string>, match: string, context?: string, prompt?: string}
+     * @return array{id: string, question: string, expected: array<int, string>, match: string, context?: string, prompt?: string, documents?: array<int, string>}
      */
     public static function get(string $id): array
     {
@@ -44,6 +44,17 @@ class IntegrationPrompts
     public static function question(string $id): string
     {
         return (string)self::get($id)['question'];
+    }
+
+    /**
+     * Get the candidate documents for a reranking prompt id.
+     *
+     * @param string $id Prompt id
+     * @return array<int, string>
+     */
+    public static function documents(string $id): array
+    {
+        return array_values(array_map(strval(...), self::get($id)['documents'] ?? []));
     }
 
     /**

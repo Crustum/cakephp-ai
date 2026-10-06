@@ -9,8 +9,9 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Trait\JoinsReasoningTrait;
 
 /**
  * Parses Mistral Chat Completions text responses.
@@ -18,6 +19,7 @@ use Crustum\Ai\Responses\Data\Usage;
 trait ParsesTextResponsesTrait
 {
     use DecodesStructuredOutputTrait;
+    use JoinsReasoningTrait;
 
     /**
      * Validate the Mistral response data.
@@ -54,7 +56,8 @@ trait ParsesTextResponsesTrait
         $message = $choice['message'] ?? [];
         $model = $data['model'] ?? '';
 
-        $text = $this->extractContentText($message['content'] ?? '');
+        $content = $message['content'] ?? '';
+        $text = $this->extractContentText($content);
         $rawToolCalls = $message['tool_calls'] ?? [];
 
         $toolCalls = array_map(fn(array $toolCall): ToolCall => new ToolCall(
@@ -71,7 +74,27 @@ trait ParsesTextResponsesTrait
             usage: $this->extractUsage($data),
             meta: new Meta($provider->name(), $model),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
+            reasoning: $this->extractReasoning($content),
         );
+    }
+
+    /**
+     * Extract the reasoning text from the thinking chunks of a message content value.
+     *
+     * @param mixed $content Message content
+     */
+    protected function extractReasoning(mixed $content): string
+    {
+        if (!is_array($content)) {
+            return '';
+        }
+
+        /** @var \Cake\Collection\CollectionInterface<int, string> $thinking */
+        $thinking = collection($content)
+            ->filter(fn(mixed $chunk): bool => is_array($chunk) && ($chunk['type'] ?? '') === 'thinking')
+            ->map(fn(array $chunk): string => $this->extractContentText($chunk['thinking'] ?? []));
+
+        return static::joinReasoning($thinking->toList());
     }
 
     /**
@@ -96,15 +119,16 @@ trait ParsesTextResponsesTrait
      * Extract usage data from the response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
         $usage = $data['usage'] ?? [];
 
-        return new Usage(
-            $usage['prompt_tokens'] ?? 0,
-            $usage['completion_tokens'] ?? 0,
+        return new TextUsage(
+            inputTokens: $usage['prompt_tokens'] ?? 0,
+            outputTokens: $usage['completion_tokens'] ?? 0,
+            cacheReadInputTokens: $usage['prompt_tokens_details']['cached_tokens'] ?? null,
         );
     }
 
@@ -119,8 +143,9 @@ trait ParsesTextResponsesTrait
         return match ($choice['finish_reason'] ?? '') {
             'stop' => FinishReason::Stop,
             'tool_calls' => FinishReason::ToolCalls,
-            'length' => FinishReason::Length,
+            'length', 'model_length' => FinishReason::Length,
             'content_filter' => FinishReason::ContentFilter,
+            'error' => FinishReason::Error,
             default => FinishReason::Unknown,
         };
     }

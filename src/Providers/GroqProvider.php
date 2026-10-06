@@ -7,9 +7,14 @@ use Cake\Event\EventManager;
 use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Gateway\TranscriptionGateway;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
+use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
+use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\Groq\GroqGateway;
+use Crustum\Ai\Providers\Tools\CodeExecution;
+use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTranscriptionsTrait;
 use Crustum\Ai\Providers\Trait\HasTextGatewayTrait;
@@ -20,7 +25,7 @@ use Override;
 /**
  * Groq text and transcription provider.
  */
-class GroqProvider extends Provider implements TextProvider, TranscriptionProvider
+class GroqProvider extends Provider implements SupportsCodeExecution, SupportsWebSearch, TextProvider, TranscriptionProvider
 {
     use GeneratesTextTrait;
     use GeneratesTranscriptionsTrait;
@@ -66,6 +71,28 @@ class GroqProvider extends Provider implements TextProvider, TranscriptionProvid
     public function providerCredentials(): array
     {
         return ['key' => $this->config['key'] ?? null];
+    }
+
+    /**
+     * Get the code execution tool options for the provider.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $codeExecution Code execution tool
+     * @return array<string, mixed>
+     */
+    public function codeExecutionToolOptions(CodeExecution $codeExecution): array
+    {
+        return $codeExecution->providerOptions(Lab::Groq);
+    }
+
+    /**
+     * Get the web search tool options for the provider.
+     *
+     * @param \Crustum\Ai\Providers\Tools\WebSearch $search Web search tool
+     * @return array<string, mixed>
+     */
+    public function webSearchToolOptions(WebSearch $search): array
+    {
+        return $search->providerOptions(Lab::Groq);
     }
 
     /**

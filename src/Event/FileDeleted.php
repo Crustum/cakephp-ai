@@ -7,6 +7,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched after a file is deleted.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class FileDeleted extends AiEvent
 {
@@ -26,6 +28,6 @@ class FileDeleted extends AiEvent
             'invocationId' => $invocationId,
             'provider' => $provider,
             'fileId' => $fileId,
-        ]);
+        ], $provider);
     }
 }

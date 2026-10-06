@@ -5,26 +5,29 @@ namespace Crustum\Ai\Test\Fixtures;
 
 use Cake\Collection\Collection;
 use Crustum\Ai\Contracts\ConversationStore;
+use Crustum\Ai\Messages\UserMessage;
 use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Responses\AgentResponse;
+use Throwable;
 
 class FakeConversationStore implements ConversationStore
 {
-    public function latestConversationId(string $participantType, string|int $participantId): ?string
+    public function latestConversationId(string $participantType, string|int $participantId, string $agent): ?string
     {
         return null;
     }
 
-    public function storeConversation(?string $participantType, string|int|null $participantId, string $title): string
+    public function storeConversation(?string $participantType, string|int|null $participantId, string $title, ?string $id = null): string
     {
-        return 'conversation-123';
+        return $id ?? 'conversation-123';
     }
 
     public function storeUserMessage(
         string $conversationId,
         ?string $participantType,
         string|int|null $participantId,
-        AgentPrompt $prompt,
+        string $agent,
+        UserMessage $message,
     ): string {
         return 'user-message-123';
     }
@@ -35,6 +38,7 @@ class FakeConversationStore implements ConversationStore
         string|int|null $participantId,
         AgentPrompt $prompt,
         AgentResponse $response,
+        ?Throwable $exception = null,
     ): ?string {
         return 'assistant-message-123';
     }
@@ -46,8 +50,6 @@ class FakeConversationStore implements ConversationStore
 
     public function storeApprovalResults(
         string $conversationId,
-        ?string $participantType,
-        string|int|null $participantId,
         array $toolResults,
     ): void {
     }

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 use Cake\Utility\Hash;
-use Crustum\Ai\Providers\Tools\FileSearch;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\WebFetch;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Test\Fixtures\Agents\NamedToolAgent;
@@ -33,20 +33,6 @@ test('tool parameters are not wrapped in schema definition', function (): void {
         return false;
     });
 });
-
-test('unsupported provider tool throws logic exception', function (): void {
-    aiHttpFake([
-        'api.anthropic.com/*' => $this->fakeTextResponse(),
-    ]);
-
-    agent(
-        'Test unsupported tool',
-        tools: [new FileSearch(['store_1'])],
-    )->prompt(
-        'Search for something',
-        provider: 'anthropic',
-    );
-})->throws(LogicException::class, 'is not supported by Anthropic');
 
 test('tool with a name() method emits the declared name', function (): void {
     aiHttpFake([
@@ -280,5 +266,19 @@ test('empty schema still includes input schema with type object', function (): v
         }
 
         return false;
+    });
+});
+
+test('code execution tool sends dated type and name', function (): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => $this->fakeTextResponse('ok'),
+    ]);
+
+    agent(tools: [new CodeExecution()])->prompt('Run some code', provider: 'anthropic');
+
+    aiAssertHttpSent(function ($request): bool {
+        $tool = collect($request->data()['tools'] ?? [])->first();
+
+        return ($tool['type'] ?? null) === 'code_execution_20260120';
     });
 });

@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\TestSuite\Constraint\Failover;
 
-use Crustum\Ai\Event\AgentFailedOverEvent;
-use Crustum\Ai\Event\ProviderFailedOverEvent;
+use Crustum\Ai\Event\AgentFailedOver;
+use Crustum\Ai\Event\ProviderFailedOver as ProviderFailedOverEvent;
 use Crustum\Ai\TestSuite\Capture\EventCapture;
 use PHPUnit\Framework\Constraint\Constraint;
 
@@ -32,7 +32,7 @@ class ProviderFailedOver extends Constraint
     protected function matches(mixed $other): bool
     {
         foreach (EventCapture::events() as $event) {
-            if ($event instanceof AgentFailedOverEvent) {
+            if ($event instanceof AgentFailedOver) {
                 if ($event->provider->name() === $this->from && $this->to === null) {
                     return true;
                 }

@@ -2,8 +2,8 @@
 declare(strict_types=1);
 
 use Crustum\Ai\Responses\Data\GeneratedImage;
+use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\ImageResponse;
 
 test('mime falls back to image/png when no mime type is set', function (): void {
@@ -14,7 +14,7 @@ test('mime falls back to image/png when no mime type is set', function (): void 
 test('toHtml renders an img tag with the image mime type', function (): void {
     $response = new ImageResponse(
         collection([new GeneratedImage('aGVsbG8=', 'image/jpeg')]),
-        new Usage(),
+        new ImageUsage(),
         new Meta('openai', 'gpt-image-1'),
     );
 
@@ -26,7 +26,7 @@ test('toHtml renders an img tag with the image mime type', function (): void {
 test('toHtml falls back to image/png when the image has no mime type', function (): void {
     $response = new ImageResponse(
         collection([new GeneratedImage('aGVsbG8=')]),
-        new Usage(),
+        new ImageUsage(),
         new Meta('openai', 'gpt-image-1'),
     );
 
@@ -38,7 +38,7 @@ test('toHtml falls back to image/png when the image has no mime type', function 
 test('toHtml escapes the alt attribute', function (): void {
     $response = new ImageResponse(
         collection([new GeneratedImage('aGVsbG8=', 'image/png')]),
-        new Usage(),
+        new ImageUsage(),
         new Meta('openai', 'gpt-image-1'),
     );
 
@@ -50,7 +50,7 @@ test('toHtml escapes the alt attribute', function (): void {
 test('firstImage throws when the response contains no images', function (): void {
     $response = new ImageResponse(
         collection([]),
-        new Usage(),
+        new ImageUsage(),
         new Meta('openai', 'gpt-image-1'),
     );
 

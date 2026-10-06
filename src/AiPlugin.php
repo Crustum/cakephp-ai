@@ -5,6 +5,7 @@ namespace Crustum\Ai;
 
 use Cake\Console\CommandCollection;
 use Cake\Core\BasePlugin;
+use Cake\Core\Configure;
 use Cake\Core\ContainerApplicationInterface;
 use Cake\Core\ContainerInterface;
 use Cake\Core\PluginApplicationInterface;
@@ -13,7 +14,9 @@ use Crustum\Ai\Command\BakeAgentCommand;
 use Crustum\Ai\Command\BakeAgentMiddlewareCommand;
 use Crustum\Ai\Command\BakeToolCommand;
 use Crustum\Ai\Command\ChatCommand;
+use Crustum\Ai\Contracts\ConversationStore;
 use Crustum\Ai\Registry\ProviderRegistry;
+use Crustum\Ai\Storage\DatabaseConversationStore;
 use Crustum\PluginManifest\Manifest\ManifestInterface;
 use Crustum\PluginManifest\Manifest\ManifestTrait;
 use Override;
@@ -64,6 +67,8 @@ class AiPlugin extends BasePlugin implements ManifestInterface
     {
         $container->addShared(ProviderRegistry::class);
 
+        $container->addShared(ConversationStore::class, DatabaseConversationStore::class);
+
         $container->addShared(AiManager::class)
             ->addArgument(ProviderRegistry::class);
     }
@@ -78,6 +83,14 @@ class AiPlugin extends BasePlugin implements ManifestInterface
     public function bootstrap(PluginApplicationInterface $app): void
     {
         parent::bootstrap($app);
+
+        if (!Configure::check('Ai')) {
+            if (file_exists(CONFIG . 'ai.php')) {
+                Configure::load('ai', 'default');
+            } elseif (file_exists($this->getConfigPath() . 'ai.php')) {
+                Configure::load('Crustum/Ai.ai', 'default', false);
+            }
+        }
 
         if (!$app instanceof ContainerApplicationInterface) {
             return;

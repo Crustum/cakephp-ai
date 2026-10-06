@@ -9,6 +9,8 @@ use DateInterval;
 
 /**
  * Dispatched before a store is created.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class CreatingStore extends AiEvent
 {
@@ -37,6 +39,6 @@ class CreatingStore extends AiEvent
             'description' => $description,
             'fileIds' => $fileIds,
             'expiresWhenIdleFor' => $expiresWhenIdleFor,
-        ]);
+        ], $provider);
     }
 }

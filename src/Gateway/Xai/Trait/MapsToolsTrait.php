@@ -3,10 +3,13 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Gateway\Xai\Trait;
 
+use Crustum\Ai\Attributes\Strict;
 use Crustum\Ai\Contracts\Providers\Provider;
+use Crustum\Ai\Contracts\Providers\SupportsCodeExecution;
 use Crustum\Ai\Contracts\Providers\SupportsFileSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Tool;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\ProviderTool;
 use Crustum\Ai\Providers\Tools\WebSearch;
@@ -34,11 +37,7 @@ trait MapsToolsTrait
 
         foreach ($tools as $tool) {
             if ($tool instanceof ProviderTool) {
-                $providerTool = $this->mapProviderTool($tool, $provider);
-
-                if (filled($providerTool)) {
-                    $mapped[] = $providerTool;
-                }
+                $mapped[] = $this->mapProviderTool($tool, $provider);
             } elseif ($tool instanceof Tool) {
                 $mapped[] = $this->mapTool($tool);
             }
@@ -57,10 +56,31 @@ trait MapsToolsTrait
     protected function mapProviderTool(ProviderTool $tool, Provider $provider): array
     {
         return match (true) {
+            $tool instanceof CodeExecution => $this->mapCodeExecutionTool($tool, $provider),
             $tool instanceof FileSearch => $this->mapFileSearchTool($tool, $provider),
             $tool instanceof WebSearch => $this->mapWebSearchTool($tool, $provider),
-            default => [],
+            default => throw new RuntimeException('Provider [' . $provider->name() . '] does not support the [' . class_basename($tool) . '] tool.'),
         };
+    }
+
+    /**
+     * Map a code execution tool to an xAI code interpreter definition.
+     *
+     * @param \Crustum\Ai\Providers\Tools\CodeExecution $tool Code execution tool
+     * @param \Crustum\Ai\Contracts\Providers\Provider $provider Provider instance
+     * @return array<string, mixed>
+     * @throws \RuntimeException When the provider does not support code execution
+     */
+    protected function mapCodeExecutionTool(CodeExecution $tool, Provider $provider): array
+    {
+        if (!$provider instanceof SupportsCodeExecution) {
+            throw new RuntimeException('Provider [' . $provider->name() . '] does not support code execution.');
+        }
+
+        return [
+            'type' => 'code_interpreter',
+            ...$provider->codeExecutionToolOptions($tool),
+        ];
     }
 
     /**
@@ -111,17 +131,19 @@ trait MapsToolsTrait
      */
     protected function mapTool(Tool $tool): array
     {
+        $strict = Strict::isAppliedTo($tool);
+
         $schema = $tool->schema(new JsonSchemaTypeFactory());
 
         $schemaArray = Value::filled($schema)
-            ? (new ObjectSchema($schema))->toSchema()
+            ? (new ObjectSchema($schema, strict: $strict))->toSchema()
             : [];
 
         return [
             'type' => 'function',
             'name' => ToolNameResolver::resolve($tool),
             'description' => (string)$tool->description(),
-            'strict' => true,
+            'strict' => $strict,
             'parameters' => [
                 'type' => 'object',
                 'properties' => $schemaArray['properties'] ?? (object)[],

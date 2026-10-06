@@ -6,48 +6,68 @@ namespace Crustum\Ai\Providers;
 use Cake\Event\EventManager;
 use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Gateway\AudioGateway;
+use Crustum\Ai\Contracts\Gateway\ClassificationGateway;
 use Crustum\Ai\Contracts\Gateway\EmbeddingGateway;
+use Crustum\Ai\Contracts\Gateway\FileGateway;
 use Crustum\Ai\Contracts\Gateway\ImageGateway;
+use Crustum\Ai\Contracts\Gateway\RerankingGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Gateway\TranscriptionGateway;
 use Crustum\Ai\Contracts\Providers\AudioProvider;
+use Crustum\Ai\Contracts\Providers\ClassificationProvider;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
+use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
+use Crustum\Ai\Contracts\Providers\RerankingProvider;
 use Crustum\Ai\Contracts\Providers\SupportsWebFetch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Gateway\OpenRouter\OpenRouterClassificationGateway;
+use Crustum\Ai\Gateway\OpenRouter\OpenRouterFileGateway;
 use Crustum\Ai\Gateway\OpenRouter\OpenRouterGateway;
 use Crustum\Ai\Providers\Tools\WebFetch;
 use Crustum\Ai\Providers\Tools\WebSearch;
+use Crustum\Ai\Providers\Trait\ClassifiesTrait;
 use Crustum\Ai\Providers\Trait\GeneratesAudioTrait;
 use Crustum\Ai\Providers\Trait\GeneratesEmbeddingsTrait;
 use Crustum\Ai\Providers\Trait\GeneratesImagesTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTranscriptionsTrait;
 use Crustum\Ai\Providers\Trait\HasAudioGatewayTrait;
+use Crustum\Ai\Providers\Trait\HasClassificationGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasEmbeddingGatewayTrait;
+use Crustum\Ai\Providers\Trait\HasFileGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasImageGatewayTrait;
+use Crustum\Ai\Providers\Trait\HasRerankingGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasTextGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasTranscriptionGatewayTrait;
+use Crustum\Ai\Providers\Trait\ManagesFilesTrait;
+use Crustum\Ai\Providers\Trait\ReranksTrait;
 use Crustum\Ai\Providers\Trait\StreamsTextTrait;
 
 /**
  * OpenRouter AI provider.
  */
-class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingProvider, ImageProvider, SupportsWebFetch, SupportsWebSearch, TextProvider, TranscriptionProvider
+class OpenRouterProvider extends Provider implements AudioProvider, ClassificationProvider, EmbeddingProvider, FileProvider, ImageProvider, RerankingProvider, SupportsWebFetch, SupportsWebSearch, TextProvider, TranscriptionProvider
 {
+    use ClassifiesTrait;
     use GeneratesAudioTrait;
     use GeneratesEmbeddingsTrait;
     use GeneratesImagesTrait;
     use GeneratesTextTrait;
     use GeneratesTranscriptionsTrait;
     use HasAudioGatewayTrait;
+    use HasClassificationGatewayTrait;
     use HasEmbeddingGatewayTrait;
+    use HasFileGatewayTrait;
     use HasImageGatewayTrait;
+    use HasRerankingGatewayTrait;
     use HasTextGatewayTrait;
     use HasTranscriptionGatewayTrait;
+    use ManagesFilesTrait;
+    use ReranksTrait;
     use StreamsTextTrait;
 
     /**
@@ -98,21 +118,32 @@ class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingPro
      */
     public function webSearchToolOptions(WebSearch $search): array
     {
-        return $this->serverToolOptions($search);
+        return $this->serverToolOptions($search, [
+            'user_location' => $search->hasLocation()
+                ? array_filter([
+                    'type' => 'approximate',
+                    'city' => $search->city,
+                    'region' => $search->region,
+                    'country' => $search->country,
+                ])
+                : null,
+        ]);
     }
 
     /**
      * Get the parameters for an OpenRouter server tool.
      *
      * @param \Crustum\Ai\Providers\Tools\WebFetch|\Crustum\Ai\Providers\Tools\WebSearch $tool Web tool
+     * @param array<string, mixed> $parameters Additional tool parameters
      * @return array<string, mixed>
      */
-    protected function serverToolOptions(WebFetch|WebSearch $tool): array
+    protected function serverToolOptions(WebFetch|WebSearch $tool, array $parameters = []): array
     {
         return array_filter([
             'parameters' => array_filter([
                 'max_uses' => $tool->maxSearches,
                 'allowed_domains' => $tool->allowedDomains,
+                ...$parameters,
             ]) + $tool->providerOptions(Lab::OpenRouter),
         ]);
     }
@@ -144,7 +175,7 @@ class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingPro
      */
     public function defaultTextModel(): string
     {
-        return $this->config['models']['text']['default'] ?? $this->config['models']['text'] ?? 'anthropic/claude-sonnet-4.6';
+        return $this->config['models']['text']['default'] ?? $this->config['models']['text'] ?? 'anthropic/claude-sonnet-5.5';
     }
 
     /**
@@ -164,7 +195,7 @@ class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingPro
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'anthropic/claude-opus-4.6';
+        return $this->config['models']['text']['smartest'] ?? 'anthropic/claude-fable-5.1';
     }
 
     /**
@@ -184,7 +215,7 @@ class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingPro
      */
     public function defaultImageModel(): string
     {
-        return $this->config['models']['image']['default'] ?? $this->config['models']['image'] ?? 'google/gemini-3.1-flash-image-preview';
+        return $this->config['models']['image']['default'] ?? $this->config['models']['image'] ?? 'google/gemini-3.1-flash-image';
     }
 
     /**
@@ -224,7 +255,7 @@ class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingPro
      */
     public function defaultAudioModel(): string
     {
-        return $this->config['models']['audio']['default'] ?? $this->config['models']['audio'] ?? 'google/gemini-3.1-flash-tts-preview';
+        return $this->config['models']['audio']['default'] ?? $this->config['models']['audio'] ?? 'google/gemini-3.8-flash-lite-tts';
     }
 
     /**
@@ -244,7 +275,7 @@ class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingPro
      */
     public function defaultTranscriptionModel(): string
     {
-        return $this->config['models']['transcription']['default'] ?? $this->config['models']['transcription'] ?? 'openai/whisper-1';
+        return $this->config['models']['transcription']['default'] ?? $this->config['models']['transcription'] ?? 'openai/gpt-transcribe';
     }
 
     /**
@@ -265,5 +296,63 @@ class OpenRouterProvider extends Provider implements AudioProvider, EmbeddingPro
     public function defaultEmbeddingsDimensions(): int
     {
         return $this->config['models']['embeddings']['dimensions'] ?? 1536;
+    }
+
+    /**
+     * Get the provider's file gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\FileGateway
+     */
+    public function fileGateway(): FileGateway
+    {
+        if (!isset($this->fileGateway)) {
+            $this->fileGateway = new OpenRouterFileGateway();
+        }
+
+        return $this->fileGateway;
+    }
+
+    /**
+     * Get the provider's classification gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\ClassificationGateway
+     */
+    public function classificationGateway(): ClassificationGateway
+    {
+        if (!isset($this->classificationGateway)) {
+            $this->classificationGateway = new OpenRouterClassificationGateway();
+        }
+
+        return $this->classificationGateway;
+    }
+
+    /**
+     * Get the name of the default classification model.
+     *
+     * @return string
+     */
+    public function defaultClassificationModel(): string
+    {
+        return $this->config['models']['classification']['default'] ?? '~typesafe/jev-latest';
+    }
+
+    /**
+     * Get the provider's reranking gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\RerankingGateway
+     */
+    public function rerankingGateway(): RerankingGateway
+    {
+        return $this->rerankingGateway ??= new OpenRouterGateway($this->events);
+    }
+
+    /**
+     * Get the name of the default reranking model.
+     *
+     * @return string
+     */
+    public function defaultRerankingModel(): string
+    {
+        return $this->config['models']['reranking']['default'] ?? 'cohere/rerank-4-pro';
     }
 }

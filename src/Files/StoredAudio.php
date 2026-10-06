@@ -6,11 +6,10 @@ namespace Crustum\Ai\Files;
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Contracts\Files\TranscribableAudio;
 use Crustum\Ai\Files\Trait\CanBeUploadedToProviderTrait;
-use Crustum\Ai\Files\Trait\ReadsStoredFilesystemTrait;
+use Crustum\Ai\Files\Trait\HasStoredContentTrait;
 use Crustum\Ai\PendingResponses\PendingTranscriptionGeneration;
 use InvalidArgumentException;
 use JsonSerializable;
-use Override;
 
 /**
  * Stored audio file.
@@ -20,7 +19,7 @@ use Override;
 class StoredAudio extends Audio implements JsonSerializable, StorableFile, TranscribableAudio
 {
     use CanBeUploadedToProviderTrait;
-    use ReadsStoredFilesystemTrait;
+    use HasStoredContentTrait;
 
     /**
      * Constructor.
@@ -34,17 +33,6 @@ class StoredAudio extends Audio implements JsonSerializable, StorableFile, Trans
         if (empty(trim($path))) {
             throw new InvalidArgumentException('Audio file path cannot be empty.');
         }
-    }
-
-    /**
-     * Get the displayable name of the file.
-     *
-     * @return string|null
-     */
-    #[Override]
-    public function name(): ?string
-    {
-        return $this->name ?? basename($this->path);
     }
 
     /**
@@ -70,25 +58,5 @@ class StoredAudio extends Audio implements JsonSerializable, StorableFile, Trans
             'path' => $this->path,
             'filesystem' => $this->resolvedFilesystemName(),
         ];
-    }
-
-    /**
-     * Get the JSON serializable representation of the instance.
-     *
-     * @return array<string, mixed>
-     */
-    public function jsonSerialize(): mixed
-    {
-        return $this->toArray();
-    }
-
-    /**
-     * Get string representation.
-     *
-     * @return string
-     */
-    public function __toString(): string
-    {
-        return $this->content();
     }
 }

@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 use Cake\Core\Configure;
 use Cake\Utility\Hash;
+use Crustum\Ai\Providers\Tools\CodeExecution;
+use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Test\Fixtures\Tools\NamedTool;
 use Crustum\Ai\Test\Fixtures\Tools\RandomNumberGenerator;
@@ -87,4 +89,20 @@ test('tool parameters are not wrapped in schema definition', function (): void {
         return ! array_key_exists('schema_definition', $function['parameters']['properties'] ?? [])
             && ! in_array('schema_definition', $function['parameters']['required'] ?? []);
     });
+});
+
+test('web search tool is sent as browser_search type', function (): void {
+    aiHttpFake(['*' => fakeGroqResponse('done')]);
+
+    agent(tools: [new WebSearch()])->prompt('Search the web', provider: 'groq');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => Hash::get(json_decode($request->body(), true), 'tools') === [['type' => 'browser_search']]);
+});
+
+test('code execution tool is sent as code_interpreter type', function (): void {
+    aiHttpFake(['*' => fakeGroqResponse('done')]);
+
+    agent(tools: [new CodeExecution()])->prompt('Run some code', provider: 'groq');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => Hash::get(json_decode($request->body(), true), 'tools') === [['type' => 'code_interpreter']]);
 });

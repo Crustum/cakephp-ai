@@ -42,17 +42,4 @@ class ToolCall extends StreamEvent
             'timestamp' => $this->timestamp,
         ];
     }
-
-    /**
-     * @inheritDoc
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return [
-            'type' => 'tool-input-available',
-            'toolCallId' => $this->toolCall->id,
-            'toolName' => $this->toolCall->name,
-            'input' => $this->toolCall->arguments,
-        ];
-    }
 }

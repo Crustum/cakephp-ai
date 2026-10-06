@@ -23,6 +23,7 @@ interface ImageGateway
      * @param string|null $size Image size specification
      * @param 'low'|'medium'|'high'|null $quality Image quality level
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      */
     public function generateImage(
@@ -33,5 +34,6 @@ interface ImageGateway
         ?string $size = null,
         ?string $quality = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse;
 }

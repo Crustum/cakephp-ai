@@ -9,8 +9,8 @@ return [
         'table' => 'users',
         'columns' => [
             'id' => [
-                'type' => 'integer',
-                'autoIncrement' => true,
+                'type' => 'uuid',
+                'null' => false,
             ],
             'name' => [
                 'type' => 'string',
@@ -119,28 +119,26 @@ return [
                 'null' => false,
             ],
             'attachments' => [
-                'type' => 'json',
+                'type' => 'text',
                 'null' => false,
             ],
-            'tool_calls' => [
-                'type' => 'json',
-                'null' => false,
-            ],
-            'tool_results' => [
-                'type' => 'json',
+            'steps' => [
+                'type' => 'text',
                 'null' => false,
             ],
             'usage_data' => [
-                'type' => 'json',
+                'type' => 'text',
                 'null' => false,
             ],
             'meta' => [
-                'type' => 'json',
+                'type' => 'text',
                 'null' => false,
             ],
-            'approval_state' => [
-                'type' => 'text',
-                'null' => true,
+            'status' => [
+                'type' => 'string',
+                'length' => 25,
+                'null' => false,
+                'default' => 'completed',
             ],
             'created' => [
                 'type' => 'datetime',
@@ -268,28 +266,26 @@ return [
                 'null' => false,
             ],
             'attachments' => [
-                'type' => 'json',
+                'type' => 'text',
                 'null' => false,
             ],
-            'tool_calls' => [
-                'type' => 'json',
-                'null' => false,
-            ],
-            'tool_results' => [
-                'type' => 'json',
+            'steps' => [
+                'type' => 'text',
                 'null' => false,
             ],
             'usage_data' => [
-                'type' => 'json',
+                'type' => 'text',
                 'null' => false,
             ],
             'meta' => [
-                'type' => 'json',
+                'type' => 'text',
                 'null' => false,
             ],
-            'approval_state' => [
-                'type' => 'text',
-                'null' => true,
+            'status' => [
+                'type' => 'string',
+                'length' => 25,
+                'null' => false,
+                'default' => 'completed',
             ],
             'created' => [
                 'type' => 'datetime',

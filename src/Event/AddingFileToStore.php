@@ -7,6 +7,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched before a file is added to a store.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class AddingFileToStore extends AiEvent
 {
@@ -29,6 +31,6 @@ class AddingFileToStore extends AiEvent
             'provider' => $provider,
             'storeId' => $storeId,
             'fileId' => $fileId,
-        ]);
+        ], $provider);
     }
 }

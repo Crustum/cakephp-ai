@@ -8,6 +8,8 @@ use Crustum\Ai\Contracts\Agent;
 
 /**
  * Dispatched when an agent pauses for tool approval.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Contracts\Agent>
  */
 class ToolApprovalRequested extends AiEvent
 {
@@ -31,6 +33,6 @@ class ToolApprovalRequested extends AiEvent
             'pendingApprovals' => $pendingApprovals,
             'conversationId' => $conversationId,
             'conversationUser' => $conversationUser,
-        ]);
+        ], $agent);
     }
 }

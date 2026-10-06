@@ -16,6 +16,8 @@ class QueuedImagePrompt
 {
     /**
      * Image attachments.
+     *
+     * @var \Cake\Collection\Collection<int, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile>
      */
     public readonly Collection $attachments;
 
@@ -23,11 +25,13 @@ class QueuedImagePrompt
      * Constructor.
      *
      * @param string $prompt The image generation prompt
-     * @param \Cake\Collection\Collection|array<mixed> $attachments Reference images
+     * @param \Cake\Collection\Collection<int, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile>|array<int, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Reference images
      * @param string|null $size Size/aspect ratio specification
      * @param string|null $quality Quality setting
      * @param \Crustum\Ai\Enums\Lab|array<string, string>|string|null $provider Provider specification
      * @param string|null $model Model identifier
+     * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      */
     public function __construct(
         public readonly string $prompt,
@@ -36,6 +40,8 @@ class QueuedImagePrompt
         public readonly ?string $quality,
         public readonly Lab|array|string|null $provider,
         public readonly ?string $model,
+        public readonly ?int $timeout = null,
+        public readonly array $providerOptions = [],
     ) {
         $this->attachments = $attachments instanceof Collection ? $attachments : collection($attachments);
     }

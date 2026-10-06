@@ -11,17 +11,6 @@ use Cake\Utility\Text;
 class Str
 {
     /**
-     * Wrap a string value for fluent test helpers.
-     *
-     * @param string $value String value
-     * @return \Crustum\Ai\Test\Support\StringableHelper
-     */
-    public static function of(string $value): StringableHelper
-    {
-        return new StringableHelper($value);
-    }
-
-    /**
      * Generate a UUID string for tests.
      *
      * @return string

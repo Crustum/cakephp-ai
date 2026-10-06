@@ -7,6 +7,8 @@ use Crustum\Ai\Providers\Provider;
 
 /**
  * Dispatched after a file is removed from a store.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Providers\Provider>
  */
 class FileRemovedFromStore extends AiEvent
 {
@@ -29,6 +31,6 @@ class FileRemovedFromStore extends AiEvent
             'provider' => $provider,
             'storeId' => $storeId,
             'documentId' => $documentId,
-        ]);
+        ], $provider);
     }
 }

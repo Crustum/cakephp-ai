@@ -8,8 +8,8 @@ use Crustum\Ai\Contracts\Gateway\ImageGateway;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
 use Crustum\Ai\Prompts\ImagePrompt;
 use Crustum\Ai\Responses\Data\GeneratedImage;
+use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Responses\ImageResponse;
 use RuntimeException;
 
@@ -50,6 +50,7 @@ class FakeImageGateway implements ImageGateway
      * @param string|null $size Image size specification
      * @param 'low'|'medium'|'high'|null $quality Image quality level
      * @param int|null $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\ImageResponse
      */
     public function generateImage(
@@ -60,8 +61,9 @@ class FakeImageGateway implements ImageGateway
         ?string $size = null,
         ?string $quality = null,
         ?int $timeout = null,
+        array $providerOptions = [],
     ): ImageResponse {
-        $imagePrompt = new ImagePrompt($prompt, $attachments, $size, $quality, $provider, $model);
+        $imagePrompt = new ImagePrompt($prompt, $attachments, $size, $quality, $provider, $model, $timeout, $providerOptions);
 
         return $this->nextResponse($provider, $model, $imagePrompt);
     }
@@ -116,7 +118,7 @@ class FakeImageGateway implements ImageGateway
         if (is_string($response)) {
             return new ImageResponse(
                 [new GeneratedImage($response, 'image/png')],
-                new Usage(),
+                new ImageUsage(),
                 new Meta($provider->name(), $model),
             );
         }

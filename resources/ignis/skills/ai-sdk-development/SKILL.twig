@@ -1,0 +1,557 @@
+---
+name: ai-sdk-development
+description: "CakePHP AI SDK (crustum/ai, alpha): agents, tools, streaming/queue, embeddings/images/audio/transcription, reranking, vector stores, files, providers, fakes, and provider failover across OpenAI, Anthropic, Gemini, Azure, Groq, xAI, DeepSeek, Mistral, Ollama, ElevenLabs, Cohere, Jina, VoyageAI. Activates when editing App\\Ai\\*, config/ai.php, bake agent/tool, or Crustum\\Ai\\* APIs."
+license: MIT
+metadata:
+  author: crustum
+---
+
+# CakePHP AI (`crustum/ai`)
+
+**1.0** — prefer the `Crustum\Ai\*` sources and the package documentation in docs/index.md over the README. Never invent APIs. Depends on `crustum/mcp` for MCP-backed tools.
+
+## Searching the Documentation
+
+This package is new. Always search the documentation before implementing any feature. Never guess at APIs — the documentation is the single source of truth.
+
+- Use broad, simple queries that match the documentation section headings below.
+- Do not add package names to queries — package information is shared automatically. Use `test agent fake`, not `crustum ai test agent fake`.
+- Run multiple queries at once — the most relevant results are returned first.
+
+### Documentation Sections
+
+Use these section headings as query terms for accurate results:
+
+- Introduction, Installation, Configuration, Provider Support
+- Agents: Prompting, Conversation Context, Structured Output, Attachments, Streaming, Queueing, Tools, Provider Tools, Middleware, Anonymous Agents, Agent Configuration
+- Images, Audio (TTS), Transcription (STT), Embeddings, Reranking, Files, Vector Stores, Failover
+- Testing: Agents, Images, Audio, Transcriptions, Embeddings, Reranking, Files, Vector Stores
+- Events
+
+## Installation
+
+```bash
+composer require crustum/ai
+```
+
+```bash
+{{ assist.cakeCommand('plugin load Crustum/Ai') }}
+{{ assist.cakeCommand('manifest install --plugin Crustum/Ai') }}
+```
+
+Publishes `config/ai.php`, env keys, and migrations when applicable. Configure providers under `Ai.providers` / env — never hard-code secrets.
+
+## Decision Workflow
+
+Determine the right entry point before writing code:
+
+| Need | Entry |
+|------|--------|
+| Text / chat | Agent + `PromptableTrait` |
+| Conversation memory | `Conversational` + `RemembersConversationsTrait` (automatic) or manual `messages()` |
+| Structured JSON | Agent + `HasStructuredOutput` interface |
+| Images | `Image::of()->generate()` |
+| Audio / TTS | `Audio::of()->generate()` |
+| Transcription / STT | `Transcription::fromPath()->generate()` |
+| Embeddings | `Embeddings::for()->generate()` |
+| Reranking | `Reranking::of()->rerank()` |
+| File storage | `Document::fromPath()->put()` |
+| Vector stores | `Stores::create()` |
+| MCP tools inside an agent | `McpTool` / `McpServerTool` (requires crustum/mcp) |
+
+## Basic Usage Examples
+
+### Agents
+
+```php
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Trait\PromptableTrait;
+
+class SalesCoach implements Agent
+{
+    use PromptableTrait;
+
+    public function instructions(): string
+    {
+        return 'You are a sales coach.';
+    }
+}
+
+// Prompting
+$response = (new SalesCoach)->prompt('Analyze this transcript...');
+echo $response->text;
+
+// Container resolution with dependency injection
+$agent = SalesCoach::make(user: $user);
+
+// Override provider, model, or timeout per-prompt
+$response = (new SalesCoach)->prompt(
+    'Analyze this transcript...',
+    provider: Lab::Anthropic,
+    model: 'claude-haiku-4-5-20251001',
+    timeout: 120,
+);
+
+// Streaming (returns an SSE/StreamedResponse from a controller)
+return (new SalesCoach)->stream('Analyze this transcript...');
+
+// Queueing
+(new SalesCoach)->queue('Analyze this transcript...')
+    ->then(fn ($response) => /* ... */);
+
+// Anonymous agents
+use function Crustum\Ai\agent;
+
+$response = agent(instructions: 'You are a helpful assistant.')->prompt('Hello');
+```
+
+### Conversation Context
+
+Manual conversation history via the `Conversational` interface:
+
+```php
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\Conversational;
+use Crustum\Ai\Messages\Message;
+use Crustum\Ai\Trait\PromptableTrait;
+
+class SalesCoach implements Agent, Conversational
+{
+    use PromptableTrait;
+
+    public function __construct(public User $user) {}
+
+    public function instructions(): string { return 'You are a sales coach.'; }
+
+    public function messages(): iterable
+    {
+        return History::where('user_id', $this->user->id)
+            ->latest()->limit(50)->get()->reverse()
+            ->map(fn ($m) => new Message($m->role, $m->content))
+            ->all();
+    }
+}
+```
+
+Automatic conversation persistence via the `RemembersConversationsTrait` trait:
+
+```php
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\Conversational;
+use Crustum\Ai\Trait\PromptableTrait;
+use Crustum\Ai\Trait\RemembersConversationsTrait;
+
+class SalesCoach implements Agent, Conversational
+{
+    use PromptableTrait, RemembersConversationsTrait;
+
+    public function instructions(): string { return 'You are a sales coach.'; }
+}
+
+// Start a new conversation
+$response = (new SalesCoach)->forUser($user)->prompt('Hello!');
+$conversationId = $response->conversationId;
+
+// Continue an existing conversation
+$response = (new SalesCoach)->continue($conversationId, as: $user)->prompt('Tell me more.');
+```
+
+### Structured Output
+
+```php
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\HasStructuredOutput;
+use Crustum\Ai\Trait\PromptableTrait;
+
+class Reviewer implements Agent, HasStructuredOutput
+{
+    use PromptableTrait;
+
+    public function instructions(): string { return 'Review and score content.'; }
+
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'feedback' => $schema->string()->required(),
+            'score' => $schema->integer()->min(1)->max(10)->required(),
+        ];
+    }
+}
+
+$response = (new Reviewer)->prompt('Review this...');
+echo $response['score']; // Access like an array
+```
+
+### Images
+
+```php
+use Crustum\Ai\Image;
+
+$image = Image::of('A sunset over mountains')
+    ->landscape()
+    ->quality('high')
+    ->generate();
+
+$path = $image->store(); // Store to default disk
+```
+
+### Audio
+
+```php
+use Crustum\Ai\Audio;
+
+$audio = Audio::of('Hello from CakePHP.')
+    ->female()
+    ->instructions('Speak warmly')
+    ->generate();
+
+$path = $audio->store();
+```
+
+### Transcription
+
+```php
+use Crustum\Ai\Transcription;
+
+$transcript = Transcription::fromStorage('audio.mp3')
+    ->diarize()
+    ->generate();
+
+echo (string) $transcript;
+```
+
+### Embeddings
+
+```php
+use Crustum\Ai\Embeddings;
+
+$response = Embeddings::for(['Text one', 'Text two'])
+    ->dimensions(1536)
+    ->cache()
+    ->generate();
+```
+
+### Reranking
+
+```php
+use Crustum\Ai\Reranking;
+
+$response = Reranking::of(['Django is Python.', 'Laravel is PHP.', 'React is JS.'])
+    ->limit(5)
+    ->rerank('PHP frameworks');
+
+$response->first()->document; // "Laravel is PHP."
+```
+
+### Files and Vector Stores
+
+```php
+use Crustum\Ai\Files\Document;
+use Crustum\Ai\Stores;
+
+// Store a file with the provider
+$file = Document::fromPath('/path/to/doc.pdf')->put();
+
+// Create a vector store and add files
+$store = Stores::create('Knowledge Base');
+$store->add($file->id);
+$store->add(Document::fromStorage('manual.pdf')); // Store + add in one step
+```
+
+## Agent Configuration
+
+### PHP Attributes
+
+Agent model/provider/timeout and behavior can be configured with attributes instead of per-prompt arguments:
+
+```php
+use Crustum\Ai\Attributes\{Provider, Model, MaxSteps, MaxTokens, Temperature, Timeout};
+use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Trait\PromptableTrait;
+
+#[Provider(Lab::Anthropic)]
+#[Model('claude-haiku-4-5-20251001')]
+#[MaxSteps(10)]
+#[MaxTokens(4096)]
+#[Temperature(0.7)]
+#[Timeout(120)]
+class MyAgent implements Agent
+{
+    use PromptableTrait;
+    // ...
+}
+```
+
+The `#[UseCheapestModel]` and `#[UseSmartestModel]` attributes are also available for automatic model selection.
+
+Use `#[RepairToolCalls]` to let an agent recover when a model calls an unknown local tool. The failed call is returned to the model with the available local tool names, and the implicit step budget includes one repair step. Explicit `#[MaxSteps]` limits remain unchanged:
+
+```php
+use Crustum\Ai\Attributes\RepairToolCalls;
+
+#[RepairToolCalls]
+class SupportAgent implements Agent, HasTools
+{
+    use PromptableTrait;
+
+    // ...
+}
+```
+
+The `#[WithoutBroadcasting]` attribute stops the given stream event types from broadcasting (e.g. data-heavy `ToolResult` payloads that exceed the WebSocket frame limit). The events are still streamed and persisted; they just never hit the channel:
+
+```php
+use Crustum\Ai\Attributes\WithoutBroadcasting;
+use Crustum\Ai\Streaming\Event\{ToolCall, ToolResult};
+
+#[WithoutBroadcasting(ToolResult::class, ToolCall::class)]
+class SearchAgent implements Agent, HasTools
+{
+    use PromptableTrait;
+
+    // ...
+}
+```
+
+### Tools
+
+Implement the `HasTools` interface and scaffold tools with `bake tool`:
+
+```bash
+{{ assist.cakeCommand('bake agent SalesCoach') }}
+{{ assist.cakeCommand('bake tool MyCustomTool') }}
+{{ assist.cakeCommand('bake agent_middleware Example') }}
+```
+
+```php
+use Crustum\Ai\Contracts\HasTools;
+
+class MyAgent implements Agent, HasTools
+{
+    use PromptableTrait;
+
+    public function tools(): iterable
+    {
+        return [new MyCustomTool];
+    }
+}
+```
+
+`tools()` may return `Agent`, `Tool`, or `ProviderTool` instances.
+
+### Provider Tools
+
+```php
+use Crustum\Ai\Providers\Tools\{WebSearch, WebFetch, FileSearch};
+
+public function tools(): iterable
+{
+    return [
+        (new WebSearch)->max(5)->allow(['laravel.com']),
+        new WebFetch,
+        new FileSearch(stores: ['store_id']),
+    ];
+}
+```
+
+### MCP Servers
+
+Register the server once, then return its tools from `tools()`. The SDK automatically wraps each `Crustum\Mcp\Client\Primitives\Tool` and presents it to the model as `mcp_tools_<name>`. Return your own `Crustum\Mcp\Server\Tool` instances in the same way and they retain their names and run in-process.
+
+```php
+use Crustum\Mcp\Client;
+use Crustum\Mcp\Client\ClientManager;
+
+// In a service provider or routes/ai.php
+ClientManager::getInstance()->registerClient('linear', fn () => Client::web('https://mcp.linear.app/mcp')
+    ->withToken(config('services.linear.token')));
+
+class SupportAgent implements Agent, HasTools
+{
+    use PromptableTrait;
+
+    public function tools(): iterable
+    {
+        return ClientManager::getInstance()->client('linear')->tools();
+    }
+}
+```
+
+The client connects on its first call, so call `connect()` only when you need to control the timing. Use `Client::local('npx', ['-y', 'some-server'])` for servers that run over stdio.
+
+### Conversation Memory
+
+```php
+use Crustum\Ai\Contracts\Conversational;
+use Crustum\Ai\Trait\RemembersConversationsTrait;
+
+class ChatBot implements Agent, Conversational
+{
+    use PromptableTrait, RemembersConversationsTrait;
+    // ...
+}
+
+$response = (new ChatBot)->forUser($user)->prompt('Hello!');
+$response = (new ChatBot)->continue($conversationId, as: $user)->prompt('More...');
+```
+
+### Failover
+
+```php
+$response = (new MyAgent)->prompt('Hello', provider: [Lab::OpenAI, Lab::Anthropic]);
+```
+
+## Testing and Faking
+
+Each capability supports `fake()` with assertions:
+
+```php
+use App\Ai\Agents\SalesCoach;
+use Crustum\Ai\{Image, Audio, Transcription, Embeddings, Reranking, Files, Stores};
+
+// Agents
+SalesCoach::fake(['Response 1', 'Response 2']);
+SalesCoach::assertPrompted('query');
+SalesCoach::assertNotPrompted('query');
+SalesCoach::assertNeverPrompted();
+
+// Images
+Image::fake();
+Image::assertGenerated(fn ($prompt) => $prompt->contains('sunset'));
+Image::assertNothingGenerated();
+
+// Audio
+Audio::fake();
+Audio::assertGenerated(fn ($prompt) => $prompt->contains('Hello'));
+
+// Transcription
+Transcription::fake(['Transcribed text.']);
+Transcription::assertGenerated(fn ($prompt) => $prompt->isDiarized());
+
+// Embeddings
+Embeddings::fake();
+Embeddings::assertGenerated(fn ($prompt) => $prompt->contains('Laravel'));
+
+// Reranking
+Reranking::fake();
+Reranking::assertReranked(fn ($prompt) => $prompt->contains('PHP'));
+
+// Files
+Files::fake();
+Files::assertStored(fn ($file) => $file->mimeType() === 'text/plain');
+
+// Stores
+Stores::fake();
+Stores::assertCreated('Knowledge Base');
+$store = Stores::get('id');
+$store->assertAdded('file_id');
+```
+
+## Key Patterns
+
+- Namespace: `Crustum\Ai\`
+- Package: `composer require crustum/ai`
+- Agent pattern: Implement the `Agent` interface and use the `PromptableTrait` trait
+- Optional interfaces: `HasTools`, `HasMiddleware`, `HasStructuredOutput`, `Conversational`, `RemembersConversations`
+- Entry-point classes: `Image`, `Audio`, `Transcription`, `Embeddings`, `Reranking`, `Stores`, `Files`
+- Provider enum: `Crustum\Ai\Enums\Lab` (prefer over plain strings)
+- Bake commands: `bake agent`, `bake tool`
+- Global helper: `agent()` for anonymous agents
+- Prefer container / `Agent::make()` (or `PromptableTrait::make()`) over ad hoc `new` when the agent has dependencies
+
+## OpenAI-Compatible Provider
+
+Point the SDK at any OpenAI-compatible endpoint (LM Studio, vLLM, Together, etc.) with the config-driven `openai-compatible` driver. Define named instances in `config/ai.php`, no code required:
+
+```php
+'my-llm' => [
+    'driver' => 'openai-compatible',
+    'url' => env('MY_LLM_URL'),        // required
+    'key' => env('MY_LLM_API_KEY'),    // optional Bearer token
+    'models' => [
+        'text' => ['default' => 'some-chat-model'],
+        'embeddings' => [
+            'default' => 'some-embedding-model',
+            'dimensions' => 1024, // optional; omit to use native dimensions
+        ],
+        'transcription' => ['default' => 'some-transcription-model'],
+    ],
+],
+```
+
+Reference it by config key (or `Lab::OpenAiCompatible`). A model is required via the corresponding `models` configuration or per-call `model:`:
+
+```php
+agent()->prompt('Hello', provider: 'my-llm', model: 'some-model');
+
+Embeddings::for(['Hello'])->generate(
+    provider: 'my-llm',
+    model: 'some-embedding-model',
+);
+```
+
+It uses OpenAI-standard shapes and supports text, streaming, tools, structured output, image attachments, text embeddings, and audio transcription. Embedding dimensions are optional; omit them to use the model's native dimensions. For extra request-body fields, implement `HasProviderOptions` — the returned array is merged into the body.
+
+Transcription uploads standard multipart (`file` + `model` + optional `language`) and defaults to `response_format: json`. Because endpoints vary, provider options override the defaults — pass `response_format: 'verbose_json'` for segments, or use `diarize()` on servers that implement `diarized_json`:
+
+```php
+Transcription::fromDisk('recordings', $path)
+    ->withProviderOptions(['response_format' => 'verbose_json'])
+    ->generate(provider: 'my-llm');
+```
+
+## Common Pitfalls
+
+### Wrong Namespace
+
+The namespace is `Crustum\Ai`, not `Laravel\Ai` or `Illuminate\Ai`.
+
+```php
+// Correct
+use Crustum\Ai\Image;
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Trait\PromptableTrait;
+
+// Wrong — these do not exist
+use Laravel\Ai\Image;
+use Illuminate\Ai\Agent;
+```
+
+### Unsupported Provider Capability
+
+Calling a capability not supported by a provider throws a `LogicException`. Refer to the provider support table below.
+
+### Configuration & Runtime
+
+- Hard-coded API keys in agents, tools, or committed config — use env / Configure only.
+- Calling a provider capability that is not enabled/supported in `config/ai.php`.
+- MCP-backed agent tools without a registered `crustum/mcp` server / primitives.
+- Skipping published migrations when conversation (or other) storage is required.
+- Instantiating agents with `new` when they need container services — prefer `Agent::make()` / DI.
+
+## Provider Support
+
+| Feature    | Providers                                                       |
+| ---------- | --------------------------------------------------------------- |
+| Text       | OpenAI, Anthropic, Gemini, Azure, Groq, xAI, DeepSeek, Mistral, Ollama, OpenRouter, OpenAI-compatible |
+| Images     | OpenAI, Gemini, xAI                                            |
+| TTS        | OpenAI, ElevenLabs, Mistral                                     |
+| STT        | OpenAI, ElevenLabs, Mistral, Groq, OpenAI-compatible            |
+| Embeddings | OpenAI, OpenAI-compatible, Gemini, Azure, Cohere, Mistral, Jina, VoyageAI |
+| Reranking  | Cohere, Jina                                                    |
+| Files      | OpenAI, Anthropic, Gemini                                       |
+
+Use the `Crustum\Ai\Enums\Lab` enum to reference providers in code instead of plain strings:
+
+```php
+use Crustum\Ai\Enums\Lab;
+
+Lab::Anthropic;
+Lab::OpenAI;
+Lab::Gemini;
+Lab::OpenAiCompatible; // configurable OpenAI-compatible endpoint
+// ...
+```

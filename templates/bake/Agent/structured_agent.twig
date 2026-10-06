@@ -41,7 +41,7 @@ class {{ class }} implements Agent, Conversational, HasStructuredOutput, HasTool
     /**
      * Get the tools available to the agent.
      *
-     * @return iterable<int, \Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>
+     * @return list<\Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>
      */
     public function tools(): iterable
     {

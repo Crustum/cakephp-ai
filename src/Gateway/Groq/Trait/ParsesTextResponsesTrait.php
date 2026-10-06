@@ -9,8 +9,8 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 
 /**
  * Parses Groq Chat Completions text responses.
@@ -73,6 +73,7 @@ trait ParsesTextResponsesTrait
             usage: $usage,
             meta: new Meta($provider->name(), $model),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
+            reasoning: (string)($message['reasoning'] ?? ''),
         );
     }
 
@@ -80,19 +81,17 @@ trait ParsesTextResponsesTrait
      * Extract usage data from the response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
         $usage = $data['usage'] ?? [];
-        $promptDetails = $usage['prompt_tokens_details'] ?? [];
-        $completionDetails = $usage['completion_tokens_details'] ?? [];
 
-        return new Usage(
-            promptTokens: $usage['prompt_tokens'] ?? 0,
-            completionTokens: $usage['completion_tokens'] ?? 0,
-            cacheReadInputTokens: $promptDetails['cached_tokens'] ?? 0,
-            reasoningTokens: $completionDetails['reasoning_tokens'] ?? 0,
+        return new TextUsage(
+            inputTokens: $usage['prompt_tokens'] ?? 0,
+            outputTokens: $usage['completion_tokens'] ?? 0,
+            cacheReadInputTokens: $usage['prompt_tokens_details']['cached_tokens'] ?? null,
+            reasoningTokens: $usage['completion_tokens_details']['reasoning_tokens'] ?? null,
         );
     }
 

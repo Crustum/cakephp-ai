@@ -21,6 +21,7 @@ interface AudioProvider extends Provider
      * @param string|null $instructions Additional instructions for audio generation
      * @param string|null $model Model to use for audio generation
      * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\AudioResponse
      */
     public function audio(
@@ -29,6 +30,7 @@ interface AudioProvider extends Provider
         ?string $instructions = null,
         ?string $model = null,
         int $timeout = 30,
+        array $providerOptions = [],
     ): AudioResponse;
 
     /**

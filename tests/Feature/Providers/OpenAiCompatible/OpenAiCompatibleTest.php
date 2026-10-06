@@ -10,6 +10,7 @@ use Crustum\Ai\Providers\OpenAiCompatibleProvider;
 use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeToolChoiceAgent;
+use Crustum\Ai\Test\Fixtures\Agents\NestedStructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolChoiceAgent;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
@@ -102,6 +103,19 @@ test('structured output defaults to json schema response format', function (): v
     });
 });
 
+test('structured output without Strict attribute sends strict false in response format', function (): void {
+    aiHttpFake(['*' => fakeOpenAiCompatibleResponse('{"elements": []}')]);
+
+    (new NestedStructuredAgent())->prompt('List elements.', provider: 'openai-compatible');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $format = Hash::get(json_decode($request->body(), true), 'response_format');
+
+        return $format['type'] === 'json_schema'
+            && $format['json_schema']['strict'] === false;
+    });
+});
+
 test('structured response is correctly parsed', function (): void {
     aiHttpFake(['*' => fakeOpenAiCompatibleResponse('{"symbol": "Au"}')]);
 
@@ -186,8 +200,8 @@ test('response usage is parsed using the openai standard shape', function (): vo
 
     $response = agent()->prompt('Hello', provider: 'openai-compatible');
 
-    expect($response->usage->promptTokens)->toBe(100)
-        ->and($response->usage->completionTokens)->toBe(50)
+    expect($response->usage->inputTokens)->toBe(100)
+        ->and($response->usage->outputTokens)->toBe(50)
         ->and($response->usage->cacheReadInputTokens)->toBe(40)
         ->and($response->usage->reasoningTokens)->toBe(10);
 });
@@ -312,17 +326,6 @@ test('named instances resolve provider options by their instance name', function
     aiAssertHttpSent(fn(AiHttpRequest $request): bool => $request->url() === 'http://localhost:8000/v1/chat/completions'
         && Hash::get(json_decode($request->body(), true), 'top_k') === 10);
 });
-
-function configureOpenAiCompatible(): void
-{
-    Configure::write('Ai.providers.openai-compatible', [
-        'className' => OpenAiCompatibleProvider::class,
-        'driver' => 'openai-compatible',
-        'url' => 'http://localhost:1234/v1',
-        'key' => 'test-key',
-        'models' => ['text' => ['default' => 'local-model']],
-    ]);
-}
 
 function fakeOpenAiCompatibleResponse(string $content): AiHttpResponseDefinition
 {

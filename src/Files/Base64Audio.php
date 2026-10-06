@@ -10,7 +10,6 @@ use Crustum\Ai\PendingResponses\PendingTranscriptionGeneration;
 use InvalidArgumentException;
 use JsonSerializable;
 use Laminas\Diactoros\UploadedFile;
-use Override;
 
 /**
  * Base64-encoded audio file.
@@ -63,15 +62,6 @@ class Base64Audio extends Audio implements JsonSerializable, StorableFile, Trans
     public function content(): string
     {
         return base64_decode($this->base64);
-    }
-
-    /**
-     * Get the file's MIME type.
-     */
-    #[Override]
-    public function mimeType(): ?string
-    {
-        return $this->mime;
     }
 
     /**

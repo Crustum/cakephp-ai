@@ -8,8 +8,11 @@ use Cake\Collection\CollectionInterface;
 use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Closure;
+use Crustum\Ai\Approvals\Approval;
+use Crustum\Ai\Contracts\Approvable;
 use Crustum\Ai\Contracts\Tool;
-use Crustum\Ai\Support\CollectionReranker;
+use Crustum\Ai\Support\AiCollection;
+use Crustum\Ai\Trait\InteractsWithApprovalsTrait;
 use Crustum\JsonSchema\Contracts\JsonSchema;
 use InvalidArgumentException;
 use Stringable;
@@ -17,8 +20,10 @@ use Stringable;
 /**
  * Similarity search tool backed by a custom query closure.
  */
-class SimilaritySearch implements Tool
+class SimilaritySearch implements Approvable, Tool
 {
+    use InteractsWithApprovalsTrait;
+
     protected ?string $description = null;
 
     protected bool $rerank = false;
@@ -113,19 +118,20 @@ class SimilaritySearch implements Tool
     {
         $results = call_user_func($this->using, $request->string('query'));
 
-        $results = $results instanceof CollectionInterface
-            ? $results
-            : new Collection($results);
+        if (!$results instanceof AiCollection) {
+            $results = new AiCollection(
+                $results instanceof CollectionInterface ? $results->toList() : $results,
+            );
+        }
 
         if ($results->isEmpty()) {
             return 'No relevant results found.';
         }
 
         if ($this->rerank) {
-            $results = CollectionReranker::rerank(
-                $results,
-                $this->rerankBy,
+            $results = $results->rerank(
                 $request->string('query'),
+                $this->rerankBy,
                 $this->rerankLimit,
             );
         }
@@ -175,5 +181,16 @@ class SimilaritySearch implements Tool
                 ->description('The search query.')
                 ->required(),
         ];
+    }
+
+    /**
+     * Determine whether the tool needs approval for the given request.
+     *
+     * @param \Crustum\Ai\Tools\Request $request Tool request
+     * @return \Crustum\Ai\Approvals\Approval|bool
+     */
+    protected function needsApproval(Request $request): Approval|bool
+    {
+        return false;
     }
 }

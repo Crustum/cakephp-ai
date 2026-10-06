@@ -5,6 +5,7 @@ use Cake\Collection\Collection;
 use Cake\ORM\Entity;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Contracts\ConversationStore;
+use Crustum\Ai\Messages\UserMessage;
 use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Test\Fixtures\Agents\RememberingAssistantAgent;
@@ -26,14 +27,17 @@ test('it threads the participant class into latestConversationId when continuing
 
         public ?string $receivedType = null;
 
-        public function latestConversationId(string $participantType, string|int $participantId): ?string
+        public ?string $receivedAgent = null;
+
+        public function latestConversationId(string $participantType, string|int $participantId, string $agent): ?string
         {
             $this->receivedType = $participantType;
+            $this->receivedAgent = $agent;
 
             return $participantType === $this->expectedType ? 'conversation-typed' : null;
         }
 
-        public function storeConversation(?string $participantType, string|int|null $participantId, string $title): string
+        public function storeConversation(?string $participantType, string|int|null $participantId, string $title, ?string $id = null): string
         {
             return 'conversation-1';
         }
@@ -42,7 +46,8 @@ test('it threads the participant class into latestConversationId when continuing
             string $conversationId,
             ?string $participantType,
             string|int|null $participantId,
-            AgentPrompt $prompt,
+            string $agent,
+            UserMessage $message,
         ): string {
             return 'user-1';
         }
@@ -53,6 +58,7 @@ test('it threads the participant class into latestConversationId when continuing
             string|int|null $participantId,
             AgentPrompt $prompt,
             AgentResponse $response,
+            ?Throwable $exception = null,
         ): string {
             return 'assistant-1';
         }
@@ -64,8 +70,6 @@ test('it threads the participant class into latestConversationId when continuing
 
         public function storeApprovalResults(
             string $conversationId,
-            ?string $participantType,
-            string|int|null $participantId,
             array $toolResults,
         ): void {
         }
@@ -76,6 +80,7 @@ test('it threads the participant class into latestConversationId when continuing
     $agent = (new RememberingAssistantAgent())->continueLastConversation($participant);
 
     expect($store->receivedType)->toBe($participant::class)
+        ->and($store->receivedAgent)->toBe(RememberingAssistantAgent::class)
         ->and($agent->currentConversation())->toBe('conversation-typed');
 });
 
@@ -85,12 +90,12 @@ test('it continues the last conversation through a store that ignores the partic
     };
 
     $store = new class implements ConversationStore {
-        public function latestConversationId(string $participantType, string|int $participantId): string
+        public function latestConversationId(string $participantType, string|int $participantId, string $agent): string
         {
             return 'conversation-1';
         }
 
-        public function storeConversation(?string $participantType, string|int|null $participantId, string $title): string
+        public function storeConversation(?string $participantType, string|int|null $participantId, string $title, ?string $id = null): string
         {
             return 'conversation-1';
         }
@@ -99,7 +104,8 @@ test('it continues the last conversation through a store that ignores the partic
             string $conversationId,
             ?string $participantType,
             string|int|null $participantId,
-            AgentPrompt $prompt,
+            string $agent,
+            UserMessage $message,
         ): string {
             return 'user-1';
         }
@@ -110,6 +116,7 @@ test('it continues the last conversation through a store that ignores the partic
             string|int|null $participantId,
             AgentPrompt $prompt,
             AgentResponse $response,
+            ?Throwable $exception = null,
         ): string {
             return 'assistant-1';
         }
@@ -121,8 +128,6 @@ test('it continues the last conversation through a store that ignores the partic
 
         public function storeApprovalResults(
             string $conversationId,
-            ?string $participantType,
-            string|int|null $participantId,
             array $toolResults,
         ): void {
         }
@@ -144,14 +149,14 @@ test('it resolves the participant id from an entity id field', function (): void
     $store = new class implements ConversationStore {
         public string|int|null $receivedId = null;
 
-        public function latestConversationId(string $participantType, string|int $participantId): string
+        public function latestConversationId(string $participantType, string|int $participantId, string $agent): string
         {
             $this->receivedId = $participantId;
 
             return 'conversation-1';
         }
 
-        public function storeConversation(?string $participantType, string|int|null $participantId, string $title): string
+        public function storeConversation(?string $participantType, string|int|null $participantId, string $title, ?string $id = null): string
         {
             return 'conversation-1';
         }
@@ -160,7 +165,8 @@ test('it resolves the participant id from an entity id field', function (): void
             string $conversationId,
             ?string $participantType,
             string|int|null $participantId,
-            AgentPrompt $prompt,
+            string $agent,
+            UserMessage $message,
         ): string {
             return 'user-1';
         }
@@ -171,6 +177,7 @@ test('it resolves the participant id from an entity id field', function (): void
             string|int|null $participantId,
             AgentPrompt $prompt,
             AgentResponse $response,
+            ?Throwable $exception = null,
         ): string {
             return 'assistant-1';
         }
@@ -182,8 +189,6 @@ test('it resolves the participant id from an entity id field', function (): void
 
         public function storeApprovalResults(
             string $conversationId,
-            ?string $participantType,
-            string|int|null $participantId,
             array $toolResults,
         ): void {
         }
@@ -194,4 +199,26 @@ test('it resolves the participant id from an entity id field', function (): void
     (new RememberingAssistantAgent())->continueLastConversation($participant);
 
     expect($store->receivedId)->toBe('uuid-123');
+});
+
+test('it starts a conversation for the participant when no conversation id is given', function (): void {
+    $participant = new class {
+        public int $id = 7;
+    };
+
+    $agent = (new RememberingAssistantAgent())->continueOrStart(null, as: $participant);
+
+    expect($agent->currentConversation())->toBeNull()
+        ->and($agent->conversationParticipant())->toBe($participant);
+});
+
+test('it continues the given conversation for the participant', function (): void {
+    $participant = new class {
+        public int $id = 7;
+    };
+
+    $agent = (new RememberingAssistantAgent())->continueOrStart('conversation-1', as: $participant);
+
+    expect($agent->currentConversation())->toBe('conversation-1')
+        ->and($agent->conversationParticipant())->toBe($participant);
 });

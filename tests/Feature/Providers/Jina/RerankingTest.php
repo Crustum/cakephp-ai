@@ -73,7 +73,7 @@ test('reranking uses default model when none specified', function (): void {
 
     Reranking::of(['Doc A', 'Doc B'])->rerank('query', provider: 'jina');
 
-    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'jina-reranker-v3');
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['model'] === 'jina-reranker-v3.5');
 });
 
 test('reranking maps documents by index when results are returned out of order', function (): void {
@@ -84,7 +84,7 @@ test('reranking maps documents by index when results are returned out of order',
             ['index' => 1, 'relevance_score' => 0.10],
         ],
         'model' => 'jina-reranker-v3',
-        'usage' => ['tokens' => 25],
+        'usage' => ['total_tokens' => 25],
     ])]);
 
     $response = Reranking::of(['Doc A', 'Doc B', 'Doc C'])
@@ -125,6 +125,16 @@ function fakeJinaRerankingResponse(): AiHttpResponseDefinition
             ['index' => 1, 'relevance_score' => 0.12],
         ],
         'model' => 'jina-reranker-v3',
-        'usage' => ['tokens' => 25],
+        'usage' => ['total_tokens' => 25],
     ]);
 }
+
+test('reranking response reports the total tokens', function (): void {
+    aiHttpFake(['*' => fakeJinaRerankingResponse()]);
+
+    $response = Reranking::of(IntegrationPrompts::documents('rerank'))
+        ->rerank(IntegrationPrompts::question('rerank'), provider: 'jina', model: 'jina-reranker-v3');
+
+    expect($response->usage->inputTokens)->toBe(25)
+        ->and($response->usage->searchUnits)->toBeNull();
+});

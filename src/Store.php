@@ -8,7 +8,7 @@ use Crustum\Ai\Contracts\Files\HasProviderId;
 use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Contracts\Providers\StoreProvider;
-use Crustum\Ai\Files\Base64Document;
+use Crustum\Ai\Files\LocalDocument;
 use Crustum\Ai\Files\ProviderDocument;
 use Crustum\Ai\Responses\AddedDocumentResponse;
 use Crustum\Ai\Responses\Data\StoreFileCounts;
@@ -53,8 +53,7 @@ class Store
         array $metadata = [],
     ): AddedDocumentResponse {
         if ($file instanceof UploadedFile) {
-            $file = Base64Document::fromUpload($file)
-                ->as($file->getClientFilename());
+            $file = LocalDocument::fromUploadedFile($file);
         }
 
         $originalFile = $file;
@@ -71,6 +70,21 @@ class Store
             is_string($file) => new ProviderDocument($file),
             default => $file,
         }, $metadata), $file instanceof HasProviderId ? $file->id() : $file);
+    }
+
+    /**
+     * Resolve the ID of the file a document was imported from, which Gemini does not reuse as the document ID.
+     *
+     * @param \Crustum\Ai\Contracts\Files\HasProviderId|string $documentId The document ID
+     * @return string
+     */
+    protected function fileIdFor(HasProviderId|string $documentId): string
+    {
+        if ($documentId instanceof AddedDocumentResponse && $documentId->fileId() !== null) {
+            return $documentId->fileId();
+        }
+
+        return $documentId instanceof HasProviderId ? $documentId->id() : $documentId;
     }
 
     /**
@@ -97,7 +111,7 @@ class Store
 
         if ($deleteFile && $removed) {
             Files::delete(
-                $documentId instanceof HasProviderId ? $documentId->id() : $documentId,
+                $this->fileIdFor($documentId),
                 provider: $this->provider->name(),
             );
         }

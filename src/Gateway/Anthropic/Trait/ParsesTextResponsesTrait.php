@@ -9,9 +9,11 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\ProviderToolCall;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\UrlCitation;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Trait\JoinsReasoningTrait;
 use Crustum\Ai\Utility\Value;
 
 /**
@@ -20,6 +22,7 @@ use Crustum\Ai\Utility\Value;
 trait ParsesTextResponsesTrait
 {
     use DecodesStructuredOutputTrait;
+    use JoinsReasoningTrait;
 
     /**
      * Validate the Anthropic response data.
@@ -68,7 +71,7 @@ trait ParsesTextResponsesTrait
      * @param array<int, array<string, mixed>> $content Content blocks
      * @param \Crustum\Ai\Contracts\Providers\Provider $provider Provider instance
      * @param string $model Model name
-     * @param \Crustum\Ai\Responses\Data\Usage $usage Usage data
+     * @param \Crustum\Ai\Responses\Data\TextUsage $usage Usage data
      * @param \Crustum\Ai\Responses\Data\FinishReason $finishReason Finish reason
      * @param bool $structured Whether structured output is active
      * @return \Crustum\Ai\Gateway\StepResponse
@@ -77,7 +80,7 @@ trait ParsesTextResponsesTrait
         array $content,
         Provider $provider,
         string $model,
-        Usage $usage,
+        TextUsage $usage,
         FinishReason $finishReason,
         bool $structured,
     ): StepResponse {
@@ -109,7 +112,9 @@ trait ParsesTextResponsesTrait
             usage: $usage,
             meta: new Meta($provider->name(), $model, $citations),
             structured: $structuredData,
-            providerContentBlocks: $content,
+            replayBlocks: $content,
+            reasoning: $this->extractReasoning($content),
+            providerToolCalls: $this->extractProviderToolCalls($content),
         );
     }
 
@@ -124,6 +129,35 @@ trait ParsesTextResponsesTrait
         $textBlocks = array_filter($content, fn(array $block): bool => ($block['type'] ?? '') === 'text');
 
         return implode('', array_column($textBlocks, 'text'));
+    }
+
+    /**
+     * Extract the reasoning text from Anthropic content blocks.
+     *
+     * @param array<int, array<string, mixed>> $content Content blocks
+     */
+    protected function extractReasoning(array $content): string
+    {
+        /** @var \Cake\Collection\CollectionInterface<int, string> $thinking */
+        $thinking = collection($content)
+            ->filter(fn(array $block): bool => ($block['type'] ?? '') === 'thinking')
+            ->map(fn(array $block): string => $block['thinking'] ?? '');
+
+        return static::joinReasoning($thinking->toList());
+    }
+
+    /**
+     * Extract the server tool use and result blocks, each keyed by the tool use it belongs to.
+     *
+     * @param array<int, array<string, mixed>> $content Content blocks
+     * @return array<int, \Crustum\Ai\Responses\Data\ProviderToolCall>
+     */
+    protected function extractProviderToolCalls(array $content): array
+    {
+        return array_values(array_map(
+            fn(array $block): ProviderToolCall => new ProviderToolCall($block['tool_use_id'] ?? $block['id'] ?? '', $block['type'], $block),
+            array_filter($content, fn(array $block): bool => ($block['type'] ?? '') === 'server_tool_use' || str_ends_with((string)($block['type'] ?? ''), '_tool_result')),
+        ));
     }
 
     /**
@@ -194,9 +228,7 @@ trait ParsesTextResponsesTrait
         foreach ($citations as $citation) {
             $key = $citation->url;
 
-            if (!isset($unique[$key])) {
-                $unique[$key] = $citation;
-            }
+            $unique[$key] ??= $citation;
         }
 
         return array_values($unique);
@@ -206,17 +238,20 @@ trait ParsesTextResponsesTrait
      * Extract usage data from the Anthropic response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
         $usage = $data['usage'] ?? [];
+        $cacheReadTokens = $usage['cache_read_input_tokens'] ?? null;
+        $cacheWriteTokens = $usage['cache_creation_input_tokens'] ?? null;
 
-        return new Usage(
-            $usage['input_tokens'] ?? 0,
-            $usage['output_tokens'] ?? 0,
-            $usage['cache_creation_input_tokens'] ?? 0,
-            $usage['cache_read_input_tokens'] ?? 0,
+        return new TextUsage(
+            inputTokens: ($usage['input_tokens'] ?? 0) + ($cacheReadTokens ?? 0) + ($cacheWriteTokens ?? 0),
+            outputTokens: $usage['output_tokens'] ?? 0,
+            cacheReadInputTokens: $cacheReadTokens,
+            cacheWriteInputTokens: $cacheWriteTokens,
+            reasoningTokens: $usage['output_tokens_details']['thinking_tokens'] ?? null,
         );
     }
 

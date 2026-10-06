@@ -56,11 +56,14 @@ use Cake\Database\Driver\Sqlite;
 use Cake\Datasource\ConnectionManager;
 use Cake\Queue\QueueManager;
 use Cake\TestSuite\Fixture\SchemaLoader;
+use Cake\TestSuite\Fixture\TransactionStrategy;
 use Crustum\Ai\Ai;
 use Crustum\Ai\AiPlugin;
 use Crustum\Ai\Providers\ElevenLabsProvider;
 use Crustum\Ai\Providers\OpenAiCompatibleProvider;
 use Crustum\Ai\Providers\OpenRouterProvider;
+use Crustum\Ai\Queue\AiJobProcessor;
+use Crustum\Ai\Queue\AiQueue;
 use Crustum\Queue\ContainerRegistry;
 
 function ensureDirectoryExists(string $path): void
@@ -84,6 +87,9 @@ Configure::write('App', [
 Configure::write('App.paths.templates', [APP . 'templates' . DS]);
 Configure::write('debug', true);
 
+// Roll fixture tables back per test instead of truncating them after every test.
+Configure::write('TestSuite.fixtureStrategy', TransactionStrategy::class);
+
 Cache::setConfig('_cake_core_', [
     'className' => 'File',
     'path' => CACHE,
@@ -104,6 +110,10 @@ Cache::setConfig('_cake_model_', [
     'duration' => '+10 seconds',
 ]);
 
+// Schema is rebuilt from tests/schema.php on every run, so drop stale ORM
+// metadata first — otherwise a column rename keeps selecting old columns.
+Cache::clear('_cake_model_');
+
 if (!getenv('db_dsn')) {
     putenv('db_dsn=sqlite:///:memory:');
 }
@@ -115,7 +125,9 @@ ConnectionManager::setConfig('test', [
 
 ConnectionManager::alias('test', 'default');
 
-ConnectionManager::setConfig('secondary', [
+// Test connections follow Cake's `test_` prefix convention so the PHPUnit
+// fixture extension's addTestAliases() resolves `secondary` to this connection.
+ConnectionManager::setConfig('test_secondary', [
     'className' => Connection::class,
     'driver' => Sqlite::class,
     'database' => ':memory:',
@@ -124,6 +136,8 @@ ConnectionManager::setConfig('secondary', [
     'cacheMetadata' => false,
     'quoteIdentifiers' => false,
 ]);
+
+ConnectionManager::alias('test_secondary', 'secondary');
 
 $aiPlugin = new AiPlugin([
     'path' => dirname(__DIR__) . DS,
@@ -144,6 +158,13 @@ Configure::load('Crustum/Ai.ai', 'default');
 Configure::write('Ai.conversations.connection', 'test');
 Configure::write('Ai.conversations.tables.conversations', 'agent_conversations');
 Configure::write('Ai.conversations.tables.messages', 'agent_conversation_messages');
+
+// Dedicated Ai queue (names from Ai.queue config, defaults `ai`).
+QueueManager::setConfig(AiQueue::connection(), [
+    'url' => 'null:',
+    'queue' => AiQueue::queue(),
+    'processor' => AiJobProcessor::class,
+]);
 
 $providers = Configure::read('Ai.providers') ?? [];
 

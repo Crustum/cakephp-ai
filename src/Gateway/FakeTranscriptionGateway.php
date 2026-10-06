@@ -10,7 +10,7 @@ use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
 use Crustum\Ai\Prompts\TranscriptionPrompt;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TranscriptionSegment;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TranscriptionUsage;
 use Crustum\Ai\Responses\TranscriptionResponse;
 use RuntimeException;
 
@@ -131,7 +131,7 @@ class FakeTranscriptionGateway implements TranscriptionGateway
                 collection([
                     new TranscriptionSegment($response, 'Speaker 1', 0.0, 1.0),
                 ]),
-                new Usage(),
+                new TranscriptionUsage(),
                 new Meta($provider->name(), $model),
             );
         }

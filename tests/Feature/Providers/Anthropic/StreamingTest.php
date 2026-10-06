@@ -44,7 +44,7 @@ describe('text streaming', function (): void {
             ->and($events[5])->toBeInstanceOf(StreamEnd::class);
     });
 
-    test('streaming starts a new text part after each text block', function (): void {
+    test('streaming reports the text blocks of one step as a single message', function (): void {
         aiHttpFake([
             'api.anthropic.com/*' => aiHttpResponse(
                 body: $this->ssePayload([
@@ -70,14 +70,54 @@ describe('text streaming', function (): void {
         $textEnds = array_values(array_filter($events, fn($e): bool => $e instanceof TextEnd));
         $textDeltas = array_values(array_filter($events, fn($e): bool => $e instanceof TextDelta));
 
-        expect($textStarts)->toHaveCount(2)
-            ->and($textEnds)->toHaveCount(2)
+        expect($textStarts)->toHaveCount(1)
+            ->and($textEnds)->toHaveCount(1)
             ->and($textDeltas)->toHaveCount(2)
-            ->and($textStarts[0]->messageId)->not->toBe($textStarts[1]->messageId)
             ->and($textEnds[0]->messageId)->toBe($textStarts[0]->messageId)
-            ->and($textEnds[1]->messageId)->toBe($textStarts[1]->messageId)
             ->and($textDeltas[0]->messageId)->toBe($textStarts[0]->messageId)
-            ->and($textDeltas[1]->messageId)->toBe($textStarts[1]->messageId);
+            ->and($textDeltas[1]->messageId)->toBe($textStarts[0]->messageId)
+            ->and(array_search($textEnds[0], $events, true))->toBeGreaterThan(array_search($textDeltas[1], $events, true));
+    });
+
+    test("streaming keeps a thinking block out of the message the step's text belongs to", function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpResponse(
+                body: $this->ssePayload([
+                    $this->messageStart(),
+                    $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                    $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'First']),
+                    $this->contentBlockStop(0),
+                    $this->contentBlockStart(1, ['type' => 'thinking', 'thinking' => '']),
+                    $this->contentBlockDelta(1, ['type' => 'thinking_delta', 'thinking' => 'Pondering']),
+                    $this->contentBlockStop(1),
+                    $this->contentBlockStart(2, ['type' => 'text', 'text' => '']),
+                    $this->contentBlockDelta(2, ['type' => 'text_delta', 'text' => 'Second']),
+                    $this->contentBlockStop(2),
+                    $this->messageDelta('end_turn', 10),
+                ]),
+                status: 200,
+                headers: ['Content-Type' => 'text/event-stream'],
+            ),
+        ]);
+
+        $events = $this->collectStreamEvents();
+
+        $textStarts = array_values(array_filter($events, fn($e): bool => $e instanceof TextStart));
+        $textEnds = array_values(array_filter($events, fn($e): bool => $e instanceof TextEnd));
+        $textDeltas = array_values(array_filter($events, fn($e): bool => $e instanceof TextDelta));
+        $reasoningStarts = array_values(array_filter($events, fn($e): bool => $e instanceof ReasoningStart));
+        $reasoningEnds = array_values(array_filter($events, fn($e): bool => $e instanceof ReasoningEnd));
+        $reasoningDeltas = array_values(array_filter($events, fn($e): bool => $e instanceof ReasoningDelta));
+
+        expect($textStarts)->toHaveCount(1)
+            ->and($textEnds)->toHaveCount(1)
+            ->and($reasoningStarts)->toHaveCount(1)
+            ->and($reasoningEnds)->toHaveCount(1)
+            ->and($textDeltas[0]->messageId)->toBe($textStarts[0]->messageId)
+            ->and($textDeltas[1]->messageId)->toBe($textStarts[0]->messageId)
+            ->and($reasoningDeltas[0]->reasoningId)->not->toBe($textStarts[0]->messageId)
+            ->and(TextDelta::combine($events))->toBe('FirstSecond')
+            ->and($reasoningDeltas[0]->delta)->toBe('Pondering');
     });
 });
 
@@ -295,7 +335,7 @@ describe('usage tracking', function (): void {
                     $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
                     $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'Hello']),
                     $this->contentBlockStop(0),
-                    $this->messageDelta('end_turn', 10),
+                    $this->messageDelta('end_turn', 10, thinkingTokens: 6),
                 ]),
                 status: 200,
                 headers: ['Content-Type' => 'text/event-stream'],
@@ -307,10 +347,60 @@ describe('usage tracking', function (): void {
         $streamEnd = array_values(array_filter($events, fn($e): bool => $e instanceof StreamEnd))[0];
 
         expect($streamEnd->usage)
-            ->promptTokens->toBe(42)
-            ->completionTokens->toBe(10)
+            ->inputTokens->toBe(192)
+            ->outputTokens->toBe(10)
             ->cacheWriteInputTokens->toBe(100)
-            ->cacheReadInputTokens->toBe(50);
+            ->cacheReadInputTokens->toBe(50)
+            ->reasoningTokens->toBe(6);
+    });
+
+    test('streaming prefers the cumulative usage reported on message delta', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpResponse(
+                body: $this->ssePayload([
+                    [
+                        'type' => 'message_start',
+                        'message' => [
+                            'id' => 'msg_1',
+                            'model' => 'claude-sonnet-4-6',
+                            'role' => 'assistant',
+                            'content' => [],
+                            'usage' => [
+                                'input_tokens' => 2679,
+                                'output_tokens' => 3,
+                                'cache_creation_input_tokens' => 0,
+                                'cache_read_input_tokens' => 0,
+                            ],
+                        ],
+                    ],
+                    $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                    $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'Hello']),
+                    $this->contentBlockStop(0),
+                    [
+                        'type' => 'message_delta',
+                        'delta' => ['stop_reason' => 'end_turn'],
+                        'usage' => [
+                            'input_tokens' => 10682,
+                            'output_tokens' => 510,
+                            'cache_creation_input_tokens' => 25,
+                            'cache_read_input_tokens' => 75,
+                        ],
+                    ],
+                ]),
+                status: 200,
+                headers: ['Content-Type' => 'text/event-stream'],
+            ),
+        ]);
+
+        $events = $this->collectStreamEvents();
+
+        $streamEnd = array_values(array_filter($events, fn($e): bool => $e instanceof StreamEnd))[0];
+
+        expect($streamEnd->usage)
+            ->inputTokens->toBe(10782)
+            ->outputTokens->toBe(510)
+            ->cacheWriteInputTokens->toBe(25)
+            ->cacheReadInputTokens->toBe(75);
     });
 
     test('streaming finish reason maps correctly', function (string $apiReason, $expected): void {
@@ -406,8 +496,8 @@ test('streaming tool loop emits a single stream end with accumulated usage', fun
     expect($streamEnds)->toHaveCount(1)
         ->and($streamEnds[0]->reason)->toBe(FinishReason::Stop->value)
         ->and($streamEnds[0]->usage)
-        ->promptTokens->toBe(30)
-        ->completionTokens->toBe(15)
+        ->inputTokens->toBe(50)
+        ->outputTokens->toBe(15)
         ->cacheWriteInputTokens->toBe(10)
         ->cacheReadInputTokens->toBe(10);
 });

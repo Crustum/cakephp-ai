@@ -13,7 +13,7 @@ use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Prompts\QueuedAgentPrompt;
 use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\Data\Meta;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Storage\DatabaseConversationStore;
 use Crustum\Ai\Test\Fixtures\Agents\ConversationalAgent;
@@ -95,8 +95,8 @@ test('a paused response exposes everything a controller needs to build its own a
 });
 
 test('non-paused responses render without the approval envelope', function (): void {
-    $complete = (new AgentResponse('invocation-1', 'Done', new Usage(), new Meta()))->withinConversation('conversation-1');
-    $structured = new StructuredAgentResponse('invocation-1', ['number' => 72019], '72019', new Usage(), new Meta());
+    $complete = (new AgentResponse('invocation-1', 'Done', new TextUsage(), new Meta()))->withinConversation('conversation-1');
+    $structured = new StructuredAgentResponse('invocation-1', ['number' => 72019], '72019', new TextUsage(), new Meta());
 
     expect($complete->hasPendingApprovals())->toBeFalse()
         ->and($complete->conversationId)->toBe('conversation-1')

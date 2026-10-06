@@ -5,7 +5,7 @@ use Aws\BedrockRuntime\BedrockRuntimeClient;
 use Aws\MockHandler;
 use Aws\Result;
 use Aws\Sts\StsClient;
-use Cake\Event\EventManagerInterface;
+use Cake\Event\EventManager;
 use Crustum\Ai\Gateway\Bedrock\Trait\CreatesBedrockClientTrait;
 use Crustum\Ai\Providers\BedrockProvider;
 use Crustum\Ai\Providers\Provider;
@@ -88,7 +88,7 @@ test('configured headers are added before request signing', function (): void {
         'secret_access_key' => 'test-secret',
         'region' => 'us-east-1',
         'headers' => ['X-Session-Affinity' => 'abc-123'],
-    ], Mockery::mock(EventManagerInterface::class));
+    ], new EventManager());
 
     $client = bedrockClientTrait()->create($provider);
     $handler = new MockHandler([new Result()]);

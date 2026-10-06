@@ -7,6 +7,8 @@ use Crustum\Ai\Prompts\AgentPrompt;
 
 /**
  * Dispatched before an agent prompt is sent to the provider.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Prompts\AgentPrompt>
  */
 class PromptingAgent extends AiEvent
 {
@@ -23,6 +25,6 @@ class PromptingAgent extends AiEvent
         parent::__construct([
             'invocationId' => $invocationId,
             'prompt' => $prompt,
-        ]);
+        ], $prompt);
     }
 }

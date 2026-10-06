@@ -9,6 +9,8 @@ use Throwable;
 
 /**
  * Dispatched after a generation step ends without producing a response.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Contracts\Agent>
  */
 class StepFailed extends AiEvent
 {
@@ -43,6 +45,6 @@ class StepFailed extends AiEvent
             'isFinalStep' => $isFinalStep,
             'exception' => $exception,
             'time' => $time,
-        ]);
+        ], $agent);
     }
 }

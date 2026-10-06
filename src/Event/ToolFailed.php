@@ -9,6 +9,8 @@ use Throwable;
 
 /**
  * Dispatched after a tool's handler throws.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Contracts\Agent>
  */
 class ToolFailed extends AiEvent
 {
@@ -40,6 +42,6 @@ class ToolFailed extends AiEvent
             'arguments' => $arguments,
             'exception' => $exception,
             'time' => $time,
-        ]);
+        ], $agent);
     }
 }

@@ -10,8 +10,8 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\Trait\DecodesStructuredOutputTrait;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
 use Crustum\Ai\Utility\Value;
 
 /**
@@ -75,6 +75,7 @@ trait ParsesTextResponsesTrait
             usage: $this->extractUsage($data),
             meta: new Meta($provider->name(), $model),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
+            reasoning: (string)($message['thinking'] ?? ''),
         );
     }
 
@@ -97,13 +98,14 @@ trait ParsesTextResponsesTrait
      * Extract usage data from the Ollama response.
      *
      * @param array<string, mixed> $data Response data
-     * @return \Crustum\Ai\Responses\Data\Usage
+     * @return \Crustum\Ai\Responses\Data\TextUsage
      */
-    protected function extractUsage(array $data): Usage
+    protected function extractUsage(array $data): TextUsage
     {
-        return new Usage(
-            $data['prompt_eval_count'] ?? 0,
-            $data['eval_count'] ?? 0,
+        return new TextUsage(
+            inputTokens: $data['prompt_eval_count'] ?? 0,
+            outputTokens: $data['eval_count'] ?? 0,
+            cacheReadInputTokens: $data['prompt_eval_cached_count'] ?? null,
         );
     }
 

@@ -10,6 +10,7 @@ use Crustum\Ai\AnonymousAgent;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Gateway\Fake\SchemaDataGenerator;
 use Crustum\Ai\Pipeline\Pipeline;
+use Crustum\Ai\Providers\OpenAiCompatibleProvider;
 use Crustum\Ai\StructuredAnonymousAgent;
 use Crustum\Ai\Test\Support\Database\ConversationTable;
 use Crustum\JsonSchema\Types\Type;
@@ -213,5 +214,21 @@ if (!function_exists('retry')) {
         }
 
         throw $lastException;
+    }
+}
+
+if (!function_exists('configureOpenAiCompatible')) {
+    /**
+     * Configure the OpenAI-compatible test provider (test helper).
+     */
+    function configureOpenAiCompatible(): void
+    {
+        Configure::write('Ai.providers.openai-compatible', [
+            'className' => OpenAiCompatibleProvider::class,
+            'driver' => 'openai-compatible',
+            'url' => 'http://localhost:1234/v1',
+            'key' => 'test-key',
+            'models' => ['text' => ['default' => 'local-model']],
+        ]);
     }
 }

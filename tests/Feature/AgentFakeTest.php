@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+use Cake\Core\Configure;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Approvals\Decision;
 use Crustum\Ai\Approvals\Decisions;
@@ -12,18 +13,26 @@ use Crustum\Ai\Prompts\AgentPrompt;
 use Crustum\Ai\Prompts\QueuedAgentPrompt;
 use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\UrlCitation;
 use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Responses\StructuredTextResponse;
 use Crustum\Ai\Responses\TextResponse;
+use Crustum\Ai\Storage\DatabaseConversationStore;
+use Crustum\Ai\Streaming\Event\Citation as CitationEvent;
+use Crustum\Ai\Streaming\Event\ReasoningDelta;
+use Crustum\Ai\Streaming\Event\ReasoningEnd;
+use Crustum\Ai\Streaming\Event\ReasoningStart;
 use Crustum\Ai\Streaming\Event\TextStart;
+use Crustum\Ai\Streaming\Event\ToolApprovalRequest;
 use Crustum\Ai\Streaming\Event\ToolCall as ToolCallEvent;
 use Crustum\Ai\Streaming\Event\ToolResult as ToolResultEvent;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ConversationalAgent;
 use Crustum\Ai\Test\Fixtures\Agents\EmptySchemaStructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\MultiStepToolAgent;
+use Crustum\Ai\Test\Fixtures\Agents\RememberingApprovableAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
 use PHPUnit\Framework\AssertionFailedError;
 
@@ -32,7 +41,7 @@ describe('prompt responses', function (): void {
         AssistantAgent::fake([
             'First response',
             fn(string $prompt): string => 'Second response (' . $prompt . ')',
-            new TextResponse('Third response', new Usage(), new Meta()),
+            new TextResponse('Third response', new TextUsage(), new Meta()),
         ]);
 
         $response = (new AssistantAgent())->prompt('First prompt');
@@ -70,7 +79,7 @@ describe('prompt responses', function (): void {
 
     test('fake responses may expose a raw http response', function (): void {
         AssistantAgent::fake([
-            (new TextResponse('Hello', new Usage(), new Meta()))->withRawResponse(new Response(200, ['X-RateLimit-Remaining-Requests' => '99'], '{}')),
+            (new TextResponse('Hello', new TextUsage(), new Meta()))->withRawResponse(new Response(200, ['X-RateLimit-Remaining-Requests' => '99'], '{}')),
         ]);
 
         $response = (new AssistantAgent())->prompt('Hi');
@@ -102,7 +111,7 @@ describe('prompt responses', function (): void {
             new StructuredTextResponse(
                 ['symbol' => 'Pb'],
                 json_encode(['symbol' => 'Pb']),
-                new Usage(),
+                new TextUsage(),
                 new Meta(),
             ),
         ]);
@@ -135,7 +144,7 @@ describe('prompt responses', function (): void {
 
     test('structured agents with empty schemas fall back to a text response', function (): void {
         EmptySchemaStructuredAgent::fake([
-            new TextResponse('Hello', new Usage(), new Meta()),
+            new TextResponse('Hello', new TextUsage(), new Meta()),
         ]);
 
         $response = (new EmptySchemaStructuredAgent())->prompt('Anything');
@@ -151,7 +160,7 @@ describe('stream responses', function (): void {
         AssistantAgent::fake([
             'First response',
             fn(string $prompt): string => 'Second response (' . $prompt . ')',
-            new TextResponse('Third response', new Usage(), new Meta()),
+            new TextResponse('Third response', new TextUsage(), new Meta()),
         ]);
 
         $response = (new AssistantAgent())->stream('First prompt');
@@ -168,6 +177,54 @@ describe('stream responses', function (): void {
         $response->each(fn(): true => true);
         expect($response->text)->toEqual('Third response')
             ->and($response->events)->toHaveCount(6);
+    });
+
+    test('faked agents can stream the reasoning that preceded an answer', function (): void {
+        AssistantAgent::fake([
+            AgentResponse::fakeWithReasoning('They want the temperature.', 'It is 12°C.'),
+        ]);
+
+        $response = (new AssistantAgent())->stream('How cold is it?');
+        $response->each(fn(): true => true);
+
+        expect($response->reasoning)->toBe('They want the temperature.')
+            ->and($response->text)->toBe('It is 12°C.')
+            ->and($response->events->filter(fn($event): bool => $event instanceof ReasoningStart)->count())->toBe(1)
+            ->and($response->events->filter(fn($event): bool => $event instanceof ReasoningEnd)->count())->toBe(1);
+    });
+
+    test('a faked stream reports no reasoning when the model did not reason', function (): void {
+        AssistantAgent::fake(['It is 12°C.']);
+
+        $response = (new AssistantAgent())->stream('How cold is it?');
+        $response->each(fn(): true => true);
+
+        expect($response->reasoning)->toBe('')
+            ->and($response->events->filter(fn($event): bool => $event instanceof ReasoningDelta)->isEmpty())->toBeTrue();
+    });
+
+    test('faked agents can stream the sources an answer cited', function (): void {
+        AssistantAgent::fake([
+            new TextResponse('Crustum MCP ships an MCP server.', new TextUsage(), new Meta('anthropic', 'test-model', [
+                new UrlCitation('https://modelcontextprotocol.io', 'MCP Documentation'),
+            ])),
+        ]);
+
+        $response = (new AssistantAgent())->stream('What does Crustum MCP do?');
+        $response->each(fn(): true => true);
+
+        expect($response->events->filter(fn($event): bool => $event instanceof CitationEvent)->count())->toBe(1)
+            ->and(array_map(fn($citation): string => $citation->url, $response->citations->toList()))->toBe(['https://modelcontextprotocol.io']);
+    });
+
+    test('a faked stream reports no sources when the answer cited nothing', function (): void {
+        AssistantAgent::fake(['It is 12°C.']);
+
+        $response = (new AssistantAgent())->stream('How cold is it?');
+        $response->each(fn(): true => true);
+
+        expect($response->events->filter(fn($event): bool => $event instanceof CitationEvent)->isEmpty())->toBeTrue()
+            ->and($response->citations->isEmpty())->toBeTrue();
     });
 
     test('faked stream events share the response invocation id', function (): void {
@@ -222,6 +279,38 @@ describe('stream responses', function (): void {
             ->and($toolCall->toolCall->name)->toBe('FixedNumberGenerator')
             ->and($searchIndex($events, fn($event): bool => $event instanceof ToolCallEvent))
             ->toBeLessThan($searchIndex($events, fn($event): bool => $event instanceof ToolResultEvent));
+    });
+
+    test('faked paused approval responses emit a tool call event before the approval request', function (): void {
+        ConversationalAgent::fake([
+            AgentResponse::fakeWithPendingApprovals([
+                new PendingApproval('call-1', 'DeleteFile', ['path' => 'config/app.php'], 'Deletes a file'),
+            ]),
+        ]);
+
+        $response = (new ConversationalAgent())->stream('Delete config/app.php');
+        $response->each(fn(): true => true);
+
+        $events = collect($response->events);
+
+        $toolCall = $events->filter(fn($event): bool => $event instanceof ToolCallEvent)->first();
+
+        $searchIndex = function (iterable $items, callable $callback): int|false {
+            $index = 0;
+            foreach ($items as $item) {
+                if ($callback($item)) {
+                    return $index;
+                }
+
+                $index++;
+            }
+
+            return false;
+        };
+
+        expect($toolCall?->toolCall->id)->toBe('call-1')
+            ->and($searchIndex($events, fn($event): bool => $event instanceof ToolCallEvent))
+            ->toBeLessThan($searchIndex($events, fn($event): bool => $event instanceof ToolApprovalRequest));
     });
 });
 
@@ -392,6 +481,18 @@ describe('timeout handling', function (): void {
         (new ConversationalAgent())->prompt(Decisions::from(['call-1' => true]));
 
         ConversationalAgent::assertPrompted(fn(AgentPrompt $prompt): bool => $prompt->approvalDecisions?->get('call-1')?->isApproved() === true);
+    });
+
+    test('faked paused approval responses persist the pending tool call', function (): void {
+        Configure::write('Ai.conversations.generate_title', false);
+
+        $approval = new PendingApproval('call-1', 'ApprovableNumberGenerator', [], 'Needs approval');
+
+        RememberingApprovableAgent::fake([AgentResponse::fakeWithPendingApprovals([$approval])]);
+
+        $response = (new RememberingApprovableAgent())->forUser((object)['id' => '00000000-0000-0000-0000-000000000001'])->prompt('Generate a number');
+
+        expect((new DatabaseConversationStore())->pendingApprovalsFor($response->conversationId))->toEqual([$approval]);
     });
 
     test('revising a resume prompt is a no-op since it carries no prompt text', function (): void {

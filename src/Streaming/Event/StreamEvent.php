@@ -13,8 +13,8 @@ use Stringable;
  * Base class for streaming events.
  *
  * Provides broadcasting capabilities and serialization for real-time
- * streaming of AI responses. Supports both CakePHP Broadcasting and
- * Vercel AI SDK protocols.
+ * streaming of AI responses. Supports CakePHP Broadcasting and
+ * stream protocols (Vercel data stream, Agent User Interaction).
  */
 abstract class StreamEvent implements Stringable
 {
@@ -86,16 +86,6 @@ abstract class StreamEvent implements Stringable
         $this->invocationId = $id;
 
         return $this;
-    }
-
-    /**
-     * Get the array representation of the event that is compatible with the Vercel AI SDK.
-     *
-     * @return array<string, mixed>|null
-     */
-    public function toVercelProtocolArray(): ?array
-    {
-        return null;
     }
 
     /**

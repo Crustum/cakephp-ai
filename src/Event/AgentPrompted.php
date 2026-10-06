@@ -9,6 +9,8 @@ use Crustum\Ai\Responses\StreamedAgentResponse;
 
 /**
  * Dispatched after an agent prompt receives a response.
+ *
+ * @extends \Crustum\Ai\Event\AiEvent<\Crustum\Ai\Prompts\AgentPrompt>
  */
 class AgentPrompted extends AiEvent
 {
@@ -28,6 +30,6 @@ class AgentPrompted extends AiEvent
             'invocationId' => $invocationId,
             'prompt' => $prompt,
             'response' => $response,
-        ]);
+        ], $prompt);
     }
 }

@@ -241,7 +241,7 @@ test('it prefers structured content from successful mcp calls', function (): voi
         ['type' => 'text', 'text' => 'ignored'],
     ], false, [
         'id' => 1,
-        'name' => 'Taylor',
+        'name' => 'Larry',
     ]);
 
     $result = $tool->handle(new Request(['id' => 1]));
@@ -249,8 +249,22 @@ test('it prefers structured content from successful mcp calls', function (): voi
     expect($result)->toBeJson()
         ->and(json_decode($result, true))->toMatchArray([
             'id' => 1,
-            'name' => 'Taylor',
+            'name' => 'Larry',
         ]);
+});
+
+test('it does not escape slashes in structured content json', function (): void {
+    $client = new FakeMcpClient();
+    $tool = new McpTool(mcpTool($client, name: 'lookup'));
+
+    $client->results['lookup'] = new FakeMcpToolResult([
+        ['type' => 'text', 'text' => 'ignored'],
+    ], false, [
+        'url' => 'https://example.com/report',
+    ]);
+
+    expect($tool->handle(new Request(['id' => 1])))
+        ->toBe('{"url":"https://example.com/report"}');
 });
 
 test('it surfaces application level mcp errors as tool output', function (): void {

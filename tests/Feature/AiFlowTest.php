@@ -163,8 +163,8 @@ test('remembering agents keep the same conversation id across prompts', function
     $first = $agent->prompt('Hello');
     $second = $agent->continue((string)$first->conversationId, $user)->prompt('Again');
 
-    expect($first->conversationId)->toBe('conversation-123')
-        ->and($second->conversationId)->toBe('conversation-123');
+    expect($first->conversationId)->not->toBeNull()
+        ->and($second->conversationId)->toBe($first->conversationId);
 
     $this->assertRememberedAcrossPrompts();
     $this->assertAgentPrompted(

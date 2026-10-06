@@ -7,8 +7,10 @@ use Cake\Utility\Text;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Data\UrlCitation;
+use Crustum\Ai\Streaming\Event\Citation as CitationEvent;
 use Crustum\Ai\Streaming\Event\Error;
 use Crustum\Ai\Streaming\Event\ProviderToolEvent;
 use Crustum\Ai\Streaming\Event\ReasoningDelta;
@@ -109,6 +111,26 @@ trait HandlesTextGenerationTrait
                 continue;
             }
 
+            if ($type === 'response.output_text.annotation.added') {
+                $annotation = $data['annotation'] ?? [];
+
+                if (($annotation['type'] ?? '') === 'url_citation') {
+                    yield (new CitationEvent(
+                        $this->generateEventId(),
+                        $messageId,
+                        new UrlCitation(
+                            $annotation['url'] ?? '',
+                            $annotation['title'] ?? null,
+                            isset($annotation['start_index']) ? (int)$annotation['start_index'] : null,
+                            isset($annotation['end_index']) ? (int)$annotation['end_index'] : null,
+                        ),
+                        time(),
+                    ))->withInvocationId($invocationId);
+                }
+
+                continue;
+            }
+
             if ($type === 'response.output_text.done' && $textStartEmitted) {
                 yield (new TextEnd(
                     $this->generateEventId(),
@@ -122,7 +144,7 @@ trait HandlesTextGenerationTrait
                 continue;
             }
 
-            if ($type === 'response.reasoning_summary_text.delta') {
+            if (in_array($type, ['response.reasoning_summary_text.delta', 'response.reasoning_text.delta'], true)) {
                 $delta = (string)($data['delta'] ?? '');
 
                 if ($delta !== '') {
@@ -185,22 +207,18 @@ trait HandlesTextGenerationTrait
                 }
             }
 
-            if (str_starts_with((string)$type, 'response.') && str_contains((string)$type, '_call.')) {
-                $parts = explode('.', (string)$type, 3);
+            if (preg_match('/^response\.([a-z_]+_call)(_code)?\.(.+)$/', (string)$type, $matches) === 1) {
+                yield (new ProviderToolEvent(
+                    $this->generateEventId(),
+                    $data['item_id'] ?? '',
+                    $matches[1],
+                    $data,
+                    $matches[2] === '' ? $matches[3] : 'code_' . $matches[3],
+                    time(),
+                    provider: $provider->name(),
+                ))->withInvocationId($invocationId);
 
-                if (count($parts) === 3 && str_ends_with($parts[1], '_call')) {
-                    yield (new ProviderToolEvent(
-                        $this->generateEventId(),
-                        $data['item_id'] ?? '',
-                        $parts[1],
-                        $data,
-                        $parts[2],
-                        time(),
-                        provider: $provider->name(),
-                    ))->withInvocationId($invocationId);
-
-                    continue;
-                }
+                continue;
             }
 
             if (($data['item']['type'] ?? '') === 'function_call' && $type === 'response.output_item.added') {
@@ -291,12 +309,11 @@ trait HandlesTextGenerationTrait
             text: $currentText,
             toolCalls: $toolCalls,
             finishReason: $this->extractFinishReason($responseData),
-            usage: $usage ?? new Usage(0, 0),
+            usage: $usage ?? new TextUsage(0, 0),
             meta: new Meta($provider->name(), $responseData['model'] ?? $model),
             continuationToken: $responseId,
-            providerContentBlocks: $this->isStateless($provider)
-                ? $this->extractReplayBlocks($responseData['output'] ?? [])
-                : [],
+            replayBlocks: $this->extractReplayBlocks($responseData['output'] ?? []),
+            providerToolCalls: $this->extractProviderToolCalls($responseData['output'] ?? []),
         );
     }
 

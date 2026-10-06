@@ -5,6 +5,7 @@ namespace Crustum\Ai\Contracts;
 
 use Crustum\Ai\Approvals\Decisions;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Messages\UserMessage;
 use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\QueuedAgentResponse;
 use Crustum\Ai\Responses\StreamableAgentResponse;
@@ -33,7 +34,7 @@ interface Agent
      *
      * Executes the agent synchronously with the provided prompt and returns a complete response.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
      * @param array $attachments Optional attachments (images, files, etc.).
      * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The AI provider to use.
      * @param string|null $model The specific model to use.
@@ -41,7 +42,7 @@ interface Agent
      * @return \Crustum\Ai\Responses\AgentResponse The agent's response.
      */
     public function prompt(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
         Lab|array|string|null $provider = null,
         ?string $model = null,
@@ -54,7 +55,7 @@ interface Agent
      * Executes the agent and returns a streaming response that can be consumed incrementally
      * as tokens are generated.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
      * @param array $attachments Optional attachments (images, files, etc.).
      * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The AI provider to use.
      * @param string|null $model The specific model to use.
@@ -62,7 +63,7 @@ interface Agent
      * @return \Crustum\Ai\Responses\StreamableAgentResponse The streamable response.
      */
     public function stream(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
         Lab|array|string|null $provider = null,
         ?string $model = null,
@@ -75,14 +76,14 @@ interface Agent
      * Queues the agent invocation for asynchronous processing, allowing the request
      * to return immediately without waiting for the AI response.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
      * @param array $attachments Optional attachments (images, files, etc.).
      * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The AI provider to use.
      * @param string|null $model The specific model to use.
      * @return \Crustum\Ai\Responses\QueuedAgentResponse The queued response handle.
      */
     public function queue(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
         Lab|array|string|null $provider = null,
         ?string $model = null,
@@ -94,7 +95,7 @@ interface Agent
      * Executes the agent and broadcasts streaming events to the specified channels,
      * optionally processing in the background.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
      * @param mixed $channels The channel(s) to broadcast to.
      * @param array $attachments Optional attachments (images, files, etc.).
      * @param bool $now Whether to broadcast immediately (true) or queue it (false).
@@ -103,7 +104,7 @@ interface Agent
      * @return \Crustum\Ai\Responses\StreamableAgentResponse The streamable response.
      */
     public function broadcast(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         mixed $channels,
         array $attachments = [],
         bool $now = false,
@@ -117,7 +118,7 @@ interface Agent
      * Executes the agent and immediately broadcasts streaming events to the specified channels
      * without queuing.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
      * @param mixed $channels The channel(s) to broadcast to.
      * @param array $attachments Optional attachments (images, files, etc.).
      * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The AI provider to use.
@@ -125,7 +126,7 @@ interface Agent
      * @return \Crustum\Ai\Responses\StreamableAgentResponse The streamable response.
      */
     public function broadcastNow(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         mixed $channels,
         array $attachments = [],
         Lab|array|string|null $provider = null,
@@ -138,7 +139,7 @@ interface Agent
      * Queues the agent invocation and configures it to broadcast streaming events
      * to the specified channels when processed.
      *
-     * @param \Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
+     * @param \Crustum\Ai\Contracts\AgentInput|\Crustum\Ai\Messages\UserMessage|\Crustum\Ai\Approvals\Decisions|string $prompt The user's prompt or tool approval decisions.
      * @param mixed $channels The channel(s) to broadcast to.
      * @param array $attachments Optional attachments (images, files, etc.).
      * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The AI provider to use.
@@ -146,7 +147,7 @@ interface Agent
      * @return \Crustum\Ai\Responses\QueuedAgentResponse The queued response handle.
      */
     public function broadcastOnQueue(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         mixed $channels,
         array $attachments = [],
         Lab|array|string|null $provider = null,

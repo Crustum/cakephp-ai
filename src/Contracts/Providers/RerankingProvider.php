@@ -20,6 +20,8 @@ interface RerankingProvider extends Provider
      * @param string $query Query to rank documents against
      * @param int|null $limit Maximum number of results to return
      * @param string|null $model Model to use for reranking
+     * @param int $timeout Timeout in seconds
+     * @param array<string, mixed> $providerOptions Provider-specific options
      * @return \Crustum\Ai\Responses\RerankingResponse
      */
     public function rerank(
@@ -27,6 +29,8 @@ interface RerankingProvider extends Provider
         string $query,
         ?int $limit = null,
         ?string $model = null,
+        int $timeout = 30,
+        array $providerOptions = [],
     ): RerankingResponse;
 
     /**

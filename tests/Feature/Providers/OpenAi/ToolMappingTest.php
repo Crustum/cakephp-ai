@@ -4,6 +4,7 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Cake\Utility\Hash;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
 use Crustum\Ai\Test\Fixtures\Tools\NamedTool;
@@ -273,5 +274,39 @@ test('web search tool omits user_location when no location set', function (): vo
         $tool = collect(Hash::get($body, 'tools'))->filter(fn($item): bool => is_array($item) && array_key_exists('type', $item) && $item['type'] === 'web_search')->first();
 
         return ! array_key_exists('user_location', $tool);
+    });
+});
+
+test('code execution tool sends type code_interpreter with auto container', function (): void {
+    aiHttpFake([
+        '*' => fakeOpenAiResponse('result'),
+    ]);
+
+    agent(tools: [new CodeExecution()])->prompt('Run some code', provider: 'openai');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $tool = collect(Hash::get($body, 'tools'))->filter(fn($item): bool => is_array($item) && ($item['type'] ?? null) === 'code_interpreter')->first();
+
+        return Hash::get($tool, 'container') === ['type' => 'auto'];
+    });
+});
+
+test('code execution tool provider options may override the container', function (): void {
+    aiHttpFake([
+        '*' => fakeOpenAiResponse('result'),
+    ]);
+
+    agent(tools: [
+        (new CodeExecution())->withProviderOptions([
+            'container' => ['type' => 'auto', 'file_ids' => ['file_123']],
+        ]),
+    ])->prompt('Run some code', provider: 'openai');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+        $tool = collect(Hash::get($body, 'tools'))->filter(fn($item): bool => is_array($item) && ($item['type'] ?? null) === 'code_interpreter')->first();
+
+        return Hash::get($tool, 'container.file_ids') === ['file_123'];
     });
 });

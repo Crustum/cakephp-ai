@@ -1,25 +1,38 @@
 <?php
 declare(strict_types=1);
 
+use Cake\Event\EventManager;
 use Crustum\Ai\Approvals\ApprovalMismatchException;
 use Crustum\Ai\Approvals\Decision;
 use Crustum\Ai\Attributes\RepairToolCalls;
 use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\CanActAsTool;
+use Crustum\Ai\Contracts\Providers\SupportsToolSearch;
+use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
+use Crustum\Ai\Event\InvokingTool;
+use Crustum\Ai\Event\ToolInvoked;
 use Crustum\Ai\Exception\NoSuchToolException;
 use Crustum\Ai\Exception\StreamErrorException;
+use Crustum\Ai\Gateway\ParentInvocation;
+use Crustum\Ai\Gateway\RunContext;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\TextGenerationLoop;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Messages\Message;
 use Crustum\Ai\Messages\ToolResultMessage;
+use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\ToolSearch;
+use Crustum\Ai\Providers\Tools\WebFetch;
+use Crustum\Ai\Providers\Tools\WebSearch;
+use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\Data\FinishReason;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\ToolResult as ToolResultData;
-use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\StreamableAgentResponse;
 use Crustum\Ai\Responses\TextResponse;
 use Crustum\Ai\Streaming\Event\Error;
 use Crustum\Ai\Streaming\Event\StreamEnd;
@@ -30,7 +43,9 @@ use Crustum\Ai\Streaming\Event\ToolResult as ToolResultEvent;
 use Crustum\Ai\Test\Fixtures\Gateway\TextGenerationLoopFakeGateway;
 use Crustum\Ai\Test\Fixtures\Tools\TextGenerationLoopApprovableTool;
 use Crustum\Ai\Test\Fixtures\Tools\TextGenerationLoopCountingTool;
+use Crustum\Ai\Tools\AgentTool;
 use Crustum\Ai\Trait\PromptableTrait;
+use JMac\Testing\Double;
 
 test('it does not execute tool calls on the final generation step', function (): void {
     $tool = new TextGenerationLoopCountingTool();
@@ -39,7 +54,7 @@ test('it does not execute tool calls on the final generation step', function ():
             text: '',
             toolCalls: [new ToolCall('call-1', 'TextGenerationLoopCountingTool', [], 'call-1')],
             finishReason: FinishReason::ToolCalls,
-            usage: new Usage(),
+            usage: new TextUsage(),
             meta: new Meta('fake', 'model'),
             continuationToken: 'response-1',
         ),
@@ -61,6 +76,8 @@ test('it does not execute tool calls on the final generation step', function ():
         ->and($response->toolCalls)->toHaveCount(1)
         ->and($response->toolResults)->toHaveCount(1)
         ->and($response->toolResults->first()->result)->toBe('The agent reached its maximum number of steps without running this tool call.')
+        ->and($response->toolResults->first()->successful())->toBeFalse()
+        ->and($response->toolResults->first()->error())->toBe('The agent reached its maximum number of steps without running this tool call.')
         ->and($response->steps)->toHaveCount(1)
         ->and($response->steps->first()->toolResults)->toHaveCount(1);
 });
@@ -71,11 +88,11 @@ test('it holds stream end until the streamed tool loop is complete', function ()
     $gateway = new TextGenerationLoopFakeGateway(streams: [
         textGenerationLoopStreamStep(
             events: [new ToolCallEvent('tool-call-event', $firstToolCall, time())],
-            returns: new StepResponse(text: '', toolCalls: [$firstToolCall], finishReason: FinishReason::ToolCalls, usage: new Usage(10, 1), meta: new Meta('fake', 'model'), continuationToken: 'response-1'),
+            returns: new StepResponse(text: '', toolCalls: [$firstToolCall], finishReason: FinishReason::ToolCalls, usage: new TextUsage(10, 1), meta: new Meta('fake', 'model'), continuationToken: 'response-1'),
         ),
         textGenerationLoopStreamStep(
             events: [new TextDelta('text-delta', 'message-1', 'Done', time())],
-            returns: new StepResponse(text: 'Done', toolCalls: [], finishReason: FinishReason::Stop, usage: new Usage(5, 2), meta: new Meta('fake', 'model'), continuationToken: 'response-2'),
+            returns: new StepResponse(text: 'Done', toolCalls: [], finishReason: FinishReason::Stop, usage: new TextUsage(5, 2), meta: new Meta('fake', 'model'), continuationToken: 'response-2'),
         ),
     ]);
 
@@ -97,8 +114,8 @@ test('it holds stream end until the streamed tool loop is complete', function ()
         ->and($streamEnds)->toHaveCount(1)
         ->and(collect($events)->filter(fn($item): bool => $item instanceof ToolResultEvent))->toHaveCount(1)
         ->and($streamEnds->first()->reason)->toBe(FinishReason::Stop->value)
-        ->and($streamEnds->first()->usage->promptTokens)->toBe(15)
-        ->and($streamEnds->first()->usage->completionTokens)->toBe(3);
+        ->and($streamEnds->first()->usage->inputTokens)->toBe(15)
+        ->and($streamEnds->first()->usage->outputTokens)->toBe(3);
 });
 
 test('it does not execute streamed tool calls on the final step', function (): void {
@@ -107,7 +124,7 @@ test('it does not execute streamed tool calls on the final step', function (): v
     $gateway = new TextGenerationLoopFakeGateway(streams: [
         textGenerationLoopStreamStep(
             events: [new ToolCallEvent('tool-call-event', $toolCall, time())],
-            returns: new StepResponse(text: '', toolCalls: [$toolCall], finishReason: FinishReason::ToolCalls, usage: new Usage(10, 1), meta: new Meta('fake', 'model'), continuationToken: 'response-1'),
+            returns: new StepResponse(text: '', toolCalls: [$toolCall], finishReason: FinishReason::ToolCalls, usage: new TextUsage(10, 1), meta: new Meta('fake', 'model'), continuationToken: 'response-1'),
         ),
     ]);
 
@@ -125,6 +142,8 @@ test('it does not execute streamed tool calls on the final step', function (): v
     expect($tool->calls)->toBe(0)
         ->and($gateway->streamCalls)->toBe(1)
         ->and(collect($events)->filter(fn($item): bool => $item instanceof ToolResultEvent))->toHaveCount(1)
+        ->and(collect($events)->filter(fn($item): bool => $item instanceof ToolResultEvent)->first()->successful)->toBeFalse()
+        ->and(collect($events)->filter(fn($item): bool => $item instanceof ToolResultEvent)->first()->error)->toBe('The agent reached its maximum number of steps without running this tool call.')
         ->and(collect($events)->filter(fn($item): bool => $item instanceof StreamEnd))->toHaveCount(1);
 });
 
@@ -134,7 +153,7 @@ test('it clamps non-positive maxSteps to at least one turn', function (int $maxS
             text: 'hi',
             toolCalls: [],
             finishReason: FinishReason::Stop,
-            usage: new Usage(1, 1),
+            usage: new TextUsage(1, 1),
             meta: new Meta('fake', 'model'),
         ),
     ]);
@@ -162,11 +181,11 @@ test('it accumulates streamed usage across multi-step turns', function (): void 
     $gateway = new TextGenerationLoopFakeGateway(streams: [
         textGenerationLoopStreamStep(
             events: [new ToolCallEvent('tool-call', $toolCall, time())],
-            returns: new StepResponse(text: '', toolCalls: [$toolCall], finishReason: FinishReason::ToolCalls, usage: new Usage(10, 1), meta: new Meta('fake', 'model')),
+            returns: new StepResponse(text: '', toolCalls: [$toolCall], finishReason: FinishReason::ToolCalls, usage: new TextUsage(10, 1), meta: new Meta('fake', 'model')),
         ),
         textGenerationLoopStreamStep(
             events: [new TextDelta('delta', 'msg-1', 'done', time())],
-            returns: new StepResponse(text: 'done', toolCalls: [], finishReason: FinishReason::Stop, usage: new Usage(5, 2), meta: new Meta('fake', 'model')),
+            returns: new StepResponse(text: 'done', toolCalls: [], finishReason: FinishReason::Stop, usage: new TextUsage(5, 2), meta: new Meta('fake', 'model')),
         ),
     ]);
 
@@ -184,8 +203,8 @@ test('it accumulates streamed usage across multi-step turns', function (): void 
     $streamEnd = collect($events)->filter(fn($item): bool => $item instanceof StreamEnd)->first();
 
     expect($streamEnd)->toBeInstanceOf(StreamEnd::class)
-        ->and($streamEnd->usage->promptTokens)->toBe(15)
-        ->and($streamEnd->usage->completionTokens)->toBe(3)
+        ->and($streamEnd->usage->inputTokens)->toBe(15)
+        ->and($streamEnd->usage->outputTokens)->toBe(3)
         ->and($streamEnd->reason)->toBe(FinishReason::Stop->value);
 });
 
@@ -195,7 +214,7 @@ test('it throws when generation tool calls do not match local tools', function (
             text: '',
             toolCalls: [new ToolCall('call-1', 'MissingTool', [], 'call-1')],
             finishReason: FinishReason::ToolCalls,
-            usage: new Usage(10, 1),
+            usage: new TextUsage(10, 1),
             meta: new Meta('fake', 'model'),
             continuationToken: 'response-1',
         ),
@@ -215,7 +234,7 @@ test('it throws when streaming tool calls do not match local tools', function ()
     $gateway = new TextGenerationLoopFakeGateway(streams: [
         textGenerationLoopStreamStep(
             events: [new ToolCallEvent('tool-call-event', $toolCall, time())],
-            returns: new StepResponse(text: '', toolCalls: [$toolCall], finishReason: FinishReason::ToolCalls, usage: new Usage(10, 1), meta: new Meta('fake', 'model'), continuationToken: 'response-1'),
+            returns: new StepResponse(text: '', toolCalls: [$toolCall], finishReason: FinishReason::ToolCalls, usage: new TextUsage(10, 1), meta: new Meta('fake', 'model'), continuationToken: 'response-1'),
         ),
     ]);
 
@@ -279,8 +298,8 @@ test('it yields the error and then throws it when a turn errors without a stream
 
 function textGenerationLoopProvider(): TextProvider
 {
-    $provider = Mockery::mock(TextProvider::class);
-    $provider->shouldReceive('name')->andReturn('fake');
+    $provider = Double::for(TextProvider::class);
+    $provider->allows('name')->returns('fake');
 
     return $provider;
 }
@@ -291,7 +310,7 @@ test('it pauses gated tool calls without executing them while running ungated ca
     $gatedCall = new ToolCall('call-gated', 'TextGenerationLoopApprovableTool', ['value' => 'danger'], 'call-gated');
     $ungatedCall = new ToolCall('call-ungated', 'TextGenerationLoopCountingTool', [], 'call-ungated');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('', [$gatedCall, $ungatedCall], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('', [$gatedCall, $ungatedCall], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -323,7 +342,7 @@ test('it resumes a mixed batch of approved, edited, and rejected calls', functio
     $editedCall = new ToolCall('call-2', 'TextGenerationLoopApprovableTool', ['value' => 'original'], 'call-2');
     $rejectedCall = new ToolCall('call-3', 'TextGenerationLoopApprovableTool', ['value' => 'blocked'], 'call-3');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -395,7 +414,7 @@ test('it emits streamed approval requests without executing gated tools', functi
     $gateway = new TextGenerationLoopFakeGateway(streams: [
         textGenerationLoopStreamStep(
             events: [new ToolCallEvent('tool-call-event', $toolCall, time())],
-            returns: new StepResponse('', [$toolCall], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
+            returns: new StepResponse('', [$toolCall], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
         ),
     ]);
 
@@ -425,7 +444,7 @@ test('it resumes a paused step running only the still-pending gated call', funct
     $gatedCall = new ToolCall('call-gated', 'TextGenerationLoopApprovableTool', ['value' => 'approved'], 'call-gated');
     $ungatedCall = new ToolCall('call-ungated', 'TextGenerationLoopCountingTool', [], 'call-ungated');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -479,8 +498,8 @@ test('a gated tool with approval disabled executes without pausing', function ()
     $tool = (new TextGenerationLoopApprovableTool())->withoutApproval();
     $toolCall = new ToolCall('call-1', 'TextGenerationLoopApprovableTool', ['value' => 'safe'], 'call-1');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('', [$toolCall], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('', [$toolCall], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -563,7 +582,7 @@ test('a relaxed gate with no decision fails closed instead of auto-running the t
     $tool = (new TextGenerationLoopApprovableTool())->withoutApproval();
     $toolCall = new ToolCall('call-1', 'TextGenerationLoopApprovableTool', ['value' => 'approved'], 'call-1');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -588,7 +607,7 @@ test('a resumed mixed batch merges its results into the pause turn answering mes
     $gatedCall = new ToolCall('call-gated', 'TextGenerationLoopApprovableTool', ['value' => 'approved'], 'call-gated');
     $ungatedCall = new ToolCall('call-ungated', 'TextGenerationLoopCountingTool', [], 'call-ungated');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -622,7 +641,7 @@ test('a plain generation settles abandoned pauses before calling the model, each
     $firstCall = new ToolCall('call-1', 'TextGenerationLoopApprovableTool', ['value' => 'danger'], 'call-1');
     $secondCall = new ToolCall('call-2', 'TextGenerationLoopApprovableTool', ['value' => 'also danger'], 'call-2');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('Sure, moving on.', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('Sure, moving on.', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -655,14 +674,14 @@ test('a plain generation settles abandoned pauses before calling the model, each
         ->and($response->text)->toBe('Sure, moving on.');
 });
 
-test('a default decision approves every pending call while an explicit decision overrides it', function (): void {
+test('a default decision approves every gated call while an explicit decision overrides it', function (): void {
     $gated = new TextGenerationLoopApprovableTool();
     $ungated = new TextGenerationLoopCountingTool();
     $approvedCall = new ToolCall('call-1', 'TextGenerationLoopApprovableTool', ['value' => 'approved'], 'call-1');
     $rejectedCall = new ToolCall('call-2', 'TextGenerationLoopApprovableTool', ['value' => 'blocked'], 'call-2');
     $ungatedCall = new ToolCall('call-ungated', 'TextGenerationLoopCountingTool', [], 'call-ungated');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -679,10 +698,11 @@ test('a default decision approves every pending call while an explicit decision 
 
     expect($gated->calls)->toBe(1)
         ->and($gated->handledArguments)->toBe([['value' => 'approved']])
-        ->and($ungated->calls)->toBe(1)
+        ->and($ungated->calls)->toBe(0)
         ->and($response->hasPendingApprovals())->toBeFalse()
         ->and($response->toolResults)->toHaveCount(3)
         ->and($response->toolResults->filter(fn($r): bool => $r->id === 'call-2')->first()->result)->toBe('Wrong file')
+        ->and($response->toolResults->filter(fn($r): bool => $r->id === 'call-ungated')->first()->result)->toBe('This tool call was not executed because it was not pending approval.')
         ->and($response->text)->toBe('done');
 });
 
@@ -709,7 +729,7 @@ test('a streamed default rejection marks the tool results as unsuccessful', func
     $gateway = new TextGenerationLoopFakeGateway(streams: [
         textGenerationLoopStreamStep(
             events: [new TextDelta('text-delta', 'message-1', 'Understood.', time())],
-            returns: new StepResponse('Understood.', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+            returns: new StepResponse('Understood.', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
         ),
     ]);
 
@@ -741,7 +761,7 @@ test('an approval resume settles an earlier abandoned pause', function (): void 
     $abandonedCall = new ToolCall('call-old', 'TextGenerationLoopApprovableTool', ['value' => 'abandoned'], 'call-old');
     $pendingCall = new ToolCall('call-new', 'TextGenerationLoopApprovableTool', ['value' => 'approved'], 'call-new');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -775,7 +795,7 @@ test('a gated tool call on the final step pauses instead of being exhausted', fu
     $gatedCall = new ToolCall('call-gated', 'TextGenerationLoopApprovableTool', ['value' => 'danger'], 'call-gated');
     $ungatedCall = new ToolCall('call-ungated', 'TextGenerationLoopCountingTool', [], 'call-ungated');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('', [$gatedCall, $ungatedCall], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('', [$gatedCall, $ungatedCall], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -804,7 +824,7 @@ test('a pre-validated streamed resume executes the approved tool exactly once', 
     $gateway = new TextGenerationLoopFakeGateway(streams: [
         textGenerationLoopStreamStep(
             events: [new TextDelta('text-delta', 'message-1', 'done', time())],
-            returns: new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+            returns: new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
         ),
     ]);
 
@@ -834,7 +854,7 @@ test('a gate that has relaxed since the pause can still be resumed', function ()
     $tool = (new TextGenerationLoopApprovableTool())->withoutApproval();
     $toolCall = new ToolCall('call-1', 'TextGenerationLoopApprovableTool', ['value' => 'approved'], 'call-1');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -857,8 +877,8 @@ test('a gate that has relaxed since the pause can still be resumed', function ()
 test('it repairs missing generation tool calls for agents with the repair attribute', function (): void {
     $tool = new TextGenerationLoopCountingTool();
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
-        new StepResponse('Done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
+        new StepResponse('Done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -881,9 +901,9 @@ test('it budgets an implicit step for a repaired tool call', function (): void {
     $tool = new TextGenerationLoopCountingTool();
     $toolCall = new ToolCall('call-2', 'TextGenerationLoopCountingTool', [], 'call-2');
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
-        new StepResponse('', [$toolCall], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
-        new StepResponse('Done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
+        new StepResponse('', [$toolCall], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
+        new StepResponse('Done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -905,8 +925,8 @@ test('it budgets an implicit step for a repaired tool call', function (): void {
 
 test('it reports no available tools while repairing missing tool calls', function (): void {
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
-        new StepResponse('Done', [], FinishReason::Stop, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
+        new StepResponse('Done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -924,7 +944,7 @@ test('it reports no available tools while repairing missing tool calls', functio
 
 test('it preserves the exhausted result for unknown tools without the repair attribute', function (): void {
     $gateway = new TextGenerationLoopFakeGateway([
-        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new Usage(), new Meta('fake', 'model')),
+        new StepResponse('', [new ToolCall('call-1', 'MissingTool', [], 'call-1')], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
     ]);
 
     $response = (new TextGenerationLoop($gateway))->generate(
@@ -959,41 +979,115 @@ test('it throws when an approved tool is unavailable despite the repair attribut
     ))->toThrow(NoSuchToolException::class);
 });
 
-test('it rejects tool search on a generation for an unsupported provider', function (): void {
-    $gateway = new TextGenerationLoopFakeGateway();
-    $tools = [new TextGenerationLoopCountingTool(), new ToolSearch(tools: [new TextGenerationLoopCountingTool()])];
+test('it sends the deferred tools as regular tools when the provider does not support tool search', function (): void {
+    $gateway = new TextGenerationLoopFakeGateway([
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
+    ]);
+    $regular = new TextGenerationLoopCountingTool();
+    $deferred = new TextGenerationLoopCountingTool();
 
-    expect(fn(): TextResponse => (new TextGenerationLoop($gateway))->generate(
+    (new TextGenerationLoop($gateway))->generate(
         textGenerationLoopProvider(),
         'model',
         null,
         [],
-        $tools,
-    ))->toThrow(LogicException::class, 'does not support tool search');
+        [$regular, new ToolSearch(tools: [$deferred])],
+    );
 
-    expect($gateway->generateCalls)->toBe(0);
+    expect($gateway->tools)->toBe([[$regular, $deferred]]);
 });
 
-test('it rejects tool search on a streamed generation for an unsupported provider', function (): void {
-    $gateway = new TextGenerationLoopFakeGateway();
-    $tools = [new TextGenerationLoopCountingTool(), new ToolSearch(tools: [new TextGenerationLoopCountingTool()])];
+test('it sends the deferred tools as regular tools on a streamed generation when the provider does not support tool search', function (): void {
+    $gateway = new TextGenerationLoopFakeGateway(streams: [
+        textGenerationLoopStreamStep(
+            events: [],
+            returns: new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
+        ),
+    ]);
+    $regular = new TextGenerationLoopCountingTool();
+    $deferred = new TextGenerationLoopCountingTool();
 
-    expect(fn(): array => iterator_to_array((new TextGenerationLoop($gateway))->stream(
+    iterator_to_array((new TextGenerationLoop($gateway))->stream(
         'invocation-1',
         textGenerationLoopProvider(),
         'model',
         null,
         [],
-        $tools,
-    )))->toThrow(LogicException::class, 'does not support tool search');
+        [$regular, new ToolSearch(tools: [$deferred])],
+    ));
 
-    expect($gateway->streamCalls)->toBe(0);
+    expect($gateway->tools)->toBe([[$regular, $deferred]]);
+});
+
+test('it drops provider tools the provider does not support before calling the gateway', function (): void {
+    $gateway = new TextGenerationLoopFakeGateway([
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
+    ]);
+    $regular = new TextGenerationLoopCountingTool();
+    $webSearch = new WebSearch();
+
+    $provider = Double::for(TextProvider::class, SupportsWebSearch::class);
+    $provider->allows('name')->returns('fake');
+
+    (new TextGenerationLoop($gateway))->generate(
+        $provider,
+        'model',
+        null,
+        [],
+        [$regular, new WebFetch(), $webSearch, new CodeExecution()],
+    );
+
+    expect($gateway->tools)->toBe([[$regular, $webSearch]]);
+});
+
+test('it rejects more than one tool search wrapper on a supporting provider', function (): void {
+    $gateway = new TextGenerationLoopFakeGateway();
+    $tools = [
+        new TextGenerationLoopCountingTool(),
+        new ToolSearch(tools: [new TextGenerationLoopCountingTool()]),
+        new ToolSearch(tools: [new TextGenerationLoopCountingTool()]),
+    ];
+
+    expect(fn(): TextResponse => (new TextGenerationLoop($gateway))->generate(
+        textGenerationLoopToolSearchProvider(),
+        'model',
+        null,
+        [],
+        $tools,
+    ))->toThrow(LogicException::class, 'single tool search wrapper');
+
+    expect($gateway->generateCalls)->toBe(0);
+});
+
+test('it allows a single tool search wrapper on a supporting provider', function (): void {
+    $gateway = new TextGenerationLoopFakeGateway([
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
+    ]);
+
+    $response = (new TextGenerationLoop($gateway))->generate(
+        textGenerationLoopToolSearchProvider(),
+        'model',
+        null,
+        [],
+        [new TextGenerationLoopCountingTool(), new ToolSearch(tools: [new TextGenerationLoopCountingTool()])],
+    );
+
+    expect($gateway->generateCalls)->toBe(1)
+        ->and($response->text)->toBe('done');
 });
 
 /** @param  array<int, object>  $events */
 function textGenerationLoopStreamStep(array $events = [], ?StepResponse $returns = null): array
 {
     return [$events, $returns];
+}
+
+function textGenerationLoopToolSearchProvider(): TextProvider
+{
+    $provider = Double::for(TextProvider::class, SupportsToolSearch::class);
+    $provider->allows('name')->returns('fake');
+
+    return $provider;
 }
 
 function textGenerationLoopRepairingAgent(): Agent
@@ -1009,3 +1103,287 @@ function textGenerationLoopRepairingAgent(): Agent
         }
     };
 }
+
+function textGenerationLoopAgentTool(Closure|string $text = 'sub-agent result'): AgentTool
+{
+    $agent = Double::for(Agent::class, CanActAsTool::class);
+    $agent->allows('name')->returns('research_agent');
+    $agent->expects('prompt')->never();
+    $agent->expects('stream')->times(minimum: 1)->resolves(fn(): StreamableAgentResponse => new StreamableAgentResponse(
+        'sub-invocation',
+        $text instanceof Closure ? $text : fn(): Generator => yield from [
+            (new TextDelta('sub-delta', 'sub-message', $text, time()))->withInvocationId('sub-invocation'),
+            (new StreamEnd('sub-end', FinishReason::Stop->value, new TextUsage(3, 4), time()))->withInvocationId('sub-invocation'),
+        ],
+        new Meta('fake', 'sub-model'),
+    ));
+
+    return new AgentTool($agent);
+}
+
+/**
+ * @param array<int, \Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> $tools Tools
+ * @param array<int, \Crustum\Ai\Responses\Data\ToolCall> $toolCalls Tool calls
+ * @return array<int, \Crustum\Ai\Streaming\Event\StreamEvent>
+ */
+function textGenerationLoopSubAgentStream(array $tools, array $toolCalls, int $maxSteps = 2, ?RunContext $context = null): array
+{
+    $steps = [textGenerationLoopStreamStep(
+        events: [],
+        returns: new StepResponse('', $toolCalls, FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
+    )];
+
+    if ($maxSteps > 1) {
+        $steps[] = textGenerationLoopStreamStep(
+            events: [new TextDelta('text-delta', 'message-2', 'done', time())],
+            returns: new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
+        );
+    }
+
+    return iterator_to_array((new TextGenerationLoop(new TextGenerationLoopFakeGateway(streams: $steps)))->stream(
+        'invocation-1',
+        textGenerationLoopProvider(),
+        'model',
+        null,
+        [],
+        $tools,
+        null,
+        new TextGenerationOptions(maxSteps: $maxSteps),
+        null,
+        context: $context,
+    ));
+}
+
+/**
+ * @param array<int, \Crustum\Ai\Streaming\Event\StreamEvent> $events Events
+ * @return array{0: array<int, \Crustum\Ai\Streaming\Event\ToolResult>, 1: array<int, \Crustum\Ai\Streaming\Event\ToolResult>}
+ */
+function textGenerationLoopPartitionToolResults(array $events): array
+{
+    $preliminary = [];
+    $settled = [];
+
+    foreach ($events as $event) {
+        if ($event instanceof ToolResultEvent && $event->preliminary) {
+            $preliminary[] = $event;
+        } elseif ($event instanceof ToolResultEvent) {
+            $settled[] = $event;
+        }
+    }
+
+    return [$preliminary, $settled];
+}
+
+test('a sub-agent reports its output before the tool result it settles on', function (): void {
+    $tool = textGenerationLoopAgentTool();
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    $events = textGenerationLoopSubAgentStream([$tool], [$toolCall]);
+
+    [$preliminary, $settled] = textGenerationLoopPartitionToolResults($events);
+
+    expect($preliminary)->toHaveCount(1)
+        ->and($preliminary[0]->invocationId)->toBe('invocation-1')
+        ->and($preliminary[0]->toolResult->id)->toBe('call-sub-agent')
+        ->and($preliminary[0]->toolResult->name)->toBe('research_agent')
+        ->and($preliminary[0]->toolResult->result)->toBe('sub-agent result')
+        ->and(array_search($preliminary[0], $events, true))->toBeLessThan(array_search($settled[0], $events, true))
+        ->and($settled[0]->toolResult->result)->toBe('sub-agent result');
+});
+
+test('a sub-agent reports its output again once it has written enough of it', function (): void {
+    $tool = textGenerationLoopAgentTool(fn(): Generator => yield from array_map(
+        fn(int $index): TextDelta => new TextDelta("sub-delta-{$index}", 'sub-message', str_repeat('a', 100), time()),
+        range(1, 6),
+    ));
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    $preliminary = [];
+
+    foreach (textGenerationLoopSubAgentStream([$tool], [$toolCall]) as $event) {
+        if ($event instanceof ToolResultEvent && $event->preliminary) {
+            $preliminary[] = $event;
+        }
+    }
+
+    // Six 100 character deltas cross the 240 byte threshold twice, at 300 and at 600.
+    expect(array_map(fn(ToolResultEvent $event): int => strlen((string)$event->toolResult->result), $preliminary))->toBe([300, 600]);
+});
+
+test('preliminary output joins the text of separate sub-agent steps the way the final result does', function (): void {
+    $events = [
+        new TextDelta('sub-delta-1', 'sub-message-1', 'First step.', time()),
+        new TextDelta('sub-delta-2', 'sub-message-2', 'Second step.', time()),
+        new StreamEnd('sub-end', FinishReason::Stop->value, new TextUsage(), time()),
+    ];
+
+    $tool = textGenerationLoopAgentTool(fn(): Generator => yield from $events);
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    [$preliminary, $settled] = textGenerationLoopPartitionToolResults(textGenerationLoopSubAgentStream([$tool], [$toolCall]));
+
+    expect(end($preliminary)->toolResult->result)
+        ->toBe(TextDelta::combine($events))
+        ->toBe($settled[0]->toolResult->result);
+});
+
+test('a sub-agent runs synchronously through the non-streaming loop', function (): void {
+    $agent = Double::for(Agent::class, CanActAsTool::class);
+    $agent->allows('name')->returns('research_agent');
+    $agent->expects('prompt')->returns(new AgentResponse(
+        'sub-invocation',
+        'synchronous result',
+        new TextUsage(3, 4),
+        new Meta('fake', 'sub-model'),
+    ));
+    $agent->expects('stream')->never();
+
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+    $gateway = new TextGenerationLoopFakeGateway([
+        new StepResponse('', [$toolCall], FinishReason::ToolCalls, new TextUsage(), new Meta('fake', 'model')),
+        new StepResponse('done', [], FinishReason::Stop, new TextUsage(), new Meta('fake', 'model')),
+    ]);
+
+    $response = (new TextGenerationLoop($gateway))->generate(
+        textGenerationLoopProvider(),
+        'model',
+        null,
+        [],
+        [new AgentTool($agent)],
+        null,
+        new TextGenerationOptions(maxSteps: 2),
+    );
+
+    expect($response->text)->toBe('done')
+        ->and($response->toolResults->first()->result)->toBe('synchronous result');
+});
+
+test('a sub-agent is not executed on the final streamed step', function (): void {
+    $agent = Double::for(Agent::class, CanActAsTool::class);
+    $agent->allows('name')->returns('research_agent');
+    $agent->expects('prompt')->never();
+    $agent->expects('stream')->never();
+
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    $events = textGenerationLoopSubAgentStream([new AgentTool($agent)], [$toolCall], maxSteps: 1);
+    $toolResults = [];
+
+    foreach ($events as $event) {
+        if ($event instanceof ToolResultEvent) {
+            $toolResults[] = $event;
+        }
+    }
+
+    $preliminary = array_filter($toolResults, fn(ToolResultEvent $event): bool => $event->preliminary);
+
+    expect($preliminary)->toHaveCount(0)
+        ->and($toolResults[0]->toolResult->result)->toContain('maximum number of steps');
+});
+
+test('multiple sub-agent calls report their output under their own tool call ids', function (): void {
+    $tool = textGenerationLoopAgentTool();
+    $firstCall = new ToolCall('call-first', 'research_agent', ['task' => 'First'], 'call-first');
+    $secondCall = new ToolCall('call-second', 'research_agent', ['task' => 'Second'], 'call-second');
+
+    $preliminary = [];
+
+    foreach (textGenerationLoopSubAgentStream([$tool], [$firstCall, $secondCall]) as $event) {
+        if ($event instanceof ToolResultEvent && $event->preliminary) {
+            $preliminary[] = $event;
+        }
+    }
+
+    expect(array_map(fn(ToolResultEvent $event): string => $event->toolResult->id, $preliminary))->toBe(['call-first', 'call-second']);
+});
+
+test('tool invocation events fire around a sub-agent in the streamed loop', function (): void {
+    $tool = textGenerationLoopAgentTool();
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    $invoking = [];
+    $invoked = [];
+
+    $dispatcher = new EventManager();
+    $dispatcher->on('Ai.invokingTool', function (InvokingTool $event) use (&$invoking): void {
+        $invoking[] = $event->tool::class;
+    });
+    $dispatcher->on('Ai.toolInvoked', function (ToolInvoked $event) use (&$invoked): void {
+        $invoked[] = $event->result;
+    });
+
+    $provider = textGenerationLoopProvider();
+
+    textGenerationLoopSubAgentStream([$tool], [$toolCall], context: new RunContext(
+        'invocation-1',
+        Double::for(Agent::class),
+        $provider,
+        'model',
+        $dispatcher,
+    ));
+
+    expect($invoking)->toBe([AgentTool::class])
+        ->and($invoked)->toBe(['sub-agent result']);
+});
+
+test('a sub-agent names the tool call it was delegated from for the whole of its run', function (): void {
+    $parents = [];
+
+    $tool = textGenerationLoopAgentTool(function () use (&$parents): Generator {
+        foreach (range(1, 3) as $index) {
+            $parents[] = ParentInvocation::current();
+
+            yield new TextDelta("sub-delta-{$index}", 'sub-message', 'chunk', time());
+        }
+    });
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    $provider = textGenerationLoopProvider();
+
+    textGenerationLoopSubAgentStream([$tool], [$toolCall], context: new RunContext(
+        'invocation-1',
+        Double::for(Agent::class),
+        $provider,
+        'model',
+        new EventManager(),
+    ));
+
+    $invocations = array_map(fn(array $pair): ?string => $pair[0], $parents);
+    $toolInvocations = array_map(fn(array $pair): ?string => $pair[1], $parents);
+
+    expect($parents)->toHaveCount(3)
+        ->and(array_values(array_unique($invocations)))->toBe(['invocation-1'])
+        ->and(array_values(array_unique($toolInvocations)))->toHaveCount(1);
+});
+
+test('a gated tool pauses the streamed loop while a sub-agent still reports its output', function (): void {
+    $gated = new TextGenerationLoopApprovableTool();
+    $gatedCall = new ToolCall('call-gated', 'TextGenerationLoopApprovableTool', ['value' => 'danger'], 'call-gated');
+    $subAgentCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    $events = textGenerationLoopSubAgentStream(
+        [$gated, textGenerationLoopAgentTool()],
+        [$gatedCall, $subAgentCall],
+    );
+
+    $approvalRequests = [];
+
+    foreach ($events as $event) {
+        if ($event instanceof ToolApprovalRequest) {
+            $approvalRequests[] = $event;
+        }
+    }
+
+    $preliminaryCount = 0;
+
+    foreach ($events as $event) {
+        if ($event instanceof ToolResultEvent && $event->preliminary) {
+            $preliminaryCount++;
+        }
+    }
+
+    expect($gated->calls)->toBe(0)
+        ->and($preliminaryCount)->toBe(1)
+        ->and($approvalRequests)->toHaveCount(1)
+        ->and($approvalRequests[0]->pendingApprovals->first()->id)->toBe('call-gated');
+});
