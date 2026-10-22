@@ -25,12 +25,12 @@
         "guzzlehttp/guzzle": "^7.15",
         "laravel/serializable-closure": "^2.0",
         "league/flysystem": "^3.36",
-        "league/flysystem-local": "^3.36",
+        "league/flysystem-local": "^3.35",
         "league/mime-type-detection": "^1.16",
         "opis/closure": "^4.5",
         "queue-interop/queue-interop": "^0.8.2",
         "symfony/config": "^7.2|^8.0",
-        "symfony/http-foundation": "^6.0",
+        "symfony/http-foundation": "^6.0 || ^7.0 || ^8.0",
         "symfony/yaml": "^7.2|^8.0"
     },
     "require-dev": {
