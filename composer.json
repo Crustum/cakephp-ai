@@ -25,8 +25,9 @@
         "guzzlehttp/guzzle": "^7.15",
         "laravel/serializable-closure": "^2.0",
         "league/flysystem": "^3.35",
-        "league/flysystem-local": "^3.31",
-        "opis/closure": "^4.5"
+        "league/flysystem-local": "^3.35",
+        "opis/closure": "^4.5",
+        "symfony/http-foundation": "^6.0 || ^7.0 || ^8.0"
     },
     "require-dev": {
         "boundwize/structarmed": "^0.15.44",
