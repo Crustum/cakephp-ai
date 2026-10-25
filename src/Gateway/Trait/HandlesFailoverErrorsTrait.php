@@ -31,8 +31,37 @@ trait HandlesFailoverErrorsTrait
      */
     protected function withErrorHandling(string $providerName, Closure $callback): mixed
     {
+        $result = $this->executeCallback($providerName, $callback);
+
+        if ($result instanceof HttpResponseInterface && !$result->isOk()) {
+            $retryAfter = $this->retryAfterSeconds($result);
+
+            if ($retryAfter !== null) {
+                $this->sleepAfter($retryAfter);
+
+                $result = $this->executeCallback($providerName, $callback);
+            }
+
+            if ($result instanceof HttpResponseInterface && !$result->isOk()) {
+                $this->throwForFailoverResponse($providerName, $result);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Execute the callback, mapping connection failures to a failoverable exception.
+     *
+     * @template T
+     * @param string $providerName Provider identifier
+     * @param \Closure(): T $callback Operation to execute
+     * @return T
+     */
+    protected function executeCallback(string $providerName, Closure $callback): mixed
+    {
         try {
-            $result = $callback();
+            return $callback();
         } catch (NetworkException | ConnectException $networkException) {
             throw ProviderConnectionException::forProvider(
                 $providerName,
@@ -40,12 +69,38 @@ trait HandlesFailoverErrorsTrait
                 $networkException,
             );
         }
+    }
 
-        if ($result instanceof HttpResponseInterface && !$result->isOk()) {
-            $this->throwForFailoverResponse($providerName, $result);
+    /**
+     * Get the short Retry-After delay of a rate limited or overloaded response, if it has one.
+     *
+     * @param \Crustum\Ai\Http\Contract\HttpResponseInterface $response HTTP response
+     * @return int|null
+     */
+    protected function retryAfterSeconds(HttpResponseInterface $response): ?int
+    {
+        $status = $response->getStatusCode();
+
+        if ($status !== 429 && !in_array($status, $this->overloadedStatusCodes(), true)) {
+            return null;
         }
 
-        return $result;
+        $retryAfter = $response->getHeaderLine('Retry-After');
+
+        return ctype_digit($retryAfter) && (int)$retryAfter <= 10 ? (int)$retryAfter : null;
+    }
+
+    /**
+     * Sleep for the given number of seconds before retrying the request.
+     *
+     * @param int $seconds Seconds to sleep
+     * @return void
+     */
+    protected function sleepAfter(int $seconds): void
+    {
+        if ($seconds > 0) {
+            sleep($seconds);
+        }
     }
 
     /**

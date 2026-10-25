@@ -4,6 +4,7 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Cake\Event\EventManager;
 use Crustum\Ai\Ai;
+use Crustum\Ai\Contracts\HasMiddleware;
 use Crustum\Ai\Contracts\HasProviderOptions;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Event\AgentFailed;
@@ -18,6 +19,7 @@ use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Messages\Message;
 use Crustum\Ai\Messages\ToolResultMessage;
 use Crustum\Ai\Messages\UserMessage;
+use Crustum\Ai\Middleware\Stop;
 use Crustum\Ai\PendingStep;
 use Crustum\Ai\Providers\Tools\WebSearch;
 use Crustum\Ai\Responses\Data\FinishReason;
@@ -25,6 +27,7 @@ use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\StreamedAgentResponse;
+use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Storage\DatabaseConversationStore;
 use Crustum\Ai\Streaming\Event\StreamEnd;
 use Crustum\Ai\Streaming\Event\StreamStart;
@@ -34,6 +37,7 @@ use Crustum\Ai\Streaming\Event\TextStart;
 use Crustum\Ai\Support\ToolChoice;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\RememberingAssistantAgent;
+use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
 use Crustum\Ai\Test\Fixtures\CapturingStepGateway;
 use Crustum\Ai\Test\Fixtures\FakeConversationStore;
 use Crustum\Ai\Test\Fixtures\Tools\FixedNumberGenerator;
@@ -556,3 +560,120 @@ function shortCircuitingMiddleware(): object
         }
     };
 }
+
+test('a stop middleware ends the run before the next model call', function (): void {
+    AssistantAgent::fake([
+        new ToolCall('call_1', 'FixedNumberGenerator', []),
+        new ToolCall('call_2', 'FixedNumberGenerator', []),
+        'Fake response',
+    ]);
+
+    $response = (new AssistantAgent())
+        ->withTools([new FixedNumberGenerator()])
+        ->withMiddleware([Stop::when(fn(PendingStep $step): bool => $step->number === 1)])
+        ->prompt('Test prompt');
+
+    expect($response->steps)->toHaveCount(1)
+        ->and($response->toolResults)->toHaveCount(1)
+        ->and($response->text)->toBe('');
+});
+
+test('a stop middleware ends a stream with a cancelled finish reason', function (): void {
+    AssistantAgent::fake([
+        new ToolCall('call_1', 'FixedNumberGenerator', []),
+        'Fake response',
+    ]);
+
+    $response = (new AssistantAgent())
+        ->withTools([new FixedNumberGenerator()])
+        ->withMiddleware([Stop::unless(fn(PendingStep $step): bool => $step->isFirstStep())])
+        ->stream('Test prompt');
+
+    $events = iterator_to_array($response, false);
+
+    expect(end($events))->toBeInstanceOf(StreamEnd::class)
+        ->and(end($events)->reason)->toBe(FinishReason::Cancelled->value)
+        ->and(end($events)->steps)->toHaveCount(1)
+        ->and(end($events)->steps->last()->finishReason)->toBe(FinishReason::ToolCalls);
+});
+
+test('a stop middleware on the first step returns an empty response without a step', function (): void {
+    AssistantAgent::fake(['Fake response']);
+
+    $response = (new AssistantAgent())
+        ->withMiddleware([Stop::when(true)])
+        ->prompt('Test prompt');
+
+    expect($response->text)->toBe('')
+        ->and($response->steps)->toBeEmpty();
+});
+
+test('a structured agent stopped before its first step returns an empty structured response', function (): void {
+    $agent = new class extends StructuredAgent implements HasMiddleware
+    {
+        public function middleware(): array
+        {
+            return [Stop::when(true)];
+        }
+    };
+
+    $agent::fake();
+
+    $response = $agent->prompt('Test prompt');
+
+    expect($response)->toBeInstanceOf(StructuredAgentResponse::class)
+        ->and($response->structured)->toBe([])
+        ->and($response->text)->toBe('');
+});
+
+test('a stopped turn is remembered up to its last tool result', function (): void {
+    Configure::write('Ai.conversations.generate_title', false);
+    Configure::write('Ai.conversations.connection', 'test');
+    Configure::write('Ai.conversations.tables.conversations', 'agent_conversations');
+    Configure::write('Ai.conversations.tables.messages', 'agent_conversation_messages');
+
+    Ai::manager()->setConversationStore(new DatabaseConversationStore());
+
+    RememberingAssistantAgent::fake([
+        new ToolCall('call_1', 'FixedNumberGenerator', []),
+        'Fake response',
+    ]);
+
+    $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
+    $store = new DatabaseConversationStore();
+    $conversationId = $store->storeConversation('user', $user->id, 'Stopped conversation');
+
+    (new RememberingAssistantAgent())
+        ->withTools([new FixedNumberGenerator()])
+        ->withMiddleware([Stop::unless(fn(PendingStep $step): bool => $step->isFirstStep())])
+        ->continue($conversationId, $user)
+        ->prompt('Test prompt');
+
+    expect($store->getLatestConversationMessages($conversationId, 10)->map(fn($message): string => $message::class)->toList())->toBe([
+        Message::class, AssistantMessage::class, ToolResultMessage::class,
+    ]);
+});
+
+test('a turn stopped before its first step is remembered without an assistant message', function (): void {
+    Configure::write('Ai.conversations.generate_title', false);
+    Configure::write('Ai.conversations.connection', 'test');
+    Configure::write('Ai.conversations.tables.conversations', 'agent_conversations');
+    Configure::write('Ai.conversations.tables.messages', 'agent_conversation_messages');
+
+    Ai::manager()->setConversationStore(new DatabaseConversationStore());
+
+    RememberingAssistantAgent::fake(['Fake response']);
+
+    $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
+    $store = new DatabaseConversationStore();
+    $conversationId = $store->storeConversation('user', $user->id, 'Stopped conversation');
+
+    (new RememberingAssistantAgent())
+        ->withMiddleware([Stop::when(true)])
+        ->continue($conversationId, $user)
+        ->prompt('Test prompt');
+
+    expect($store->getLatestConversationMessages($conversationId, 10)->map(fn($message): string => $message::class)->toList())->toBe([
+        Message::class,
+    ]);
+});

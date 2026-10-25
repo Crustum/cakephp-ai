@@ -7,9 +7,11 @@ use Cake\Utility\Text;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Contracts\Files\TranscribableAudio;
 use Crustum\Ai\Event\GeneratingTranscription;
+use Crustum\Ai\Event\TranscriptionFailed;
 use Crustum\Ai\Event\TranscriptionGenerated;
 use Crustum\Ai\Prompts\TranscriptionPrompt;
 use Crustum\Ai\Responses\TranscriptionResponse;
+use Throwable;
 
 /**
  * Generates transcriptions through the provider's transcription gateway.
@@ -52,14 +54,17 @@ trait GeneratesTranscriptionsTrait
             $prompt,
         ));
 
-        $response = $this->transcriptionGateway()->generateTranscription(
-            $this,
-            $model,
-            $prompt->audio,
-            $prompt->language,
-            $prompt->diarize,
-            $prompt->timeout ?? 30,
-            $prompt->providerOptions,
+        $response = $this->dispatchingFailure(
+            fn(): TranscriptionResponse => $this->transcriptionGateway()->generateTranscription(
+                $this,
+                $model,
+                $prompt->audio,
+                $prompt->language,
+                $prompt->diarize,
+                $prompt->timeout ?? 30,
+                $prompt->providerOptions,
+            ),
+            fn(Throwable $exception): TranscriptionFailed => new TranscriptionFailed($invocationId, $this, $model, $prompt, $exception),
         );
 
         $this->events->dispatch(new TranscriptionGenerated(

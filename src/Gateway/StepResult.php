@@ -33,17 +33,27 @@ class StepResult implements IteratorAggregate
     /**
      * Constructor.
      *
-     * @param \Crustum\Ai\Gateway\StepResponse|\Generator<int, \Crustum\Ai\Streaming\Event\StreamEvent, mixed, \Crustum\Ai\Gateway\StepResponse|null> $source Step stream or response
+     * @param \Crustum\Ai\Gateway\StepResponse|\Generator<int, \Crustum\Ai\Streaming\Event\StreamEvent, mixed, \Crustum\Ai\Gateway\StepResponse|null>|null $source Step stream or response; null when middleware stopped the run
      * @param \Crustum\Ai\PendingStep|null $step Step as sent to the model; null when middleware supplied the response itself
      * @param \Crustum\Ai\Gateway\StepContext|null $context Step context
      * @param int|null $startedAt Monotonic start time in nanoseconds
      */
     public function __construct(
-        protected Generator|StepResponse $source,
+        protected Generator|StepResponse|null $source,
         public readonly ?PendingStep $step = null,
         public readonly ?StepContext $context = null,
         public readonly ?int $startedAt = null,
     ) {
+    }
+
+    /**
+     * Create a result that ends the run before the model is called.
+     *
+     * @return self
+     */
+    public static function stop(): self
+    {
+        return new self(null);
     }
 
     /**
@@ -69,7 +79,7 @@ class StepResult implements IteratorAggregate
      */
     public function getIterator(): Traversable
     {
-        if ($this->source instanceof StepResponse) {
+        if (!$this->source instanceof Generator) {
             if (!$this->resolved) {
                 $this->resolve($this->source);
             }
@@ -104,6 +114,16 @@ class StepResult implements IteratorAggregate
     public function streamed(): bool
     {
         return $this->source instanceof Generator;
+    }
+
+    /**
+     * Determine whether middleware stopped the run instead of taking the step.
+     *
+     * @return bool
+     */
+    public function stopped(): bool
+    {
+        return $this->source === null;
     }
 
     /**

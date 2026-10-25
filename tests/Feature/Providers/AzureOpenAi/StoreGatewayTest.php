@@ -67,3 +67,15 @@ test('file search without filters returns vector store ids', function (): void {
     expect(Ai::getManager()->storeProvider('azure')->fileSearchToolOptions($search))
         ->toBe(['vector_store_ids' => ['vs-123']]);
 });
+
+test('remove file encodes the store and document ids as single path segments', function (): void {
+    aiHttpFake([
+        'test-resource.openai.azure.com/*' => aiHttpResponse(['deleted' => true]),
+    ]);
+
+    $provider = Ai::getManager()->storeProvider('azure');
+    $provider->storeGateway()->removeFile($provider, 'vs-123', '../..');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => $request->method() === 'DELETE'
+        && $request->url() === 'https://test-resource.openai.azure.com/openai/v1/vector_stores/vs-123/files/..%2F..');
+});

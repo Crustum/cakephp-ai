@@ -6,6 +6,7 @@ use Crustum\Ai\Classification\Boolean;
 use Crustum\Ai\Classification\Choice;
 use Crustum\Ai\Classification\Score;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Files\Image;
 use Crustum\Ai\Prompts\ClassificationPrompt;
 use Crustum\Ai\Responses\Data\BooleanAnswer;
 use Crustum\Ai\Responses\Data\ChoiceAnswer;
@@ -101,6 +102,26 @@ test('can assert classified', function (): void {
     Classification::assertNotClassified(fn(ClassificationPrompt $prompt): bool => $prompt->asks('department'));
 });
 
+test('fake records the attachments a classification was given', function (): void {
+    Classification::fake();
+
+    $image = Image::fromBase64(base64_encode('photo'), 'image/png');
+
+    Classification::of('Inspect this.', [$image])->question('damaged', new Boolean('Damaged?'))->classify(provider: Lab::OpenAI);
+
+    Classification::assertClassified(fn(ClassificationPrompt $prompt): bool => $prompt->attachments === [$image]);
+});
+
+test('fakes reject attachments for providers that cannot classify them', function (): void {
+    registerTextOnlyClassifier();
+
+    Classification::fake();
+
+    Classification::of('Inspect this.', [Image::fromBase64(base64_encode('photo'), 'image/png')])
+        ->question('damaged', new Boolean('Damaged?'))
+        ->classify(provider: 'text-only');
+})->throws(LogicException::class, 'Provider [text-only] does not support classification attachments.');
+
 test('can assert nothing classified', function (): void {
     Classification::fake();
 
@@ -122,5 +143,5 @@ test('missing answer throws', function (): void {
 test('non-classification providers throw', function (): void {
     Classification::fake();
 
-    Classification::of('text')->question('is_urgent', new Boolean('Urgent?'))->classify(provider: 'openai');
+    Classification::of('text')->question('is_urgent', new Boolean('Urgent?'))->classify(provider: 'anthropic');
 })->throws(LogicException::class, 'does not support classification');

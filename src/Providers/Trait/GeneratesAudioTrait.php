@@ -5,10 +5,12 @@ namespace Crustum\Ai\Providers\Trait;
 
 use Cake\Utility\Text;
 use Crustum\Ai\Ai;
+use Crustum\Ai\Event\AudioFailed;
 use Crustum\Ai\Event\AudioGenerated;
 use Crustum\Ai\Event\GeneratingAudio;
 use Crustum\Ai\Prompts\AudioPrompt;
 use Crustum\Ai\Responses\AudioResponse;
+use Throwable;
 
 /**
  * Generates audio through the provider's audio gateway.
@@ -51,14 +53,17 @@ trait GeneratesAudioTrait
             $prompt,
         ));
 
-        $response = $this->audioGateway()->generateAudio(
-            $this,
-            $model,
-            $prompt->text,
-            $prompt->voice,
-            $prompt->instructions,
-            $timeout,
-            $prompt->providerOptions,
+        $response = $this->dispatchingFailure(
+            fn(): AudioResponse => $this->audioGateway()->generateAudio(
+                $this,
+                $model,
+                $prompt->text,
+                $prompt->voice,
+                $prompt->instructions,
+                $timeout,
+                $prompt->providerOptions,
+            ),
+            fn(Throwable $exception): AudioFailed => new AudioFailed($invocationId, $this, $model, $prompt, $exception),
         );
 
         $this->events->dispatch(new AudioGenerated(

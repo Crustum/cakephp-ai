@@ -12,9 +12,11 @@ use Crustum\Ai\Messages\ToolResultMessage;
 use Crustum\Ai\Providers\AnthropicProvider;
 use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Responses\StreamableAgentResponse;
+use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Storage\DatabaseConversationStore;
 use Crustum\Ai\Test\Fixtures\Agents\RememberingApprovableAgent;
 use Crustum\Ai\Test\Fixtures\Agents\RememberingMultiStepApprovableAgent;
+use Crustum\Ai\Test\Fixtures\Agents\RememberingStructuredApprovableAgent;
 use Crustum\Ai\Test\Fixtures\Agents\RememberingToolUsingAgent;
 use Crustum\Ai\Test\Fixtures\Tools\ApprovableNumberGenerator;
 use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
@@ -650,6 +652,23 @@ test('a rejected resume stores and rehydrates the tool result as denied', functi
     }
 
     expect($toolResultMessage->toolResults->first()->denied)->toBeTrue();
+});
+
+test('a rejected resume of a structured agent returns a structured response', function (): void {
+    aiHttpFake([
+        'api.anthropic.com/*' => fakeAnthropicToolUse('toolu_1'),
+    ]);
+
+    $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
+
+    $paused = (new RememberingStructuredApprovableAgent())->forUser($user)->prompt('Generate a number', provider: 'anthropic');
+
+    $rejected = (new RememberingStructuredApprovableAgent())
+        ->continue($paused->conversationId, $user)
+        ->prompt(Decisions::from(['toolu_1' => false]), provider: 'anthropic');
+
+    expect($rejected)->toBeInstanceOf(StructuredAgentResponse::class)
+        ->and($rejected->structured)->toBe([]);
 });
 
 test('a wildcard rejection resume records the denial once, on the paused row', function (): void {

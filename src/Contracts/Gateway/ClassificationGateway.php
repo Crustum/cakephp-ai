@@ -22,6 +22,7 @@ interface ClassificationGateway
      * @param array<string, \Crustum\Ai\Contracts\Question> $questions Questions to answer about the state
      * @param int $timeout Timeout in seconds
      * @param array<string, mixed> $providerOptions Provider-specific options
+     * @param array<int|string, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Attachments to classify alongside the state
      * @return \Crustum\Ai\Responses\ClassificationResponse
      */
     public function classify(
@@ -31,5 +32,6 @@ interface ClassificationGateway
         array $questions,
         int $timeout = 30,
         array $providerOptions = [],
+        array $attachments = [],
     ): ClassificationResponse;
 }

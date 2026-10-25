@@ -184,7 +184,7 @@ class AnthropicProvider extends Provider implements FileProvider, SupportsCodeEx
      */
     public function cheapestTextModel(): string
     {
-        return $this->config['models']['text']['cheapest'] ?? 'claude-haiku-4-5-20251001';
+        return $this->config['models']['text']['cheapest'] ?? 'claude-haiku-5-5';
     }
 
     /**
@@ -194,6 +194,6 @@ class AnthropicProvider extends Provider implements FileProvider, SupportsCodeEx
      */
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? 'claude-fable-5-1';
+        return $this->config['models']['text']['smartest'] ?? 'claude-opus-5-5';
     }
 }

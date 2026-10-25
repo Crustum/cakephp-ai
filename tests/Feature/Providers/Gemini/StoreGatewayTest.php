@@ -373,3 +373,38 @@ test('removing a document sends force as a query parameter', function (): void {
     expect(sentRequest()->url())->toEndWith('/fileSearchStores/store123/documents/doc456?force=true')
         ->and(sentRequest()->body())->toBe('');
 });
+
+test('delete store encodes the id as a single path segment', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => aiHttpResponse([], 200),
+    ]);
+
+    Stores::delete('fileSearchStores/../files/abc123#', provider: 'gemini');
+
+    aiAssertHttpSent(fn($request): bool => $request->method() === 'DELETE'
+        && (string)$request->url() === 'https://generativelanguage.googleapis.com/v1beta/fileSearchStores/..%2Ffiles%2Fabc123%23?force=true');
+});
+
+test('remove file encodes the document id as a single path segment', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => aiHttpResponse([], 200),
+    ]);
+
+    $provider = geminiProvider();
+    $provider->storeGateway()->removeFile($provider, 'store123', 'documents/../../store456');
+
+    aiAssertHttpSent(fn($request): bool => $request->method() === 'DELETE'
+        && str_starts_with((string)$request->url(), 'https://generativelanguage.googleapis.com/v1beta/fileSearchStores/store123/documents/..%2F..%2Fstore456'));
+});
+
+test('remove file rebuilds a full document path from encoded segments', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => aiHttpResponse([], 200),
+    ]);
+
+    $provider = geminiProvider();
+    $provider->storeGateway()->removeFile($provider, 'store123', 'fileSearchStores/store123/documents/doc456?force=false');
+
+    aiAssertHttpSent(fn($request): bool => $request->method() === 'DELETE'
+        && str_starts_with((string)$request->url(), 'https://generativelanguage.googleapis.com/v1beta/fileSearchStores/store123/documents/doc456%3Fforce%3Dfalse'));
+});

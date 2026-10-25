@@ -3,20 +3,26 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Model\Behavior;
 
+use Cake\Database\Driver\Mysql;
+use Cake\Database\Driver\Postgres;
 use Cake\ORM\Behavior;
 use Cake\ORM\Query\SelectQuery;
 use Crustum\Ai\Embeddings;
+use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
 
 /**
- * Adds a pgvector `similarTo` custom finder to a table.
+ * Adds a vector `similarTo` custom finder to a table.
+ *
+ * Provides `whereVectorSimilarTo()`-style vector similarity filtering for the
+ * query builder, supported on PostgreSQL via the `pgvector` extension and on
+ * MariaDB 11.7+ via its native vector support.
  *
  * Attach this behavior to any table that stores vector embeddings in a
- * PostgreSQL `vector` column (via the pgvector extension), then search for
- * similar records using `find('similarTo', ...)`.
+ * `vector` column, then search for similar records using
+ * `find('similarTo', ...)`:
  *
- * Usage:
  * ```
  * public function initialize(array $config): void
  * {
@@ -29,6 +35,14 @@ use RuntimeException;
  *     minSimilarity: 0.4,
  * )->limit(10)->all();
  * ```
+ *
+ * The SQL dialect is detected from the query connection automatically. Set the
+ * `dialect` behavior option to `postgres` or `mariadb` to override detection
+ * (useful for building SQL without a live connection):
+ *
+ * ```
+ * $this->addBehavior('Crustum/Ai.VectorSearch', ['dialect' => 'mariadb']);
+ * ```
  */
 class VectorSearchBehavior extends Behavior
 {
@@ -39,10 +53,15 @@ class VectorSearchBehavior extends Behavior
         'implementedFinders' => [
             'similarTo' => 'findSimilarTo',
         ],
+        'dialect' => 'auto',
     ];
 
     /**
      * Filter and order a query by cosine similarity against a vector column.
+     *
+     * Like `whereVectorSimilarTo()`, this filters rows whose cosine
+     * distance is below `1 - $minSimilarity` and orders the remaining rows by
+     * ascending distance (most similar first).
      *
      * Pass either an `embedding` (array of floats) or a `search` string. When a
      * search string is given, embeddings are generated automatically via the
@@ -53,6 +72,7 @@ class VectorSearchBehavior extends Behavior
      * @param float $minSimilarity Minimum cosine similarity (0.0 - 1.0).
      * @param string|null $search Text to embed and search for.
      * @param array<int, float|int>|null $embedding Pre-computed embedding vector.
+     * @param bool $orderByDistance Whether to order results by ascending vector distance.
      * @return \Cake\ORM\Query\SelectQuery<\Cake\Datasource\EntityInterface|array>
      */
     public function findSimilarTo(
@@ -61,15 +81,77 @@ class VectorSearchBehavior extends Behavior
         float $minSimilarity = 0.6,
         ?string $search = null,
         ?array $embedding = null,
+        bool $orderByDistance = true,
     ): SelectQuery {
         $embedding ??= $this->embeddingFor((string)$search);
 
-        $vector = $this->vectorLiteral($embedding);
-        $similarity = sprintf('%s <=> %s::vector', $column, $vector);
+        $distance = $this->distanceExpression($query, $column, $embedding);
+        $maxDistance = 1 - $minSimilarity;
 
-        return $query
-            ->where(sprintf('%s >= %F', $similarity, $minSimilarity))
-            ->orderByDesc($similarity);
+        $query->where(sprintf('%s <= %F', $distance, $maxDistance));
+
+        if ($orderByDistance) {
+            $query->orderByAsc($distance);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Build the cosine distance expression for the query connection dialect.
+     *
+     * Compiles the per-dialect cosine distance expression: `(column <=> ?)`
+     * for pgvector and `vec_distance_cosine(column, vec_fromtext(?))` for
+     * MariaDB 11.7+.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\Cake\Datasource\EntityInterface|array> $query The query to modify.
+     * @param string $column The vector column name.
+     * @param array<int, float|int> $embedding Embedding values.
+     * @return string
+     */
+    protected function distanceExpression(SelectQuery $query, string $column, array $embedding): string
+    {
+        $quoted = $query->getConnection()->getDriver()->quoteIdentifier($column);
+        $literal = $this->vectorLiteral($embedding);
+
+        if ($this->dialectFor($query) === 'mariadb') {
+            return sprintf('VEC_DISTANCE_COSINE(%s, VEC_FROMTEXT(%s))', $quoted, $literal);
+        }
+
+        return sprintf('(%s <=> %s::vector)', $quoted, $literal);
+    }
+
+    /**
+     * Resolve the vector SQL dialect for the given query.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\Cake\Datasource\EntityInterface|array> $query The query to modify.
+     * @return string
+     */
+    protected function dialectFor(SelectQuery $query): string
+    {
+        $dialect = $this->getConfig('dialect');
+
+        if ($dialect === 'postgres' || $dialect === 'mariadb') {
+            return $dialect;
+        }
+
+        if ($dialect !== 'auto') {
+            throw new InvalidArgumentException(
+                sprintf('Invalid VectorSearch dialect [%s]. Expected "auto", "postgres" or "mariadb".', (string)$dialect),
+            );
+        }
+
+        $driver = $query->getConnection()->getDriver();
+
+        if ($driver instanceof Postgres) {
+            return 'postgres';
+        }
+
+        if ($driver instanceof Mysql && $driver->isMariadb()) {
+            return 'mariadb';
+        }
+
+        throw new RuntimeException('Vector distance queries are only supported by Postgres and MariaDB.');
     }
 
     /**

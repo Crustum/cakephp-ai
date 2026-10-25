@@ -189,6 +189,24 @@ test('it keeps the properties of a nullable object root', function (): void {
         ->and($schema['properties']['query'])->toMatchArray(['type' => 'string']);
 });
 
+test('it drops the parameter schema when shared $ref expansion exceeds the node budget', function (): void {
+    $defs = ['a13' => ['type' => 'string']];
+
+    for ($i = 0; $i < 13; $i++) {
+        $defs["a{$i}"] = [
+            'type' => 'object',
+            'properties' => [
+                'left' => ['$ref' => '#/$defs/a' . ($i + 1)],
+                'right' => ['$ref' => '#/$defs/a' . ($i + 1)],
+            ],
+        ];
+    }
+
+    $tool = new McpTool(mcpTool(new FakeMcpClient(), inputSchema: ['$ref' => '#/$defs/a0', '$defs' => $defs]));
+
+    expect($tool->schema(new JsonSchemaTypeFactory()))->toBe([]);
+});
+
 test('it marks fields nullable when anyOf or oneOf lists null after the typed branch', function (): void {
     $tool = new McpTool(mcpTool(new FakeMcpClient(), inputSchema: [
         'type' => 'object',

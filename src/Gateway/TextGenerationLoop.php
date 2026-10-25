@@ -23,6 +23,7 @@ use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Exception\NoSuchToolException;
+use Crustum\Ai\Exception\StoppedException;
 use Crustum\Ai\Exception\StreamErrorException;
 use Crustum\Ai\Gateway\Trait\HandlesToolApprovalsTrait;
 use Crustum\Ai\Gateway\Trait\InvokesToolsTrait;
@@ -154,8 +155,7 @@ class TextGenerationLoop
             }
 
             if (!$resumption->shouldContinue) {
-                return (new TextResponse('', new TextUsage(), new Meta($provider->name(), $model)))
-                    ->withMessages(collection($newMessages));
+                return $this->emptyResponse($provider, $model, $newMessages);
             }
         } else {
             $allMessages = $this->settleAbandonedToolCalls($messages);
@@ -183,9 +183,15 @@ class TextGenerationLoop
             $attempt = null;
 
             try {
-                $lastResult = $this->runStep($pending, $middleware, function (PendingStep $step) use ($provider, $previous, $context, $allMessages, $continuationToken, &$attempt): StepResult {
+                $stepResult = $this->runStep($pending, $middleware, function (PendingStep $step) use ($provider, $previous, $context, $allMessages, $continuationToken, &$attempt): StepResult {
                     return $attempt = $this->attemptTextStep($provider, $step, $previous, $allMessages, $continuationToken, $context);
-                })->response();
+                });
+
+                if ($stepResult->stopped()) {
+                    break;
+                }
+
+                $lastResult = $stepResult->response();
             } catch (Throwable $exception) {
                 $this->stepFailed($context, $attempt, $exception);
 
@@ -230,7 +236,23 @@ class TextGenerationLoop
             $previous = $prepared;
         }
 
-        return $this->buildFinalResponse($steps, $newMessages, $lastResult);
+        return $lastResult instanceof StepResponse
+            ? $this->buildFinalResponse($steps, $newMessages, $lastResult)
+            : $this->emptyResponse($provider, $model, $newMessages);
+    }
+
+    /**
+     * Build the response for a run that ended before any step completed.
+     *
+     * @param \Crustum\Ai\Contracts\Providers\TextProvider $provider Text provider instance
+     * @param string $model Model identifier
+     * @param array<int, \Crustum\Ai\Messages\Message> $newMessages Messages appended during the loop
+     * @return \Crustum\Ai\Responses\TextResponse
+     */
+    protected function emptyResponse(TextProvider $provider, string $model, array $newMessages): TextResponse
+    {
+        return (new TextResponse('', new TextUsage(), new Meta($provider->name(), $model)))
+            ->withMessages(collection($newMessages));
     }
 
     /**
@@ -249,6 +271,7 @@ class TextGenerationLoop
      * @param \Closure|null $recordApprovalResults Callback invoked with resolved approval tool results
      * @param array{0: \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolCall>, 1: array<string, \Crustum\Ai\Contracts\Tool|null>}|null $validatedApproval Pre-validated approval, reused instead of re-validating
      * @param \Crustum\Ai\Gateway\RunContext|null $context Run context
+     * @param (\Closure(): bool)|null $stopCheck Stop predicate polled while streaming
      * @return \Generator<int, \Crustum\Ai\Streaming\Event\StreamEvent, mixed, \Crustum\Ai\Gateway\StepResponse|null>
      */
     public function stream(
@@ -265,6 +288,7 @@ class TextGenerationLoop
         ?Closure $recordApprovalResults = null,
         ?array $validatedApproval = null,
         ?RunContext $context = null,
+        ?Closure $stopCheck = null,
     ): Generator {
         $this->ensureSingleToolSearch($tools);
 
@@ -313,6 +337,10 @@ class TextGenerationLoop
         }
 
         for ($step = 0; $step < $maxSteps; $step++) {
+            if ($stopCheck instanceof Closure && ($stopCheck)()) {
+                throw new StoppedException('The stream was stopped.');
+            }
+
             $pending = new PendingStep(
                 number: $step,
                 isFinalStep: $step + 1 >= $maxSteps,
@@ -327,6 +355,7 @@ class TextGenerationLoop
                 usage: $accumulatedUsage,
                 timeout: $timeout,
                 invocationId: $context?->invocationId,
+                stopCheck: $stopCheck,
             );
 
             // Held by reference because a short-circuiting middleware returns a result that is not the attempt.
@@ -342,6 +371,12 @@ class TextGenerationLoop
                 });
 
                 $reasoningDeltas = [];
+
+                if ($stepResult->stopped()) {
+                    $finalReason = FinishReason::Cancelled;
+
+                    break;
+                }
 
                 foreach ($stepResult as $event) {
                     yield $event;
@@ -629,6 +664,7 @@ class TextGenerationLoop
             stepNumber: $step->number,
             isFinalStep: $step->isFinalStep,
             continuationToken: $unchanged ? $continuationToken : null,
+            stopCheck: $step->stopCheck,
         );
     }
 

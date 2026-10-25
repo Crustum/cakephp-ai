@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Crustum\Ai;
 
+use Closure;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Support\ToolChoice;
@@ -29,6 +30,7 @@ class PendingStep
      * @param \Crustum\Ai\Responses\Data\TextUsage $usage Usage accumulated by the completed steps
      * @param int|null $timeout Timeout in seconds
      * @param string|null $invocationId Run invocation identifier
+     * @param (\Closure(): bool)|null $stopCheck Stop predicate polled while streaming
      */
     public function __construct(
         public readonly int $number,
@@ -44,6 +46,7 @@ class PendingStep
         public readonly TextUsage $usage = new TextUsage(),
         public readonly ?int $timeout = null,
         public readonly ?string $invocationId = null,
+        public readonly ?Closure $stopCheck = null,
     ) {
     }
 

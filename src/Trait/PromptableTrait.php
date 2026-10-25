@@ -93,7 +93,7 @@ trait PromptableTrait
      * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @param int|null $timeout Request timeout in seconds
-     * @return \Crustum\Ai\Responses\AgentResponse
+     * @return ($this is \Crustum\Ai\Contracts\HasStructuredOutput ? \Crustum\Ai\Responses\StructuredAgentResponse : \Crustum\Ai\Responses\AgentResponse)
      */
     public function prompt(
         AgentInput|UserMessage|Decisions|string $prompt,
@@ -151,6 +151,7 @@ trait PromptableTrait
      * @param \Crustum\Ai\Enums\Lab|\Crustum\Ai\Providers\Provider|array|string|null $provider The provider to use
      * @param string|null $model The model to use
      * @param int|null $timeout Request timeout in seconds
+     * @param (\Closure(): bool)|null $stopCheck Stop predicate polled while streaming
      * @return \Crustum\Ai\Responses\StreamableAgentResponse
      */
     public function stream(
@@ -159,6 +160,7 @@ trait PromptableTrait
         Lab|array|string|AbstractProvider|null $provider = null,
         ?string $model = null,
         ?int $timeout = null,
+        ?Closure $stopCheck = null,
     ): StreamableAgentResponse {
         [$text, $approvalDecisions, $attachments] = $this->extractPromptInput($prompt, $attachments);
 
@@ -166,7 +168,7 @@ trait PromptableTrait
 
         $tools = $this->resolveAgentTools();
 
-        return $this->streamPrompt($text, $approvalDecisions, $attachments, $provider, $model, $timeout, $messages, $tools);
+        return $this->streamPrompt($text, $approvalDecisions, $attachments, $provider, $model, $timeout, $messages, $tools, $stopCheck);
     }
 
     /**
@@ -180,6 +182,7 @@ trait PromptableTrait
      * @param int|null $timeout Request timeout in seconds
      * @param list<\Crustum\Ai\Messages\Message>|null $messages Ad-hoc message history
      * @param array<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>|null $tools Runtime tool overrides
+     * @param (\Closure(): bool)|null $stopCheck Stop predicate polled while streaming
      * @return \Crustum\Ai\Responses\StreamableAgentResponse
      */
     private function streamPrompt(
@@ -191,6 +194,7 @@ trait PromptableTrait
         ?int $timeout,
         ?array $messages = null,
         ?array $tools = null,
+        ?Closure $stopCheck = null,
     ): StreamableAgentResponse {
         $providers = $approvalDecisions instanceof Decisions
             ? $this->providersForApprovalContinuation($provider, $model)
@@ -205,7 +209,7 @@ trait PromptableTrait
             [$resolved, $resolvedModel] = $this->iterateProvidersWithFailover($providers)->current();
 
             return $resolved->stream(
-                new AgentPrompt($this, $prompt, $attachments, $resolved, $resolvedModel, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId, true, $messages, $tools),
+                new AgentPrompt($this, $prompt, $attachments, $resolved, $resolvedModel, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId, true, $messages, $tools, $stopCheck),
             );
         }
 
@@ -214,7 +218,7 @@ trait PromptableTrait
 
         $outer = new StreamableAgentResponse(
             $invocationId,
-            function () use ($providers, $prompt, $approvalDecisions, $attachments, $resolvedTimeout, $invocationId, $parentInvocationId, $parentToolInvocationId, $messages, $tools, &$outer) {
+            function () use ($providers, $prompt, $approvalDecisions, $attachments, $resolvedTimeout, $invocationId, $parentInvocationId, $parentToolInvocationId, $messages, $tools, $stopCheck, &$outer) {
                 $lastException = null;
 
                 foreach ($this->iterateProvidersWithFailover($providers) as [$provider, $model, $isFinalAttempt]) {
@@ -222,7 +226,7 @@ trait PromptableTrait
 
                     try {
                         $innerResponse = $provider->stream(
-                            new AgentPrompt($this, $prompt, $attachments, $provider, $model, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId, $isFinalAttempt, $messages, $tools),
+                            new AgentPrompt($this, $prompt, $attachments, $provider, $model, $resolvedTimeout, $invocationId, $approvalDecisions, $parentInvocationId, $parentToolInvocationId, $isFinalAttempt, $messages, $tools, $stopCheck),
                         );
 
                         $innerResponse->then(fn(StreamedAgentResponse $response): StreamableAgentResponse => $outer->adoptStateFrom($response));

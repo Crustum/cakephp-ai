@@ -9,6 +9,7 @@ use Crustum\Ai\Contracts\Gateway\FileGateway;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\Anthropic\Trait\CreatesAnthropicClientTrait;
+use Crustum\Ai\Gateway\Trait\EncodesResourceIdsTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\PreparesStorableFilesTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
@@ -21,6 +22,7 @@ use Crustum\Ai\Responses\StoredFileResponse;
 class AnthropicFileGateway implements FileGateway
 {
     use CreatesAnthropicClientTrait;
+    use EncodesResourceIdsTrait;
     use HandlesFailoverErrorsTrait;
     use PreparesStorableFilesTrait;
 
@@ -44,15 +46,15 @@ class AnthropicFileGateway implements FileGateway
     {
         $response = $this->withErrorHandling(
             $provider->name(),
-            fn(): HttpResponseInterface => $this->client($provider)->get('files/' . $fileId),
+            fn(): HttpResponseInterface => $this->client($provider)->get('files/' . $this->resourceId($fileId)),
         );
 
         $data = $response->getJson() ?? [];
 
-        return new FileResponse(
+        return (new FileResponse(
             id: $data['id'],
             mimeType: $data['mime_type'],
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -81,7 +83,7 @@ class AnthropicFileGateway implements FileGateway
 
         $data = $response->getJson() ?? [];
 
-        return new StoredFileResponse($data['id']);
+        return (new StoredFileResponse($data['id']))->withRawResponse($response);
     }
 
     /**
@@ -95,7 +97,7 @@ class AnthropicFileGateway implements FileGateway
     {
         $this->withErrorHandling(
             $provider->name(),
-            fn(): HttpResponseInterface => $this->client($provider)->delete('files/' . $fileId),
+            fn(): HttpResponseInterface => $this->client($provider)->delete('files/' . $this->resourceId($fileId)),
         );
     }
 

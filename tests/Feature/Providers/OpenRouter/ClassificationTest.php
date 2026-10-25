@@ -6,14 +6,28 @@ use Crustum\Ai\Classification;
 use Crustum\Ai\Classification\Boolean;
 use Crustum\Ai\Classification\Choice;
 use Crustum\Ai\Classification\Score;
+use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Files\Image;
+use Crustum\Ai\Files\ProviderImage;
+use Crustum\Ai\Responses\ClassificationResponse;
 use Crustum\Ai\Responses\Data\BooleanAnswer;
 use Crustum\Ai\Responses\Data\ChoiceAnswer;
 use Crustum\Ai\Responses\Data\ScoreAnswer;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
+use Laminas\Diactoros\UploadedFile;
 
 beforeEach(function (): void {
     Configure::write('Ai.providers.openrouter.key', 'test-key');
 });
+
+function classificationUpload(string $filename, string $contents, string $mimeType): UploadedFile
+{
+    $resource = fopen('php://temp', 'r+');
+    fwrite($resource, $contents);
+    rewind($resource);
+
+    return new UploadedFile($resource, strlen($contents), UPLOAD_ERR_OK, $filename, $mimeType);
+}
 
 function fakeDecisionsResponse(): array
 {
@@ -152,3 +166,69 @@ test('answers without the optional distribution fields fall back to the question
         ->and($response['urgency']->label())->toBe('Blocking revenue')
         ->and($response['urgency']->normalized())->toBe(1.0);
 });
+
+test('image attachments are appended to the state as data url image parts labelled by name', function (): void {
+    aiHttpFake(['*' => aiHttpResponse(fakeDecisionsResponse())]);
+
+    $jpeg = file_get_contents(__DIR__ . '/../../../Fixtures/Images/blue.jpg');
+
+    Classification::of('A product photo uploaded by a customer.', [
+        'front' => Image::fromPath(__DIR__ . '/../../../Fixtures/Images/blue.jpg')->withProviderOptions(
+            fn($provider): ?array => $provider === Lab::OpenRouter ? ['custom' => 'value'] : null,
+        ),
+        'back' => classificationUpload('back.png', 'upload-bytes', 'image/png'),
+    ])
+        ->question('damaged', new Boolean('Is the product damaged?'))
+        ->classify(provider: 'openrouter');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => $request->url() === 'https://openrouter.ai/api/alpha/decisions'
+        && !$request->hasHeader('TypeSafe-Danger-Zone-Images')
+        && json_decode($request->body(), true)['state'] === [
+            'A product photo uploaded by a customer.',
+            'front:',
+            ['custom' => 'value', 'type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,' . base64_encode($jpeg)]],
+            'back:',
+            ['type' => 'image_url', 'image_url' => ['url' => 'data:image/png;base64,' . base64_encode('upload-bytes')]],
+        ]);
+});
+
+test('image parts follow the items of a list state and the object of a structured state', function (array $state, array $expected): void {
+    aiHttpFake(['*' => aiHttpResponse(fakeDecisionsResponse())]);
+
+    Classification::of($state, [Image::fromBase64(base64_encode('photo'), 'image/png')])
+        ->question('damaged', new Boolean('Damaged?'))
+        ->classify(provider: 'openrouter');
+
+    $part = ['type' => 'image_url', 'image_url' => ['url' => 'data:image/png;base64,' . base64_encode('photo')]];
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['state'] === [...$expected, $part]);
+})->with([
+    'list' => [['first message', 'second message'], ['first message', 'second message']],
+    'object' => [['subject' => 'Broken lamp'], [['subject' => 'Broken lamp']]],
+]);
+
+test('webp images are sent as webp data urls', function (): void {
+    aiHttpFake(['*' => aiHttpResponse(fakeDecisionsResponse())]);
+
+    Classification::of('Inspect this.', [classificationUpload('photo.webp', 'webp-bytes', 'image/webp')])
+        ->question('damaged', new Boolean('Damaged?'))
+        ->classify(provider: 'openrouter', model: 'cloudflare/clef-flash');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => json_decode($request->body(), true)['state'] === [
+        'Inspect this.',
+        ['type' => 'image_url', 'image_url' => ['url' => 'data:image/webp;base64,' . base64_encode('webp-bytes')]],
+    ]);
+});
+
+test('attachments that are not inline jpeg, png, or webp images are rejected before any request', function (mixed $attachment, string $message): void {
+    aiHttpFake();
+
+    expect(fn(): ClassificationResponse => Classification::of('Inspect this.', [$attachment()])
+        ->question('damaged', new Boolean('Damaged?'))
+        ->classify(provider: 'openrouter'))->toThrow(InvalidArgumentException::class, $message);
+
+    aiAssertHttpNothingSent();
+})->with([
+    'provider image' => [fn(): ProviderImage => Image::fromId('file_123'), 'OpenRouter decisions only accept images with inline content; [Crustum\\Ai\\Files\\ProviderImage] given.'],
+    'gif upload' => [fn(): UploadedFile => classificationUpload('photo.gif', 'gif-bytes', 'image/gif'), 'OpenRouter decisions only accept JPEG, PNG, or WebP images; [image/gif] given.'],
+]);

@@ -17,13 +17,13 @@ use Crustum\Ai\Contracts\Providers\RerankingProvider;
 use Crustum\Ai\Contracts\Providers\SupportsWebFetch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
-use Crustum\Ai\Gateway\OpenAiCompatible\Trait\MapsChatCompletionMessagesTrait;
 use Crustum\Ai\Gateway\OpenAiCompatible\Trait\MapsChatCompletionToolsTrait;
 use Crustum\Ai\Gateway\OpenAiCompatible\Trait\PerformsChatCompletionStepsTrait;
 use Crustum\Ai\Gateway\OpenRouter\Trait\BuildsTextRequestsTrait;
 use Crustum\Ai\Gateway\OpenRouter\Trait\CreatesOpenRouterClientTrait;
 use Crustum\Ai\Gateway\OpenRouter\Trait\HandlesTextStreamingTrait;
 use Crustum\Ai\Gateway\OpenRouter\Trait\MapsAttachmentsTrait;
+use Crustum\Ai\Gateway\OpenRouter\Trait\MapsMessagesTrait;
 use Crustum\Ai\Gateway\OpenRouter\Trait\ParsesTextResponsesTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\ParsesServerSentEventsTrait;
@@ -58,9 +58,9 @@ class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
     use CreatesOpenRouterClientTrait;
     use HandlesTextStreamingTrait;
     use MapsAttachmentsTrait;
+    use MapsMessagesTrait;
     use ParsesTextResponsesTrait;
     use HandlesFailoverErrorsTrait;
-    use MapsChatCompletionMessagesTrait;
     use MapsChatCompletionToolsTrait;
     use ParsesServerSentEventsTrait;
     use PerformsChatCompletionStepsTrait;
@@ -154,68 +154,39 @@ class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
         ?int $timeout = null,
         array $providerOptions = [],
     ): ImageResponse {
-        $imageOptions = $provider->defaultImageOptions($size, $quality);
-
-        $imageConfig = array_filter([
-            'aspect_ratio' => $imageOptions['aspect_ratio'] ?? null,
-            'image_size' => $imageOptions['image_size'] ?? null,
-        ]);
+        $imageConfig = $providerOptions['image_config'] ?? [];
+        unset($providerOptions['image_config']);
 
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider, $timeout ?? 120)
-                ->post('chat/completions', array_merge($providerOptions, array_filter([
+                ->post('images', array_merge($providerOptions, array_filter([
+                    'aspect_ratio' => $imageConfig['aspect_ratio'] ?? null,
+                    'resolution' => $imageConfig['image_size'] ?? null,
+                ]), array_filter([
                     'model' => $model,
-                    'messages' => $this->buildImageMessages($prompt, $attachments),
-                    'modalities' => ['image'],
-                    'image_config' => $imageConfig ?: null,
+                    'prompt' => $prompt,
+                    ...$provider->defaultImageOptions($size, $quality),
+                    'input_references' => $this->mapAttachments(collection($attachments)) ?: null,
                 ]))),
         );
 
         $data = $response->getJson() ?? [];
 
-        $message = $data['choices'][0]['message'] ?? [];
-
-        /** @var array<int, array<string, mixed>> $imageItems */
-        $imageItems = $message['images'] ?? [];
+        /** @var array<int, array<string, mixed>> $imageData */
+        $imageData = $data['data'] ?? [];
 
         /** @var array<int, \Crustum\Ai\Responses\Data\GeneratedImage> $images */
-        $images = collection($imageItems)->map(function (array $image): ?GeneratedImage {
-            $url = $image['image_url']['url'] ?? '';
-
-            if (preg_match('/^data:(image\/[\w+.-]+);base64,(.+)$/', $url, $matches) === 1) {
-                return new GeneratedImage($matches[2], $matches[1]);
-            }
-
-            return null;
-        })->filter()->toList();
-
-        $usage = $data['usage'] ?? [];
+        $images = collection($imageData)->map(fn(array $image): GeneratedImage => new GeneratedImage(
+            $image['b64_json'] ?? '',
+            $image['media_type'] ?? 'image/png',
+        ))->toList();
 
         return new ImageResponse(
             $images,
-            new ImageUsage($usage['prompt_tokens'] ?? 0, $usage['completion_tokens'] ?? 0),
-            new Meta($provider->name(), $data['model'] ?? $model),
+            new ImageUsage($data['usage']['prompt_tokens'] ?? 0, $data['usage']['completion_tokens'] ?? 0),
+            new Meta($provider->name(), $model),
         );
-    }
-
-    /**
-     * Build the messages array for an image generation request.
-     *
-     * @param string $prompt Image prompt
-     * @param array<int, \Crustum\Ai\Files\Image> $attachments Image attachments
-     * @return array<int, array<string, mixed>>
-     */
-    protected function buildImageMessages(string $prompt, array $attachments): array
-    {
-        if ($attachments === []) {
-            return [['role' => 'user', 'content' => $prompt]];
-        }
-
-        return [['role' => 'user', 'content' => array_merge(
-            [['type' => 'text', 'text' => $prompt]],
-            $this->mapAttachments(collection($attachments)),
-        )]];
     }
 
     /**

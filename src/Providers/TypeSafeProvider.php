@@ -94,4 +94,14 @@ class TypeSafeProvider extends Provider implements ClassificationProvider
     {
         return $this->config['models']['classification']['default'] ?? 'jev-latest';
     }
+
+    /**
+     * Determine if the provider can classify attachments alongside the state.
+     *
+     * @return bool
+     */
+    public function supportsClassificationAttachments(): bool
+    {
+        return true;
+    }
 }

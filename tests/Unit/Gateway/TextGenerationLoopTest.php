@@ -7,6 +7,7 @@ use Crustum\Ai\Approvals\Decision;
 use Crustum\Ai\Attributes\RepairToolCalls;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\CanActAsTool;
+use Crustum\Ai\Contracts\HasStructuredOutput;
 use Crustum\Ai\Contracts\Providers\SupportsToolSearch;
 use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
@@ -33,6 +34,7 @@ use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\ToolResult as ToolResultData;
 use Crustum\Ai\Responses\StreamableAgentResponse;
+use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Responses\TextResponse;
 use Crustum\Ai\Streaming\Event\Error;
 use Crustum\Ai\Streaming\Event\StreamEnd;
@@ -1256,6 +1258,47 @@ test('a sub-agent runs synchronously through the non-streaming loop', function (
 
     expect($response->text)->toBe('done')
         ->and($response->toolResults->first()->result)->toBe('synchronous result');
+});
+
+test('a structured sub-agent answers through a regular prompt in the streamed loop', function (): void {
+    $parent = null;
+
+    $agent = Double::for(Agent::class, CanActAsTool::class, HasStructuredOutput::class);
+    $agent->allows('name')->returns('research_agent');
+    $agent->expects('stream')->never();
+    $agent->expects('prompt')->resolves(function () use (&$parent): StructuredAgentResponse {
+        $parent = ParentInvocation::current();
+
+        return new StructuredAgentResponse(
+            'sub-invocation',
+            ['answer' => 42],
+            '{"answer":42}',
+            new TextUsage(3, 4),
+            new Meta('fake', 'sub-model'),
+        );
+    });
+
+    $invoked = [];
+
+    $dispatcher = new EventManager();
+
+    $dispatcher->on('Ai.toolInvoked', function (ToolInvoked $event) use (&$invoked): void {
+        $invoked[] = $event->result;
+    });
+
+    $toolCall = new ToolCall('call-sub-agent', 'research_agent', ['task' => 'Research'], 'call-sub-agent');
+
+    textGenerationLoopSubAgentStream([new AgentTool($agent)], [$toolCall], context: new RunContext(
+        'invocation-1',
+        Double::for(Agent::class),
+        textGenerationLoopProvider(),
+        'model',
+        $dispatcher,
+    ));
+
+    expect($parent[0])->toBe('invocation-1')
+        ->and($parent[1])->not->toBeNull()
+        ->and($invoked)->toBe(['{"answer":42}']);
 });
 
 test('a sub-agent is not executed on the final streamed step', function (): void {

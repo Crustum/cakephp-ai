@@ -416,6 +416,7 @@ test('it preserves the gemini thought signature across a persisted tool conversa
         '*' => aiHttpSequence([
             aiHttpResponse(storeTestGeminiInteraction([
                 ['type' => 'thought', 'summary' => [['type' => 'text', 'text' => 'Thinking.']], 'signature' => 'sig_persist_777'],
+                ['type' => 'model_output', 'content' => [['type' => 'text', 'text' => 'Let me generate one.']]],
                 ['type' => 'function_call', 'id' => 'call_123', 'name' => 'FixedNumberGenerator', 'arguments' => (object)[]],
             ])),
             aiHttpResponse(storeTestGeminiInteraction([[
@@ -447,12 +448,11 @@ test('it preserves the gemini thought signature across a persisted tool conversa
     (new RememberingToolUsingAgent())->continue($conversationId, $user)->prompt('Generate another', provider: 'gemini');
 
     $recorded = aiHttpRecorded();
-    $signatures = array_column(array_filter(
-        $recorded[count($recorded) - 1][0]->data()['input'],
-        fn(array $step): bool => $step['type'] === 'thought',
-    ), 'signature');
+    $input = $recorded[count($recorded) - 1][0]->data()['input'];
 
-    expect($signatures)->toBe(['sig_persist_777']);
+    expect(array_column($input, 'type'))->toBe([
+        'user_input', 'thought', 'model_output', 'function_call', 'function_result', 'model_output', 'user_input',
+    ])->and($input[1])->toBe(['type' => 'thought', 'signature' => 'sig_persist_777']);
 });
 
 test('it stores a response built without steps as a single step of lists', function (): void {

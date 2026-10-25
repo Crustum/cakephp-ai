@@ -16,5 +16,6 @@ enum FinishReason: string
     case Length = 'length';
     case ContentFilter = 'content_filter';
     case Error = 'error';
+    case Cancelled = 'cancelled';
     case Unknown = 'unknown';
 }

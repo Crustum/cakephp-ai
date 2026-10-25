@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Contracts;
 
+use Closure;
 use Crustum\Ai\Approvals\Decisions;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Messages\UserMessage;
@@ -60,6 +61,7 @@ interface Agent
      * @param \Crustum\Ai\Enums\Lab|array|string|null $provider The AI provider to use.
      * @param string|null $model The specific model to use.
      * @param int|null $timeout Request timeout in seconds.
+     * @param (\Closure(): bool)|null $stopCheck Stop predicate polled while streaming.
      * @return \Crustum\Ai\Responses\StreamableAgentResponse The streamable response.
      */
     public function stream(
@@ -68,6 +70,7 @@ interface Agent
         Lab|array|string|null $provider = null,
         ?string $model = null,
         ?int $timeout = null,
+        ?Closure $stopCheck = null,
     ): StreamableAgentResponse;
 
     /**

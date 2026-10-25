@@ -20,6 +20,7 @@ use Crustum\Ai\Gateway\StepContext;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
+use Crustum\Ai\Gateway\Trait\WrapsStoppableStreamsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\Usage;
@@ -40,6 +41,7 @@ class OllamaGateway implements EmbeddingGateway, StepTextGateway
     use MapsToolsTrait;
     use ParsesTextResponsesTrait;
     use HandlesFailoverErrorsTrait;
+    use WrapsStoppableStreamsTrait;
 
     /**
      * Constructor.
@@ -126,7 +128,7 @@ class OllamaGateway implements EmbeddingGateway, StepTextGateway
                 ->post('api/chat', $body),
         );
 
-        return yield from $this->processTextStream($invocationId, $provider, $model, $response->getBody());
+        return yield from $this->processTextStream($invocationId, $provider, $model, $this->stoppableBody($response->getBody(), $stepContext));
     }
 
     /**

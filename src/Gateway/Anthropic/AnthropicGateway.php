@@ -24,6 +24,7 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\ParsesServerSentEventsTrait;
+use Crustum\Ai\Gateway\Trait\WrapsStoppableStreamsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\AudioResponse;
 use Crustum\Ai\Responses\EmbeddingsResponse;
@@ -47,6 +48,7 @@ class AnthropicGateway implements Gateway, StepTextGateway
     use ParsesTextResponsesTrait;
     use HandlesFailoverErrorsTrait;
     use ParsesServerSentEventsTrait;
+    use WrapsStoppableStreamsTrait;
 
     /**
      * Constructor.
@@ -154,7 +156,7 @@ class AnthropicGateway implements Gateway, StepTextGateway
             $invocationId,
             $provider,
             $model,
-            $response->getBody(),
+            $this->stoppableBody($response->getBody(), $stepContext),
         );
     }
 

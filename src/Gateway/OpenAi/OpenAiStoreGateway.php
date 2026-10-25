@@ -7,6 +7,7 @@ use Cake\Collection\CollectionInterface;
 use Crustum\Ai\Contracts\Gateway\StoreGateway;
 use Crustum\Ai\Contracts\Providers\StoreProvider;
 use Crustum\Ai\Gateway\OpenAi\Trait\CreatesOpenAiClientTrait;
+use Crustum\Ai\Gateway\Trait\EncodesResourceIdsTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\Data\StoreFileCounts;
@@ -21,6 +22,7 @@ use DateTimeImmutable;
 class OpenAiStoreGateway implements StoreGateway
 {
     use CreatesOpenAiClientTrait;
+    use EncodesResourceIdsTrait;
     use HandlesFailoverErrorsTrait;
 
     /**
@@ -35,7 +37,7 @@ class OpenAiStoreGateway implements StoreGateway
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider)
-                ->get('vector_stores/' . $storeId),
+                ->get('vector_stores/' . $this->resourceId($storeId)),
         );
 
         $data = $response->getJson() ?? [];
@@ -106,7 +108,7 @@ class OpenAiStoreGateway implements StoreGateway
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider)
-                ->post(sprintf('vector_stores/%s/files', $storeId), array_filter([
+                ->post(sprintf('vector_stores/%s/files', $this->resourceId($storeId)), array_filter([
                     'file_id' => $fileId,
                     'attributes' => Value::filled($metadata) ? $metadata : null,
                 ])),
@@ -130,7 +132,7 @@ class OpenAiStoreGateway implements StoreGateway
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider)
-                ->delete(sprintf('vector_stores/%s/files/%s', $storeId, $documentId)),
+                ->delete(sprintf('vector_stores/%s/files/%s', $this->resourceId($storeId), $this->resourceId($documentId))),
         );
 
         $data = $response->getJson() ?? [];
@@ -150,7 +152,7 @@ class OpenAiStoreGateway implements StoreGateway
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider)
-                ->delete('vector_stores/' . $storeId),
+                ->delete('vector_stores/' . $this->resourceId($storeId)),
         );
 
         $data = $response->getJson() ?? [];

@@ -8,6 +8,7 @@ use Crustum\Ai\Contracts\Gateway\FileGateway;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\OpenAi\Trait\CreatesOpenAiClientTrait;
+use Crustum\Ai\Gateway\Trait\EncodesResourceIdsTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\PreparesStorableFilesTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
@@ -20,6 +21,7 @@ use Crustum\Ai\Responses\StoredFileResponse;
 class OpenAiFileGateway implements FileGateway
 {
     use CreatesOpenAiClientTrait;
+    use EncodesResourceIdsTrait;
     use HandlesFailoverErrorsTrait;
     use PreparesStorableFilesTrait;
 
@@ -35,14 +37,14 @@ class OpenAiFileGateway implements FileGateway
         $response = $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider)
-                ->get('files/' . $fileId),
+                ->get('files/' . $this->resourceId($fileId)),
         );
 
         $data = $response->getJson() ?? [];
 
-        return new FileResponse(
+        return (new FileResponse(
             id: (string)($data['id'] ?? $fileId),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -74,7 +76,7 @@ class OpenAiFileGateway implements FileGateway
 
         $data = $response->getJson() ?? [];
 
-        return new StoredFileResponse((string)($data['id'] ?? ''));
+        return (new StoredFileResponse((string)($data['id'] ?? '')))->withRawResponse($response);
     }
 
     /**
@@ -89,7 +91,7 @@ class OpenAiFileGateway implements FileGateway
         $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider)
-                ->delete('files/' . $fileId),
+                ->delete('files/' . $this->resourceId($fileId)),
         );
     }
 

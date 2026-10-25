@@ -143,6 +143,10 @@ trait BuildsTextRequestsTrait
 
         $providerOptions = $options?->providerOptions($provider->driver());
 
+        if (isset($body['text'], $providerOptions['text'])) {
+            $providerOptions['text'] = array_merge($body['text'], $providerOptions['text']);
+        }
+
         if (Value::filled($providerOptions)) {
             $body = array_merge($body, $providerOptions);
         }

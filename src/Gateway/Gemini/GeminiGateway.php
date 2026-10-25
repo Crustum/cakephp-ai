@@ -28,6 +28,7 @@ use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\ParsesServerSentEventsTrait;
 use Crustum\Ai\Gateway\Trait\WrapsPcmAudioTrait;
+use Crustum\Ai\Gateway\Trait\WrapsStoppableStreamsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\AudioResponse;
 use Crustum\Ai\Responses\Data\GeneratedImage;
@@ -58,6 +59,7 @@ class GeminiGateway implements Gateway, StepTextGateway
     use HandlesFailoverErrorsTrait;
     use ParsesServerSentEventsTrait;
     use WrapsPcmAudioTrait;
+    use WrapsStoppableStreamsTrait;
 
     /**
      * Constructor.
@@ -143,7 +145,7 @@ class GeminiGateway implements Gateway, StepTextGateway
                 ->post('interactions?alt=sse', array_merge($body, ['stream' => true])),
         );
 
-        return yield from $this->processTextStream($invocationId, $provider, $model, $response->getBody());
+        return yield from $this->processTextStream($invocationId, $provider, $model, $this->stoppableBody($response->getBody(), $stepContext));
     }
 
     /**

@@ -22,6 +22,7 @@ class ClassificationPrompt implements Countable
      * @param string $model The model identifier
      * @param int $timeout Timeout in seconds
      * @param array<string, mixed> $providerOptions Provider-specific options
+     * @param array<int|string, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Attachments to classify alongside the state
      */
     public function __construct(
         public readonly string|array $state,
@@ -30,6 +31,7 @@ class ClassificationPrompt implements Countable
         public readonly string $model,
         public readonly int $timeout = 30,
         public readonly array $providerOptions = [],
+        public readonly array $attachments = [],
     ) {
     }
 

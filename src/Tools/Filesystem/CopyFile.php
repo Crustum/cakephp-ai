@@ -37,7 +37,7 @@ class CopyFile extends FilesystemTool
         $filesystem = $this->filesystem();
 
         if (!$this->fileExists($filesystem, $from)) {
-            return sprintf('Unable to copy [%s] to [%s]. The source file may not exist.', $from, $to);
+            return sprintf('File [%s] does not exist.', $from);
         }
 
         try {

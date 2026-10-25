@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use Cake\Core\Configure;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Files;
 use Crustum\Ai\Files\Document;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 
@@ -47,4 +48,15 @@ test('provider options are resolved with the azure key, not openai', function ()
         ->put(provider: 'azure');
 
     expect(multipartField(sentRequest(), 'purpose'))->toBe('batch');
+});
+
+test('delete file encodes the id as a single path segment', function (): void {
+    aiHttpFake([
+        'test-resource.openai.azure.com/*' => aiHttpResponse(['deleted' => true]),
+    ]);
+
+    Files::delete('../vector_stores/vs-123', provider: 'azure');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => $request->method() === 'DELETE'
+        && $request->url() === 'https://test-resource.openai.azure.com/openai/v1/files/..%2Fvector_stores%2Fvs-123');
 });

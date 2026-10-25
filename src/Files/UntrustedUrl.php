@@ -23,6 +23,8 @@ class UntrustedUrl
 {
     protected const MAX_REDIRECTS = 5;
 
+    protected const MAX_KILOBYTES = 100 * 1024;
+
     protected const BLOCKED_HOSTS = ['localhost'];
 
     protected const BLOCKED_HOST_SUFFIXES = ['.local', '.localhost'];
@@ -34,10 +36,13 @@ class UntrustedUrl
      *
      * @param string $url Remote file URL
      * @return \Crustum\Ai\Http\Contract\HttpResponseInterface
-     * @throws \InvalidArgumentException if the URL or a redirect target is blocked, or the URL redirects too many times
+     * @throws \InvalidArgumentException if the URL or a redirect target is blocked, the URL redirects too many times, or the body exceeds the size limit
      */
     public static function fetch(string $url): HttpResponseInterface
     {
+        $kilobytes = (int)Configure::read('Ai.remote_files.max_size', static::MAX_KILOBYTES);
+        $limit = $kilobytes * 1024;
+
         $client = HttpClientFactory::create();
 
         for ($hop = 0; $hop <= static::MAX_REDIRECTS; $hop++) {
@@ -47,6 +52,8 @@ class UntrustedUrl
                 'allow_redirects' => false,
                 'curl' => [CURLOPT_RESOLVE => static::validate($uri)],
             ]);
+
+            static::assertWithinSizeLimit($response, $uri, $kilobytes, $limit);
 
             $location = $response->getHeaderLine('Location');
 
@@ -58,6 +65,38 @@ class UntrustedUrl
         }
 
         throw new InvalidArgumentException('The remote file URL redirected too many times.');
+    }
+
+    /**
+     * Ensure the response body fits the remote file size limit, reading it in bounded chunks.
+     *
+     * @param \Crustum\Ai\Http\Contract\HttpResponseInterface $response Fetched response
+     * @param \GuzzleHttp\Psr7\Uri $uri Requested URL
+     * @param int $kilobytes Configured size limit in kilobytes
+     * @param int $limit Configured size limit in bytes
+     * @return void
+     * @throws \InvalidArgumentException if the declared or actual body size exceeds the limit
+     */
+    protected static function assertWithinSizeLimit(HttpResponseInterface $response, Uri $uri, int $kilobytes, int $limit): void
+    {
+        if ((int)$response->getHeaderLine('Content-Length') > $limit) {
+            throw new InvalidArgumentException("The remote file URL [{$uri}] exceeds the maximum size of {$kilobytes} kilobytes.");
+        }
+
+        $body = $response->getBody();
+        $contents = '';
+
+        while (!$body->eof()) {
+            $contents .= $body->read(8192);
+
+            if (strlen($contents) > $limit) {
+                throw new InvalidArgumentException("The remote file URL [{$uri}] exceeds the maximum size of {$kilobytes} kilobytes.");
+            }
+        }
+
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
     }
 
     /**

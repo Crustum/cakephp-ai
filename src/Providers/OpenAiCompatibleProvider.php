@@ -5,16 +5,21 @@ namespace Crustum\Ai\Providers;
 
 use Cake\Event\EventManager;
 use Cake\Event\EventManagerInterface;
+use Crustum\Ai\Contracts\Gateway\ClassificationGateway;
 use Crustum\Ai\Contracts\Gateway\EmbeddingGateway;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Gateway\TranscriptionGateway;
+use Crustum\Ai\Contracts\Providers\ClassificationProvider;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
+use Crustum\Ai\Gateway\OpenAiCompatible\OpenAiCompatibleClassificationGateway;
 use Crustum\Ai\Gateway\OpenAiCompatible\OpenAiCompatibleGateway;
+use Crustum\Ai\Providers\Trait\ClassifiesTrait;
 use Crustum\Ai\Providers\Trait\GeneratesEmbeddingsTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTranscriptionsTrait;
+use Crustum\Ai\Providers\Trait\HasClassificationGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasEmbeddingGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasTextGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasTranscriptionGatewayTrait;
@@ -23,13 +28,15 @@ use InvalidArgumentException;
 use Override;
 
 /**
- * OpenAI-compatible text, embeddings, and transcription provider.
+ * OpenAI-compatible text, embeddings, transcription, and classification provider.
  */
-class OpenAiCompatibleProvider extends Provider implements EmbeddingProvider, TextProvider, TranscriptionProvider
+class OpenAiCompatibleProvider extends Provider implements ClassificationProvider, EmbeddingProvider, TextProvider, TranscriptionProvider
 {
+    use ClassifiesTrait;
     use GeneratesEmbeddingsTrait;
     use GeneratesTextTrait;
     use GeneratesTranscriptionsTrait;
+    use HasClassificationGatewayTrait;
     use HasEmbeddingGatewayTrait;
     use HasTextGatewayTrait;
     use HasTranscriptionGatewayTrait;
@@ -147,6 +154,43 @@ class OpenAiCompatibleProvider extends Provider implements EmbeddingProvider, Te
         return $this->config['models']['embeddings']['default'] ?? throw new InvalidArgumentException(
             sprintf('The [%s] openai-compatible provider requires a default embeddings model. Set [models.embeddings.default] in its configuration or pass a model explicitly.', $this->name()),
         );
+    }
+
+    /**
+     * Get the provider's classification gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\ClassificationGateway
+     */
+    public function classificationGateway(): ClassificationGateway
+    {
+        if (!isset($this->classificationGateway)) {
+            $this->classificationGateway = new OpenAiCompatibleClassificationGateway();
+        }
+
+        return $this->classificationGateway;
+    }
+
+    /**
+     * Get the name of the default classification model.
+     *
+     * @return string
+     * @throws \InvalidArgumentException When no default classification model is configured
+     */
+    public function defaultClassificationModel(): string
+    {
+        return $this->config['models']['classification']['default'] ?? throw new InvalidArgumentException(
+            sprintf('The [%s] openai-compatible provider requires a default classification model. Set [models.classification.default] in its configuration or pass a model explicitly.', $this->name()),
+        );
+    }
+
+    /**
+     * Determine if the provider can classify attachments alongside the state.
+     *
+     * @return bool
+     */
+    public function supportsClassificationAttachments(): bool
+    {
+        return true;
     }
 
     /**

@@ -37,6 +37,7 @@ trait AnswersQuestionsTrait
      * @param array<string, \Crustum\Ai\Contracts\Question> $questions Questions to answer
      * @param int $timeout Timeout in seconds
      * @param array<string, mixed> $providerOptions Provider-specific options
+     * @param array<int|string, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Attachments to classify alongside the state
      * @return \Crustum\Ai\Responses\ClassificationResponse
      */
     public function classify(
@@ -46,6 +47,7 @@ trait AnswersQuestionsTrait
         array $questions,
         int $timeout = 30,
         array $providerOptions = [],
+        array $attachments = [],
     ): ClassificationResponse {
         $response = $this->withErrorHandling(
             $provider->name(),

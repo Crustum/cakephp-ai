@@ -22,6 +22,7 @@ use Crustum\Ai\Tools\ToolNameResolver;
 use Crustum\JsonSchema\JsonSchemaTypeFactory;
 use JMac\Testing\Double;
 use League\Flysystem\FilesystemOperator;
+use League\Flysystem\UnableToCopyFile;
 use League\Flysystem\UnableToDeleteFile;
 use League\Flysystem\UnableToMoveFile;
 
@@ -204,7 +205,29 @@ test('copy file duplicates a file', function (): void {
 test('copy file reports a missing source', function (): void {
     $result = (new CopyFile($this->fs))->handle(new Request(['from' => 'missing.txt', 'to' => 'dst.txt']));
 
-    expect($result)->toBe('Unable to copy [missing.txt] to [dst.txt]. The source file may not exist.');
+    expect($result)->toBe('File [missing.txt] does not exist.');
+});
+
+test('copy file does not copy directories', function (): void {
+    Storage::filesystem()->makeDirectory('photos');
+
+    $result = (new CopyFile($this->fs))->handle(new Request(['from' => 'photos', 'to' => 'archive/photos']));
+
+    expect($result)->toBe('File [photos] does not exist.');
+    Storage::filesystem()->assertExists('photos');
+    Storage::filesystem()->assertMissing('archive/photos');
+});
+
+test('copy file reports copy failures', function (): void {
+    $filesystem = Double::for(FilesystemOperator::class);
+    $filesystem->expects('fileExists')->with('a.txt')->returns(true);
+    $filesystem->expects('copy')->with('a.txt', 'b.txt')->throws(
+        UnableToCopyFile::fromLocationTo('a.txt', 'b.txt'),
+    );
+
+    $result = (new CopyFile($filesystem))->handle(new Request(['from' => 'a.txt', 'to' => 'b.txt']));
+
+    expect($result)->toBe('Unable to copy [a.txt] to [b.txt]: Unable to copy file from a.txt to b.txt');
 });
 
 test('move file relocates a file', function (): void {

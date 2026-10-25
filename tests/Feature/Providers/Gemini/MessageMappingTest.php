@@ -186,6 +186,28 @@ test('prior assistant steps are replayed to gemini verbatim', function (): void 
         ->and($request->body())->toContain('{"type":"function_call","id":"call_123","name":"FixedNumberGenerator","arguments":{}}');
 });
 
+test('a rebuilt assistant turn with text opens with its thought step', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('OK'),
+    ]);
+
+    agent('You are a helpful assistant.', [
+        new Message(role: 'user', content: 'Generate a number'),
+        new AssistantMessage('Let me generate one.', new Collection([
+            new ToolCall('call_123', 'FixedNumberGenerator', [], 'call_123', thoughtSignature: 'sig_123'),
+        ])),
+        new ToolResultMessage(new Collection([
+            new ToolResult('call_123', 'FixedNumberGenerator', [], 123, 'call_123'),
+        ])),
+    ])->prompt('And again', provider: 'gemini');
+
+    $input = geminiRequestBody()['input'];
+
+    expect(array_column($input, 'type'))->toBe([
+        'user_input', 'thought', 'model_output', 'function_call', 'function_result', 'user_input',
+    ])->and($input[1])->toBe(['type' => 'thought', 'signature' => 'sig_123']);
+});
+
 test('local image attachment without explicit mime type detects mime from file', function (): void {
     aiHttpFake([
         'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('I see an image'),

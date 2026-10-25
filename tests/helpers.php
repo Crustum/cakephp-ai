@@ -6,11 +6,13 @@ use Cake\Core\Configure;
 use Cake\Http\Client\Exception\ClientException;
 use Cake\I18n\DateTime;
 use Cake\Queue\TestSuite\TestQueueClient;
+use Crustum\Ai\Ai;
 use Crustum\Ai\AnonymousAgent;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Gateway\Fake\SchemaDataGenerator;
 use Crustum\Ai\Pipeline\Pipeline;
 use Crustum\Ai\Providers\OpenAiCompatibleProvider;
+use Crustum\Ai\Providers\TypeSafeProvider;
 use Crustum\Ai\StructuredAnonymousAgent;
 use Crustum\Ai\Test\Support\Database\ConversationTable;
 use Crustum\JsonSchema\Types\Type;
@@ -230,5 +232,24 @@ if (!function_exists('configureOpenAiCompatible')) {
             'key' => 'test-key',
             'models' => ['text' => ['default' => 'local-model']],
         ]);
+    }
+}
+
+if (!function_exists('registerTextOnlyClassifier')) {
+    /**
+     * Register a TypeSafe-based classifier that rejects attachments (test helper).
+     */
+    function registerTextOnlyClassifier(): void
+    {
+        Ai::getManager()->registerProviderInstance('text-only', new class ([
+            'name' => 'text-only',
+            'driver' => 'text-only',
+            'key' => 'test-key',
+        ]) extends TypeSafeProvider {
+            public function supportsClassificationAttachments(): bool
+            {
+                return false;
+            }
+        });
     }
 }

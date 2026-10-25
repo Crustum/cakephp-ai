@@ -7,8 +7,10 @@ use Cake\Utility\Text;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Event\Reranked;
 use Crustum\Ai\Event\Reranking;
+use Crustum\Ai\Event\RerankingFailed;
 use Crustum\Ai\Prompts\RerankingPrompt;
 use Crustum\Ai\Responses\RerankingResponse;
+use Throwable;
 
 /**
  * Reranks documents through the provider's reranking gateway.
@@ -45,14 +47,17 @@ trait ReranksTrait
             $prompt,
         ));
 
-        $response = $this->rerankingGateway()->rerank(
-            $this,
-            $model,
-            $documents,
-            $query,
-            $limit,
-            $timeout,
-            $providerOptions,
+        $response = $this->dispatchingFailure(
+            fn(): RerankingResponse => $this->rerankingGateway()->rerank(
+                $this,
+                $model,
+                $documents,
+                $query,
+                $limit,
+                $timeout,
+                $providerOptions,
+            ),
+            fn(Throwable $exception): RerankingFailed => new RerankingFailed($invocationId, $this, $model, $prompt, $exception),
         );
 
         $this->events->dispatch(new Reranked(

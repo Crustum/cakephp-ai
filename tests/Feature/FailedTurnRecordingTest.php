@@ -283,3 +283,55 @@ test('a conversation opened by a failed turn is titled the way a completed one i
 
     expect((string)ConversationTable::first('agent_conversations')->title)->toContain('arrived at it');
 });
+
+test('a replayed interrupted call keeps the call id the Responses API pairs its output by', function (string $provider): void {
+    Configure::write("Ai.providers.{$provider}.key", 'test-key');
+
+    aiHttpFake(['*' => aiHttpSequence([
+        aiHttpResponse([
+            'id' => 'resp_1',
+            'object' => 'response',
+            'status' => 'completed',
+            'output' => [[
+                'type' => 'function_call',
+                'id' => 'fc_1',
+                'call_id' => 'call_1',
+                'name' => 'FixedNumberGenerator',
+                'arguments' => '{}',
+                'status' => 'completed',
+            ]],
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 5],
+        ]),
+        aiHttpResponse([
+            'id' => 'resp_2',
+            'object' => 'response',
+            'status' => 'completed',
+            'output' => [[
+                'type' => 'message',
+                'id' => 'msg_2',
+                'role' => 'assistant',
+                'content' => [['type' => 'output_text', 'text' => 'Done.', 'annotations' => []]],
+            ]],
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 5],
+        ]),
+    ])]);
+
+    $agent = (new RememberingFailingToolAgent())->forUser((object)['id' => '00000000-0000-0000-0000-000000000001']);
+
+    expect(fn(): mixed => $agent->prompt('Go', provider: $provider))->toThrow(Exception::class, 'Forced to throw exception.');
+
+    (new RememberingFailingToolAgent())->continueLastConversation((object)['id' => '00000000-0000-0000-0000-000000000001'])->prompt('Again', provider: $provider);
+
+    $input = json_decode((string)aiHttpRecorded()[1][0]->body(), true)['input'];
+
+    $byType = [];
+
+    foreach ($input as $item) {
+        if (is_array($item) && isset($item['type'])) {
+            $byType[$item['type']] = $item;
+        }
+    }
+
+    expect($byType['function_call']['call_id'])->toBe('call_1')
+        ->and($byType['function_call_output']['call_id'])->toBe('call_1');
+})->with(['openai', 'xai']);

@@ -9,6 +9,7 @@ use Crustum\Ai\Contracts\Gateway\FileGateway;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Enums\Lab;
 use Crustum\Ai\Gateway\Gemini\Trait\CreatesGeminiClientTrait;
+use Crustum\Ai\Gateway\Trait\EncodesResourceIdsTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\PreparesStorableFilesTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
@@ -21,6 +22,7 @@ use Crustum\Ai\Responses\StoredFileResponse;
 class GeminiFileGateway implements FileGateway
 {
     use CreatesGeminiClientTrait;
+    use EncodesResourceIdsTrait;
     use HandlesFailoverErrorsTrait;
     use PreparesStorableFilesTrait;
 
@@ -42,7 +44,7 @@ class GeminiFileGateway implements FileGateway
      */
     public function getFile(FileProvider $provider, string $fileId): FileResponse
     {
-        $fileId = str_starts_with($fileId, 'files/') ? $fileId : "files/{$fileId}";
+        $fileId = $this->normalizeFileId($fileId);
 
         $response = $this->withErrorHandling(
             $provider->name(),
@@ -51,10 +53,10 @@ class GeminiFileGateway implements FileGateway
 
         $data = $response->getJson() ?? [];
 
-        return new FileResponse(
+        return (new FileResponse(
             id: $data['name'],
             mimeType: $data['mimeType'],
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -86,7 +88,7 @@ class GeminiFileGateway implements FileGateway
 
         $data = $response->getJson() ?? [];
 
-        return new StoredFileResponse($data['file']['name']);
+        return (new StoredFileResponse($data['file']['name']))->withRawResponse($response);
     }
 
     /**
@@ -98,11 +100,40 @@ class GeminiFileGateway implements FileGateway
      */
     public function deleteFile(FileProvider $provider, string $fileId): void
     {
-        $fileId = str_starts_with($fileId, 'files/') ? $fileId : "files/{$fileId}";
+        $fileId = $this->normalizeFileId($fileId);
 
         $this->withErrorHandling(
             $provider->name(),
             fn(): HttpResponseInterface => $this->client($provider)->delete($fileId),
         );
+    }
+
+    /**
+     * Normalize the file ID to include the resource prefix.
+     *
+     * @param string $fileId File identifier
+     * @return string
+     */
+    protected function normalizeFileId(string $fileId): string
+    {
+        return 'files/' . $this->resourceId($this->chopPrefix($fileId, 'files/'));
+    }
+
+    /**
+     * Remove the first matching prefix from the given value.
+     *
+     * @param string $value Value to strip
+     * @param list<string>|string $prefixes Prefix or ordered prefixes to remove
+     * @return string
+     */
+    protected function chopPrefix(string $value, string|array $prefixes): string
+    {
+        foreach ((array)$prefixes as $prefix) {
+            if ($prefix !== '' && str_starts_with($value, $prefix)) {
+                return substr($value, strlen($prefix));
+            }
+        }
+
+        return $value;
     }
 }

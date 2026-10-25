@@ -6,6 +6,7 @@ namespace Crustum\Ai\Responses;
 use Cake\Collection\CollectionInterface;
 use Cake\Http\Response;
 use Closure;
+use Crustum\Ai\Exception\StoppedException;
 use Crustum\Ai\Http\Stream\EventStreamResponse;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TextUsage;
@@ -107,6 +108,11 @@ class StreamableAgentResponse implements IteratorAggregate
      * Whether the response has handed at least one event to a consumer.
      */
     protected bool $hasYielded = false;
+
+    /**
+     * Whether a stop predicate aborted this stream.
+     */
+    protected bool $stopped = false;
 
     /**
      * Constructor
@@ -298,6 +304,10 @@ class StreamableAgentResponse implements IteratorAggregate
                 $callback($throwable);
             }
 
+            if ($throwable instanceof StoppedException) {
+                $this->stopped = true;
+            }
+
             throw $throwable;
         }
 
@@ -365,5 +375,15 @@ class StreamableAgentResponse implements IteratorAggregate
     public function hasYielded(): bool
     {
         return $this->hasYielded;
+    }
+
+    /**
+     * Determine whether a stop predicate aborted this stream.
+     *
+     * @return bool
+     */
+    public function wasStopped(): bool
+    {
+        return $this->stopped;
     }
 }

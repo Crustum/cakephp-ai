@@ -8,6 +8,7 @@ use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Gateway\StepContext;
 use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\TextGenerationOptions;
+use Crustum\Ai\Gateway\Trait\WrapsStoppableStreamsTrait;
 use Crustum\Ai\Utility\Value;
 use Generator;
 
@@ -16,6 +17,8 @@ use Generator;
  */
 trait PerformsChatCompletionStepsTrait
 {
+    use WrapsStoppableStreamsTrait;
+
     /**
      * Generate text for a single Chat Completions step.
      *
@@ -98,7 +101,7 @@ trait PerformsChatCompletionStepsTrait
                 ->post('chat/completions', $body),
         );
 
-        return yield from $this->processTextStream($invocationId, $provider, $model, $response->getBody());
+        return yield from $this->processTextStream($invocationId, $provider, $model, $this->stoppableBody($response->getBody(), $stepContext));
     }
 
     /**

@@ -8,11 +8,18 @@ use Crustum\Ai\Classification\Choice;
 use Crustum\Ai\Classification\Score;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
+use Crustum\Ai\Files\Image;
+use Crustum\Ai\Files\LocalImage;
+use Crustum\Ai\Files\ProviderImage;
+use Crustum\Ai\Files\RemoteImage;
+use Crustum\Ai\Responses\ClassificationResponse;
 use Crustum\Ai\Responses\Data\BooleanAnswer;
 use Crustum\Ai\Responses\Data\ChoiceAnswer;
 use Crustum\Ai\Responses\Data\ScoreAnswer;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
+use Crustum\Ai\Test\Support\Storage\LocalDisk;
+use Laminas\Diactoros\UploadedFile;
 
 beforeEach(function (): void {
     Configure::write('Ai.providers.typesafe', [
@@ -222,3 +229,149 @@ test('classification overloaded response throws provider overloaded exception', 
 
     Classification::of('text')->question('is_urgent', new Boolean('Urgent?'))->classify(provider: 'typesafe');
 })->with([529, 503])->throws(ProviderOverloadedException::class);
+
+function typeSafeClassificationUpload(string $filename, string $contents, string $mimeType): UploadedFile
+{
+    $resource = fopen('php://temp', 'r+');
+    fwrite($resource, $contents);
+    rewind($resource);
+
+    return new UploadedFile($resource, strlen($contents), UPLOAD_ERR_OK, $filename, $mimeType);
+}
+
+test('image attachments are sent as referenced assets with the images header', function (): void {
+    aiHttpFake(['*' => fakeTypeSafeResponse()]);
+
+    $jpeg = file_get_contents(__DIR__ . '/../../../Fixtures/Images/blue.jpg');
+    $png = file_get_contents(__DIR__ . '/../../../Fixtures/Images/red.png');
+
+    Classification::of('Inspect this.', [
+        Image::fromBase64(base64_encode('base64-bytes'), 'image/jpeg')->withProviderOptions(['custom' => 'value']),
+        Image::fromPath(__DIR__ . '/../../../Fixtures/Images/blue.jpg'),
+        typeSafeClassificationUpload('upload.png', 'upload-bytes', 'image/png'),
+        Image::fromBase64(base64_encode($png)),
+    ])
+        ->question('visible_damage', new Boolean('Is the product in the photos damaged?'))
+        ->classify(provider: 'typesafe');
+
+    aiAssertHttpSent(function (AiHttpRequest $request) use ($jpeg, $png): bool {
+        $body = json_decode($request->body(), true);
+
+        return $request->hasHeader('TypeSafe-Danger-Zone-Images', 'true')
+            && $body['state'] === ['Inspect this.', ...array_keys($body['assets'])]
+            && array_values($body['assets']) === [
+                ['custom' => 'value', 'type' => 'image', 'format' => 'jpg', 'data_base64' => base64_encode('base64-bytes')],
+                ['type' => 'image', 'format' => 'jpg', 'data_base64' => base64_encode($jpeg)],
+                ['type' => 'image', 'format' => 'png', 'data_base64' => base64_encode('upload-bytes')],
+                ['type' => 'image', 'format' => 'png', 'data_base64' => base64_encode($png)],
+            ];
+    });
+});
+
+test('remote and stored images are downloaded and labelled in the state by attachment name', function (): void {
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse('remote-bytes', 200, ['Content-Type' => 'image/jpeg']),
+        '*' => fakeTypeSafeResponse(),
+    ]);
+
+    $png = file_get_contents(__DIR__ . '/../../../Fixtures/Images/red.png');
+    LocalDisk::put('photos', 'product.png', $png);
+
+    try {
+        Classification::of('Inspect this.', [
+            'front' => Image::fromUrl('https://example.com/product.jpg'),
+            'back' => Image::fromStorage('product.png', 'photos'),
+        ])
+            ->question('visible_damage', new Boolean('Is the product in `front` or `back` damaged?'))
+            ->classify(provider: 'typesafe');
+
+        aiAssertHttpSent(function (AiHttpRequest $request) use ($png): bool {
+            if ($request->url() !== 'https://api.typesafe.ai/v1/systemone') {
+                return false;
+            }
+
+            $body = json_decode($request->body(), true);
+
+            [$front, $back] = array_keys($body['assets']);
+
+            return $body['assets'][$front] === ['type' => 'image', 'format' => 'jpg', 'data_base64' => base64_encode('remote-bytes')]
+                && $body['assets'][$back] === ['type' => 'image', 'format' => 'png', 'data_base64' => base64_encode($png)]
+                && $body['state'] === ['Inspect this.', "front: {$front}", "back: {$back}"];
+        });
+    } finally {
+        LocalDisk::cleanup('photos');
+    }
+});
+
+test('image references follow the shape of the state', function (string|array $state, array $attachments, Closure $expected): void {
+    aiHttpFake(['*' => fakeTypeSafeResponse()]);
+
+    Classification::of($state, $attachments)
+        ->question('visible_damage', new Boolean('Damaged?'))
+        ->classify(provider: 'typesafe');
+
+    aiAssertHttpSent(function (AiHttpRequest $request) use ($expected): bool {
+        $body = json_decode($request->body(), true);
+
+        return $body['state'] === $expected(...array_keys($body['assets']));
+    });
+})->with([
+    'unnamed images under images in a structured state' => [
+        ['subject' => 'Broken lamp'],
+        [Image::fromBase64(base64_encode('a'), 'image/png')],
+        fn(string $a): array => ['subject' => 'Broken lamp', 'images' => [$a]],
+    ],
+    'named and unnamed images in a structured state' => [
+        ['subject' => 'Broken lamp'],
+        ['front' => Image::fromBase64(base64_encode('a'), 'image/png'), Image::fromBase64(base64_encode('b'), 'image/png')],
+        fn(string $a, string $b): array => ['subject' => 'Broken lamp', 'front' => $a, 'images' => [$b]],
+    ],
+    'named and unnamed images in a list state' => [
+        ['first', 'second'],
+        ['front' => Image::fromBase64(base64_encode('a'), 'image/png'), 3 => Image::fromBase64(base64_encode('b'), 'image/png')],
+        fn(string $a, string $b): array => ['first', 'second', "front: {$a}", $b],
+    ],
+]);
+
+test('requests without attachments do not send assets or the images header', function (): void {
+    aiHttpFake(['*' => fakeTypeSafeResponse()]);
+
+    Classification::of('text')->question('is_urgent', new Boolean('Urgent?'))->classify(provider: 'typesafe');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => !$request->hasHeader('TypeSafe-Danger-Zone-Images')
+        && !array_key_exists('assets', json_decode($request->body(), true)));
+});
+
+test('images that need a key the structured state already uses are rejected before any request', function (array $state, array $attachments, string $key): void {
+    aiHttpFake();
+
+    expect(fn(): ClassificationResponse => Classification::of($state, $attachments)
+        ->question('damaged', new Boolean('Damaged?'))
+        ->classify(provider: 'typesafe'))->toThrow(InvalidArgumentException::class, "TypeSafe adds images to a structured state under their attachment names, or [images] when unnamed; [{$key}] already in the state.");
+
+    aiAssertHttpNothingSent();
+})->with([
+    'named' => [['photo' => 'caption'], ['photo' => Image::fromBase64(base64_encode('photo'), 'image/png')], 'photo'],
+    'unnamed' => [['images' => 'none attached'], [Image::fromBase64(base64_encode('photo'), 'image/png')], 'images'],
+]);
+
+test('attachments that are not supported images are rejected before any request', function (mixed $attachment, string $message): void {
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse('<html></html>', 200, ['Content-Type' => 'text/html']),
+    ]);
+
+    expect(fn(): ClassificationResponse => Classification::of('Inspect this.', [$attachment()])
+        ->question('visible_damage', new Boolean('Damaged?'))
+        ->classify(provider: 'typesafe'))->toThrow(InvalidArgumentException::class, $message);
+
+    expect(array_filter(
+        aiHttpRecorded(),
+        fn(array $pair): bool => str_contains($pair[0]->url(), 'api.typesafe.ai'),
+    ))->toBe([]);
+})->with([
+    'provider image' => [fn(): ProviderImage => Image::fromId('file_123'), 'TypeSafe decisions only accept images with inline content; [Crustum\\Ai\\Files\\ProviderImage] given.'],
+    'pdf upload' => [fn(): UploadedFile => typeSafeClassificationUpload('invoice.pdf', 'pdf-bytes', 'application/pdf'), '[application/pdf] given.'],
+    'webp upload' => [fn(): UploadedFile => typeSafeClassificationUpload('photo.webp', 'webp-bytes', 'image/webp'), 'TypeSafe decisions only accept JPEG or PNG images; [image/webp] given.'],
+    'gif file' => [fn(): LocalImage => Image::fromPath(__DIR__ . '/../../../Fixtures/Images/red.png', 'image/gif'), '[image/gif] given.'],
+    'html served as a remote image' => [fn(): RemoteImage => Image::fromUrl('https://example.com/product.png'), '[text/html] given.'],
+]);

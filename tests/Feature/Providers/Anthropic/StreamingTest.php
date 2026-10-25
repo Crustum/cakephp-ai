@@ -76,6 +76,8 @@ describe('text streaming', function (): void {
             ->and($textEnds[0]->messageId)->toBe($textStarts[0]->messageId)
             ->and($textDeltas[0]->messageId)->toBe($textStarts[0]->messageId)
             ->and($textDeltas[1]->messageId)->toBe($textStarts[0]->messageId)
+            ->and($textDeltas[0]->delta)->toBe('First')
+            ->and($textDeltas[1]->delta)->toBe("\n\nSecond")
             ->and(array_search($textEnds[0], $events, true))->toBeGreaterThan(array_search($textDeltas[1], $events, true));
     });
 
@@ -285,6 +287,73 @@ describe('pause_turn', function (): void {
         $textDeltas = array_values(array_filter($events, fn($e): bool => $e instanceof TextDelta));
         expect($textDeltas)->not->toBeEmpty()
             ->and($textDeltas[0]->delta)->toBe('Resumed');
+    });
+
+    test('streaming replays text blocks around a server tool without the separator', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpSequence([
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'First']),
+                        $this->contentBlockStop(0),
+                        $this->contentBlockStart(1, ['type' => 'server_tool_use', 'id' => 'srvtoolu_1', 'name' => 'web_search']),
+                        $this->contentBlockStop(1),
+                        $this->contentBlockStart(2, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(2, ['type' => 'text_delta', 'text' => 'Second']),
+                        $this->contentBlockStop(2),
+                        $this->messageDelta('pause_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->messageDelta('end_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+            ]),
+        ]);
+
+        $events = $this->collectStreamEvents();
+
+        $recorded = aiHttpRecorded();
+        expect($recorded)->toHaveCount(2);
+
+        $followUpBody = json_decode($recorded[1][0]->body(), true, 512, JSON_THROW_ON_ERROR);
+        $replayed = end($followUpBody['messages'])['content'];
+
+        expect([$replayed[0]['text'], $replayed[2]['text']])->toBe(['First', 'Second'])
+            ->and(TextDelta::combine($events))->toBe("First\n\nSecond");
+    });
+
+    test('streaming does not separate text after a server tool when the model already ended the line', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpResponse(
+                body: $this->ssePayload([
+                    $this->messageStart(),
+                    $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                    $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => "First\n"]),
+                    $this->contentBlockStop(0),
+                    $this->contentBlockStart(1, ['type' => 'server_tool_use', 'id' => 'srvtoolu_1', 'name' => 'web_search']),
+                    $this->contentBlockStop(1),
+                    $this->contentBlockStart(2, ['type' => 'text', 'text' => '']),
+                    $this->contentBlockDelta(2, ['type' => 'text_delta', 'text' => 'Second']),
+                    $this->contentBlockStop(2),
+                    $this->messageDelta('end_turn', 10),
+                ]),
+                status: 200,
+                headers: ['Content-Type' => 'text/event-stream'],
+            ),
+        ]);
+
+        $textDeltas = array_values(array_filter($this->collectStreamEvents(), fn($e): bool => $e instanceof TextDelta));
+
+        expect(array_map(fn(TextDelta $e): string => $e->delta, $textDeltas))->toBe(["First\n", 'Second']);
     });
 });
 

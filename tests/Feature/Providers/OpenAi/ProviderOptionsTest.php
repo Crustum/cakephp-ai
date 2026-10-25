@@ -5,6 +5,7 @@ use Cake\Core\Configure;
 use Cake\Utility\Hash;
 use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsWithToolsAgent;
+use Crustum\Ai\Test\Fixtures\Agents\StructuredWithThinkingAgent;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 
 beforeEach(function (): void {
@@ -62,4 +63,20 @@ test('provider options are persisted in tool call follow up requests', function 
     expect(Hash::get($followUpBody, 'reasoning.effort'))->toBe('high')
         ->and(Hash::get($followUpBody, 'frequency_penalty'))->toBe(0.5)
         ->and($followUpBody)->toHaveKey('previous_response_id');
+});
+
+test('structured output keeps its format when provider options set text', function (): void {
+    aiHttpFake([
+        '*' => fakeOpenAiResponse('{"name":"Larry","age":30}'),
+    ]);
+
+    (new StructuredWithThinkingAgent())->prompt('Tell me about Larry', provider: 'openai');
+
+    aiAssertHttpSent(function (AiHttpRequest $request): bool {
+        $body = json_decode($request->body(), true);
+
+        return Hash::get($body, 'text.format.type') === 'json_schema'
+            && Hash::get($body, 'text.verbosity') === 'low'
+            && Hash::get($body, 'reasoning.effort') === 'low';
+    });
 });

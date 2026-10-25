@@ -109,3 +109,61 @@ test('too many redirects throws', function (): void {
 
     aiAssertHttpSentCount(6);
 });
+
+test('a body larger than the size limit is rejected', function (): void {
+    Configure::write('Ai.remote_files.max_size', 1);
+
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse(str_repeat('a', 1025)),
+    ]);
+
+    expect(fn(): string => (new RemoteImage('https://example.com/photo.png'))->content())
+        ->toThrow(InvalidArgumentException::class, 'exceeds the maximum size of 1 kilobytes');
+
+    Configure::delete('Ai.remote_files.max_size');
+});
+
+test('a declared length larger than the size limit is rejected before the body is read', function (): void {
+    Configure::write('Ai.remote_files.max_size', 1);
+
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse('bytes', 200, ['Content-Length' => '1025']),
+    ]);
+
+    expect(fn(): string => (new RemoteImage('https://example.com/photo.png'))->content())
+        ->toThrow(InvalidArgumentException::class, 'exceeds the maximum size of 1 kilobytes');
+
+    aiAssertHttpSentCount(1);
+
+    Configure::delete('Ai.remote_files.max_size');
+});
+
+test('the size limit defaults to 100 megabytes', function (): void {
+    Configure::delete('Ai.remote_files.max_size');
+
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse('bytes', 200, ['Content-Length' => (string)(100 * 1024 * 1024 + 1)]),
+    ]);
+
+    expect(fn(): string => (new RemoteImage('https://example.com/photo.png'))->content())
+        ->toThrow(InvalidArgumentException::class, 'exceeds the maximum size of 102400 kilobytes');
+});
+
+test('a body within the size limit is fetched', function (): void {
+    Configure::write('Ai.remote_files.max_size', 1);
+
+    aiHttpFake([
+        'example.com/*' => aiHttpResponse(str_repeat('b', 1024)),
+    ]);
+
+    expect((new RemoteImage('https://example.com/photo.png'))->content())->toBe(str_repeat('b', 1024));
+
+    Configure::delete('Ai.remote_files.max_size');
+});
+
+test('a transport failure unrelated to the size limit is rethrown', function (): void {
+    aiHttpFake(fn() => throw new RuntimeException('cURL error 7: Failed to connect'));
+
+    expect(fn(): string => (new RemoteImage('https://example.com/photo.png'))->content())
+        ->toThrow(RuntimeException::class, 'Failed to connect');
+});

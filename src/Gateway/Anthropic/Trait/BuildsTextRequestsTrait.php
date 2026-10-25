@@ -79,10 +79,16 @@ trait BuildsTextRequestsTrait
             }
         }
 
-        $body = array_merge($body, array_filter([
-            'temperature' => $options?->temperature,
-            'top_p' => $options?->topP,
-        ], static fn(mixed $value): bool => $value !== null));
+        if ($this->supportsSamplingParameters($model)) {
+            $body = array_merge($body, array_filter([
+                'temperature' => $options?->temperature,
+                'top_p' => $options?->temperature === null ? $options?->topP : null,
+            ], static fn(mixed $value): bool => $value !== null));
+        }
+
+        if (isset($body['output_config'], $providerOptions['output_config'])) {
+            $providerOptions['output_config'] = array_merge($body['output_config'], $providerOptions['output_config']);
+        }
 
         return $this->applyPromptCacheBreakpoints(array_merge($body, $providerOptions), $options);
     }
@@ -186,6 +192,17 @@ trait BuildsTextRequestsTrait
     protected function cacheControl(?string $ttl): array
     {
         return array_filter(['type' => 'ephemeral', 'ttl' => $ttl]);
+    }
+
+    /**
+     * Determine if the model accepts temperature and top_p.
+     *
+     * @param string $model Model name
+     * @return bool
+     */
+    protected function supportsSamplingParameters(string $model): bool
+    {
+        return (bool)preg_match('/^claude-(3-|(opus|sonnet|haiku)-4(-[0-6])?(-\d{8})?$)/', $model);
     }
 
     /**

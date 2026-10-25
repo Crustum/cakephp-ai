@@ -229,7 +229,7 @@ class OpenRouterProvider extends Provider implements AudioProvider, Classificati
     {
         return array_filter([
             'aspect_ratio' => $size,
-            'image_size' => match ($quality) {
+            'resolution' => match ($quality) {
                 'low' => '1K',
                 'medium' => '2K',
                 'high' => '4K',
@@ -334,6 +334,16 @@ class OpenRouterProvider extends Provider implements AudioProvider, Classificati
     public function defaultClassificationModel(): string
     {
         return $this->config['models']['classification']['default'] ?? '~typesafe/jev-latest';
+    }
+
+    /**
+     * Determine if the provider can classify attachments alongside the state.
+     *
+     * @return bool
+     */
+    public function supportsClassificationAttachments(): bool
+    {
+        return true;
     }
 
     /**

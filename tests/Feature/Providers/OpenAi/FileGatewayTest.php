@@ -87,3 +87,59 @@ test('delete file sends correct request', function (): void {
         && $request->url() === 'https://api.openai.com/v1/files/file-abc123'
         && $request->hasHeader('Authorization', 'Bearer test-key'));
 });
+
+test('delete file encodes the id as a single path segment', function (): void {
+    aiHttpFake([
+        'api.openai.com/*' => aiHttpResponse(['deleted' => true]),
+    ]);
+
+    Files::delete('../vector_stores/vs-123', provider: 'openai');
+
+    aiAssertHttpSent(fn(AiHttpRequest $request): bool => $request->method() === 'DELETE'
+        && $request->url() === 'https://api.openai.com/v1/files/..%2Fvector_stores%2Fvs-123');
+});
+
+test('delete file rejects dot segment ids', function (string $fileId): void {
+    aiHttpFake();
+
+    expect(fn() => Files::delete($fileId, provider: 'openai'))->toThrow(InvalidArgumentException::class);
+
+    aiAssertHttpNothingSent();
+})->with(['', '.', '..']);
+
+test('get file preserves raw response', function (): void {
+    aiHttpFake([
+        'api.openai.com/*' => aiHttpResponse(['id' => 'file-abc123', 'bytes' => 1024]),
+    ]);
+
+    $response = Files::get('file-abc123', provider: 'openai');
+
+    expect($response->raw)->not->toBeNull()
+        ->and($response->raw->getJson()['bytes'])->toBe(1024);
+});
+
+test('put file preserves raw response', function (): void {
+    aiHttpFake([
+        'api.openai.com/*' => aiHttpResponse(['id' => 'file-uploaded123', 'bytes' => 2048]),
+    ]);
+
+    $response = Document::fromString('Hello, World!', 'text/plain')->as('hello.txt')->put(
+        provider: 'openai',
+    );
+
+    expect($response->raw)->not->toBeNull()
+        ->and($response->raw->getJson()['bytes'])->toBe(2048);
+});
+
+test('raw response is excluded when serialized', function (): void {
+    aiHttpFake([
+        'api.openai.com/*' => aiHttpResponse(['id' => 'file-abc123']),
+    ]);
+
+    $response = Files::get('file-abc123', provider: 'openai');
+    $serialized = serialize($response);
+    $unserialized = unserialize($serialized);
+
+    expect($unserialized->id)->toBe('file-abc123')
+        ->and($unserialized->raw)->toBeNull();
+});

@@ -48,6 +48,33 @@ test('stream fails over to next provider when primary is rate limited', function
     $this->assertHttpSentToProvidersInOrder(['primary', 'backup']);
 });
 
+test('stream retries a rate limited provider after its Retry-After delay before failing over', function (): void {
+    aiConfigureGroqFailoverProviders();
+
+    $this->fakeProviderHttp([
+        '*' => $this->httpSequence([
+            $this->httpResponse(['error' => ['message' => 'Rate limited']], 429, ['Retry-After' => '1']),
+            $this->httpResponse(
+                fakeGroqStreamBodyForStreamFailover(),
+                200,
+                ['Content-Type' => 'text/event-stream'],
+            ),
+        ]),
+    ]);
+
+    $response = (new AssistantAgent())->stream(
+        'Hello',
+        provider: ['primary', 'backup'],
+    );
+
+    foreach ($response as $_) {
+    }
+
+    expect($response->text)->toBe('Hello');
+
+    $this->assertAiEventNotDispatched(AgentFailedOver::class);
+});
+
 test('stream throws last exception when all providers fail', function (): void {
     aiConfigureGroqFailoverProviders();
 

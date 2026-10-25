@@ -11,6 +11,7 @@ use Crustum\Ai\Contracts\Gateway\StoreGateway;
 use Crustum\Ai\Contracts\Providers\StoreProvider;
 use Crustum\Ai\Exception\AiException;
 use Crustum\Ai\Gateway\Gemini\Trait\CreatesGeminiClientTrait;
+use Crustum\Ai\Gateway\Trait\EncodesResourceIdsTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Responses\Data\StoreFileCounts;
@@ -24,6 +25,7 @@ use DateInterval;
 class GeminiStoreGateway implements StoreGateway
 {
     use CreatesGeminiClientTrait;
+    use EncodesResourceIdsTrait;
     use HandlesFailoverErrorsTrait;
 
     /**
@@ -244,9 +246,7 @@ class GeminiStoreGateway implements StoreGateway
      */
     protected function normalizeStoreId(string $storeId): string
     {
-        return str_starts_with($storeId, 'fileSearchStores/')
-            ? $storeId
-            : "fileSearchStores/{$storeId}";
+        return 'fileSearchStores/' . $this->resourceId($this->chopPrefix($storeId, 'fileSearchStores/'));
     }
 
     /**
@@ -257,9 +257,7 @@ class GeminiStoreGateway implements StoreGateway
      */
     protected function normalizeFileId(string $fileId): string
     {
-        return str_starts_with($fileId, 'files/')
-            ? $fileId
-            : "files/{$fileId}";
+        return 'files/' . $this->resourceId($this->chopPrefix($fileId, 'files/'));
     }
 
     /**
@@ -271,16 +269,24 @@ class GeminiStoreGateway implements StoreGateway
      */
     protected function normalizeDocumentId(string $storeId, string $documentId): string
     {
-        if (str_starts_with($documentId, 'fileSearchStores/')) {
-            return $documentId;
+        return "{$storeId}/documents/" . $this->resourceId($this->chopPrefix($documentId, ["{$storeId}/documents/", 'documents/', 'files/']));
+    }
+
+    /**
+     * Remove the first matching prefix from the given value.
+     *
+     * @param string $value Value to strip
+     * @param list<string>|string $prefixes Prefix or ordered prefixes to remove
+     * @return string
+     */
+    protected function chopPrefix(string $value, string|array $prefixes): string
+    {
+        foreach ((array)$prefixes as $prefix) {
+            if ($prefix !== '' && str_starts_with($value, $prefix)) {
+                return substr($value, strlen($prefix));
+            }
         }
 
-        $documentId = match (true) {
-            str_starts_with($documentId, 'documents/') => substr($documentId, 10),
-            str_starts_with($documentId, 'files/') => substr($documentId, 6),
-            default => $documentId,
-        };
-
-        return "{$storeId}/documents/{$documentId}";
+        return $value;
     }
 }

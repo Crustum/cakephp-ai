@@ -15,7 +15,7 @@ return Architecture::define()
         '/^Crustum\\\\Ai\\\\Tools\\\\Request$/',
         '/^Crustum\\\\Ai\\\\Approvals\\\\(Approval|Decision|Decisions)$/',
         '/^Crustum\\\\Ai\\\\Prompts\\\\(AgentPrompt|Prompt)$/',
-        '/^Crustum\\\\Ai\\\\Gateway\\\\(StepContext|StepResponse|TextGenerationOptions)$/',
+        '/^Crustum\\\\Ai\\\\Gateway\\\\(StepContext|StepResponse|StepResult|TextGenerationOptions)$/',
         '/^Crustum\\\\Ai\\\\Providers\\\\Tools\\\\(ProviderTool|CodeExecution|FileSearch|FileSearchQuery|ToolSearch|WebFetch|WebSearch)$/',
     ])
     // Public static entrypoints (root FQCN kept for DX; layer is Facades, not Plugin).

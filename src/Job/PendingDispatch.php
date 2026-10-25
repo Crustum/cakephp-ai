@@ -8,10 +8,10 @@ use Cake\Queue\QueueManager;
 use Closure;
 use Crustum\Ai\Contracts\PendingDispatchInterface;
 use Crustum\Ai\Queue\AiQueue;
+use Crustum\Queue\Processor\QueuedCallback;
 use Crustum\Queue\Sync\SyncJobRunner;
 use Crustum\Queue\Sync\SyncModeResolver;
 use InvalidArgumentException;
-use Laravel\SerializableClosure\SerializableClosure;
 use Throwable;
 
 /**
@@ -175,8 +175,8 @@ class PendingDispatch implements PendingDispatchInterface
     /**
      * Pack a completion callback for queue transport.
      *
-     * Mirrors `DispatchableTrait::pack()` for a `SerializableClosure` value:
-     * closures can only cross the process boundary via PHP serialization.
+     * Delegates to `QueuedCallback` (single format definition shared with the
+     * processor side): closures can only cross the process boundary via PHP serialization.
      * Serializability is verified here (not at dispatch) so untransportable
      * callbacks fail fast with a clear message.
      *
@@ -187,7 +187,7 @@ class PendingDispatch implements PendingDispatchInterface
     protected static function packCallback(Closure $callback): string
     {
         try {
-            return base64_encode(serialize(new SerializableClosure($callback)));
+            return QueuedCallback::pack($callback);
         } catch (Throwable $throwable) {
             throw new InvalidArgumentException(
                 'Queued completion callbacks must be serializable for transport: '

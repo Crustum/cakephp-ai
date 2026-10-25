@@ -95,6 +95,7 @@ trait StreamsTextTrait
                                         $recordApprovalResults,
                                         $validatedApproval,
                                         $this->runContextFor($invocationId, $prompt),
+                                        $prompt->stopCheck,
                                     ) as $event
                                 ) {
                                     if ($event instanceof ToolApprovalRequest) {

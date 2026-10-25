@@ -6,9 +6,11 @@ namespace Crustum\Ai\Providers\Trait;
 use Cake\Utility\Text;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Event\GeneratingImage;
+use Crustum\Ai\Event\ImageFailed;
 use Crustum\Ai\Event\ImageGenerated;
 use Crustum\Ai\Prompts\ImagePrompt;
 use Crustum\Ai\Responses\ImageResponse;
+use Throwable;
 
 /**
  * Generates images through the provider's image gateway.
@@ -53,15 +55,18 @@ trait GeneratesImagesTrait
             $prompt,
         ));
 
-        $response = $this->imageGateway()->generateImage(
-            $this,
-            $model,
-            $prompt->prompt,
-            $prompt->attachments->toList(),
-            $prompt->size,
-            $prompt->quality,
-            $timeout,
-            $prompt->providerOptions,
+        $response = $this->dispatchingFailure(
+            fn(): ImageResponse => $this->imageGateway()->generateImage(
+                $this,
+                $model,
+                $prompt->prompt,
+                $prompt->attachments->toList(),
+                $prompt->size,
+                $prompt->quality,
+                $timeout,
+                $prompt->providerOptions,
+            ),
+            fn(Throwable $exception): ImageFailed => new ImageFailed($invocationId, $this, $model, $prompt, $exception),
         );
 
         $this->events->dispatch(new ImageGenerated(

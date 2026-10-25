@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Crustum\Ai\Schema;
 
 use Crustum\JsonSchema\Types\AnyOfType;
+use InvalidArgumentException;
 
 /**
  * Schema Normalizer
@@ -51,6 +52,16 @@ class SchemaNormalizer
     private const TYPES = ['string', 'integer', 'number', 'boolean', 'object', 'array', 'null'];
 
     /**
+     * The most nodes a single schema may expand to once every "$ref" is inlined.
+     */
+    private const MAX_NODES = 10_000;
+
+    /**
+     * The number of nodes normalized so far.
+     */
+    private int $nodes = 0;
+
+    /**
      * Rewrite a raw JSON Schema into the subset Crustum\JsonSchema can deserialize.
      *
      * @param array<string, mixed> $schema The schema to normalize
@@ -71,6 +82,10 @@ class SchemaNormalizer
      */
     private function node(array $schema, array $root, array $seen): array
     {
+        if (++$this->nodes > self::MAX_NODES) {
+            throw new InvalidArgumentException('Schema expands to more than ' . self::MAX_NODES . ' nodes.');
+        }
+
         [$schema, $seen] = $this->inlineRefs($schema, $root, $seen);
 
         $schema = $this->mergeAllOf($schema, $root, $seen);

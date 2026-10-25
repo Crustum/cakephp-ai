@@ -13,11 +13,10 @@
         "php": ">=8.4",
         "cakephp/cakephp": "^5.4",
         "cakephp/chronos": "^3.5",
-        "crustum/cakephp-queue": "^1.2",
+        "crustum/cakephp-queue": "^1.4",
         "crustum/broadcasting": "^1.4",
         "crustum/json-schema": "^1.0",
         "crustum/mcp": "^1.0",
-        "crustum/plugin-manifest": "^1.1",
         "enqueue/enqueue": "^0.10.27",
         "enqueue/simple-client": "^0.10.27",
         "enqueue/dsn": "^0.10.27",
@@ -39,6 +38,7 @@
         "cakedc/cakephp-phpstan": "^4.3",
         "cakephp/bake": "^3.8",
         "crustum/essentia": "^1.0.2",
+        "crustum/plugin-manifest": "^1.2",
         "phpunit/phpunit": "^12.5.33",
         "pestphp/pest": "^4.7",
         "pestphp/pest-plugin-type-coverage": "^4.0",
@@ -98,6 +98,7 @@
         "aws/aws-sdk-php": "<3.393"
     },
     "suggest": {
+        "crustum/plugin-manifest": "CakePHP plugin installer",
         "aws/aws-sdk-php": "Required to use the Bedrock provider."
     },
     "minimum-stability": "dev",

@@ -45,6 +45,7 @@ trait HandlesTextStreamingTrait
     ): Generator {
         $messageId = $this->generateEventId();
         $reasoningId = null;
+        $reasoningDetails = [];
         $streamModel = $model;
         $streamStartEmitted = false;
         $textStartEmitted = false;
@@ -104,6 +105,8 @@ trait HandlesTextStreamingTrait
                     time(),
                 ))->withInvocationId($invocationId);
             }
+
+            $reasoningDetails = $this->mergeReasoningDetails($reasoningDetails, $delta['reasoning_details'] ?? []);
 
             $reasoning = $delta['reasoning'] ?? '';
 
@@ -247,7 +250,40 @@ trait HandlesTextStreamingTrait
             finishReason: $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
             usage: $usage ?? new TextUsage(0, 0),
             meta: new Meta($provider->name(), $streamModel),
+            replayBlocks: array_values($reasoningDetails),
         );
+    }
+
+    /**
+     * Merge a delta's reasoning detail fragments by index.
+     *
+     * @param array<int, array<string, mixed>> $merged Merged reasoning details
+     * @param array<int, array<string, mixed>> $details Reasoning details from the delta
+     * @return array<int, array<string, mixed>>
+     */
+    protected function mergeReasoningDetails(array $merged, array $details): array
+    {
+        foreach ($details as $detail) {
+            $index = $detail['index'] ?? count($merged);
+
+            if (!isset($merged[$index])) {
+                $merged[$index] = $detail;
+
+                continue;
+            }
+
+            foreach ($detail as $key => $value) {
+                if (in_array($key, ['text', 'summary', 'data'], true) && is_string($value)) {
+                    $merged[$index][$key] = ($merged[$index][$key] ?? '') . $value;
+                } elseif ($value !== null) {
+                    $merged[$index][$key] = $value;
+                }
+            }
+        }
+
+        ksort($merged);
+
+        return $merged;
     }
 
     /**

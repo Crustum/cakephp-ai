@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Responses;
 
+use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
+
 /**
  * File Response
  *
@@ -10,6 +12,8 @@ namespace Crustum\Ai\Responses;
  */
 class FileResponse
 {
+    use HasRawResponseTrait;
+
     /**
      * @var string|null The MIME type of the file.
      */

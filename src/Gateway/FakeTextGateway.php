@@ -8,6 +8,7 @@ use Closure;
 use Crustum\Ai\Approvals\PendingApproval;
 use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Providers\TextProvider;
+use Crustum\Ai\Exception\StoppedException;
 use Crustum\Ai\Gateway\Fake\SchemaDataGenerator;
 use Crustum\Ai\Messages\UserMessage;
 use Crustum\Ai\Responses\AgentResponse;
@@ -114,6 +115,16 @@ class FakeTextGateway implements StepTextGateway
     ): Generator {
         $step = $this->nextStep($provider, $model, $messages, $schema);
 
+        $stopCheck = $stepContext->stopCheck;
+
+        $throwIfStopped = function () use ($stopCheck): void {
+            if ($stopCheck instanceof Closure && ($stopCheck)()) {
+                throw new StoppedException('The stream was stopped.');
+            }
+        };
+
+        $throwIfStopped();
+
         $messageId = $this->generateUlid();
 
         yield (new StreamStart($this->generateUlid(), $provider->name(), $model, time()))->withInvocationId($invocationId);
@@ -125,6 +136,8 @@ class FakeTextGateway implements StepTextGateway
 
             $words = explode(' ', $step->reasoning);
             foreach ($words as $index => $word) {
+                $throwIfStopped();
+
                 yield (new ReasoningDelta(
                     $this->generateUlid(),
                     $reasoningId,
@@ -141,6 +154,8 @@ class FakeTextGateway implements StepTextGateway
 
             $words = explode(' ', $step->text);
             foreach ($words as $index => $word) {
+                $throwIfStopped();
+
                 yield (new TextDelta(
                     $this->generateUlid(),
                     $messageId,

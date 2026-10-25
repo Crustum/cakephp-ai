@@ -9,6 +9,7 @@ use Aws\Command;
 use Aws\MockHandler;
 use Aws\Result;
 use Cake\Event\EventManager;
+use Closure;
 use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Gateway\Bedrock\BedrockRerankingGateway;
 use Crustum\Ai\Gateway\Bedrock\BedrockTextGateway;
@@ -59,10 +60,16 @@ trait BedrockHelpersTrait
         )));
     }
 
-    protected function fakeBedrockConverseSequence(array $results): BedrockRuntimeClient
+    protected function fakeBedrockConverseSequence(array $results, array &$requests = []): BedrockRuntimeClient
     {
         return $this->bedrockClient(new MockHandler(array_map(
-            fn(array $result): Result => new Result($result),
+            function (array $result) use (&$requests): Closure {
+                return function ($command) use ($result, &$requests): Result {
+                    $requests[] = $command->toArray();
+
+                    return new Result($result);
+                };
+            },
             $results,
         )));
     }

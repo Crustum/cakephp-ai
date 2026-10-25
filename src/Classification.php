@@ -18,12 +18,13 @@ class Classification
      * Create a new pending classification for the given state.
      *
      * @param array<string, mixed>|string $state State to classify
+     * @param array<int|string, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Attachments to classify alongside the state
      * @return \Crustum\Ai\PendingResponses\PendingClassification
      * @throws \InvalidArgumentException if the state is blank
      */
-    public static function of(string|array $state): PendingClassification
+    public static function of(string|array $state, array $attachments = []): PendingClassification
     {
-        return new PendingClassification($state);
+        return new PendingClassification($state, $attachments);
     }
 
     /**

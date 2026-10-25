@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Crustum\Ai\Attributes\TopP;
+use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
 use Crustum\Ai\Test\Fixtures\Agents\AttributeAgent;
@@ -13,6 +15,7 @@ use Crustum\Ai\Test\Fixtures\Agents\ThinkingToolChoiceAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolChoiceAgent;
 use Crustum\Ai\Test\Fixtures\Agents\ToolUsingAgent;
 use Crustum\Ai\Test\Support\IntegrationPrompts;
+use Crustum\Ai\Trait\PromptableTrait;
 
 describe('request structure', function (): void {
     test('request includes model and messages', function (): void {
@@ -68,7 +71,7 @@ describe('request structure', function (): void {
         aiAssertHttpSent(fn($request): bool => $request->data()['max_tokens'] === 64000);
     });
 
-    test('temperature and top_p are included when set via attributes', function (): void {
+    test('only temperature is sent when temperature and top_p are both set', function (string $model): void {
         aiHttpFake([
             'api.anthropic.com/*' => $this->fakeTextResponse(),
         ]);
@@ -76,15 +79,60 @@ describe('request structure', function (): void {
         (new AttributeAgent())->prompt(
             'Hi',
             provider: 'anthropic',
+            model: $model,
         );
 
         aiAssertHttpSent(function ($request): bool {
             $body = $request->data();
 
             return $body['temperature'] === 0.7
-                && $body['top_p'] === 0.8;
+                && ! array_key_exists('top_p', $body);
+        });
+    })->with(['claude-sonnet-4-6', 'claude-haiku-4-5-20251001']);
+
+    test('top_p is sent when temperature is not set', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => $this->fakeTextResponse(),
+        ]);
+
+        $agent = new #[TopP(0.8)] class implements Agent
+        {
+            use PromptableTrait;
+
+            public function instructions(): string
+            {
+                return 'You are a helpful assistant.';
+            }
+        };
+
+        $agent->prompt('Hi', provider: 'anthropic', model: 'claude-sonnet-4-6');
+
+        aiAssertHttpSent(function ($request): bool {
+            $body = $request->data();
+
+            return $body['top_p'] === 0.8
+                && ! array_key_exists('temperature', $body);
         });
     });
+
+    test('temperature and top_p are dropped for models that reject sampling parameters', function (string $model): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => $this->fakeTextResponse(),
+        ]);
+
+        (new AttributeAgent())->prompt(
+            'Hi',
+            provider: 'anthropic',
+            model: $model,
+        );
+
+        aiAssertHttpSent(function ($request): bool {
+            $body = $request->data();
+
+            return ! array_key_exists('temperature', $body)
+                && ! array_key_exists('top_p', $body);
+        });
+    })->with(['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-4-7', 'claude-fable-5-1']);
 
     test('temperature and top_p are excluded when not set', function (): void {
         aiHttpFake([
@@ -212,6 +260,25 @@ describe('structured output', function (): void {
 
             return $body['output_config']['format']['type'] === 'json_schema'
                 && ! $hasStructuredTool;
+        });
+    });
+
+    test('native structured output keeps its format when provider options set output_config', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => $this->fakeStructuredResponse(['name' => 'Larry', 'age' => 30]),
+        ]);
+
+        (new StructuredWithThinkingAgent())->prompt(
+            'Tell me about Larry',
+            provider: 'anthropic',
+        );
+
+        aiAssertHttpSent(function ($request): bool {
+            $body = $request->data();
+
+            return $body['output_config']['format']['type'] === 'json_schema'
+                && $body['output_config']['effort'] === 'low'
+                && $body['thinking']['type'] === 'enabled';
         });
     });
 

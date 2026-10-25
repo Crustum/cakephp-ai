@@ -57,6 +57,7 @@ class FakeClassificationGateway implements ClassificationGateway
      * @param array<string, \Crustum\Ai\Contracts\Question> $questions The questions to answer
      * @param int $timeout Timeout in seconds
      * @param array<string, mixed> $providerOptions Provider-specific options
+     * @param array<int|string, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Attachments to classify alongside the state
      * @return \Crustum\Ai\Responses\ClassificationResponse
      */
     public function classify(
@@ -66,8 +67,9 @@ class FakeClassificationGateway implements ClassificationGateway
         array $questions,
         int $timeout = 30,
         array $providerOptions = [],
+        array $attachments = [],
     ): ClassificationResponse {
-        $prompt = new ClassificationPrompt($state, $questions, $provider, $model, $timeout, $providerOptions);
+        $prompt = new ClassificationPrompt($state, $questions, $provider, $model, $timeout, $providerOptions, $attachments);
 
         return $this->nextResponse($provider, $model, $prompt);
     }

@@ -7,6 +7,7 @@ use Crustum\Ai\Approvals\Approval;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\Approvable;
 use Crustum\Ai\Contracts\CanActAsTool;
+use Crustum\Ai\Contracts\HasStructuredOutput;
 use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Trait\InteractsWithApprovalsTrait;
 use Crustum\JsonSchema\Contracts\JsonSchema;
@@ -77,6 +78,10 @@ class AgentTool implements Approvable, Tool
      */
     public function stream(Request $request): Generator
     {
+        if ($this->agent instanceof HasStructuredOutput) {
+            return $this->handle($request);
+        }
+
         try {
             $stream = $this->agent->stream((string)$request['task']);
 

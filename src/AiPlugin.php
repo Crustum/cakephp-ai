@@ -17,21 +17,15 @@ use Crustum\Ai\Command\ChatCommand;
 use Crustum\Ai\Contracts\ConversationStore;
 use Crustum\Ai\Registry\ProviderRegistry;
 use Crustum\Ai\Storage\DatabaseConversationStore;
-use Crustum\PluginManifest\Manifest\ManifestInterface;
-use Crustum\PluginManifest\Manifest\ManifestTrait;
 use Override;
 
 /**
  * AI Plugin for CakePHP
  *
  * Provides AI capabilities through various providers (OpenAI, Anthropic, etc.).
- *
- * @uses \Crustum\PluginManifest\Manifest\ManifestTrait
  */
-class AiPlugin extends BasePlugin implements ManifestInterface
+class AiPlugin extends BasePlugin
 {
-    use ManifestTrait;
-
     /**
      * Plugin name
      */
@@ -128,32 +122,6 @@ class AiPlugin extends BasePlugin implements ManifestInterface
         $commands->add(BakeAgentMiddlewareCommand::defaultName(), BakeAgentMiddlewareCommand::class);
 
         return $commands;
-    }
-
-    /**
-     * Plugin install assets via crustum/plugin-manifest.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    public static function manifest(): array
-    {
-        $pluginPath = dirname(__DIR__);
-
-        return array_merge(
-            static::manifestMigrations(
-                $pluginPath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'Migrations',
-            ),
-            static::manifestConfig(
-                $pluginPath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'ai.php',
-                CONFIG . 'ai.php',
-                false,
-            ),
-            static::manifestBootstrapAppend(
-                "if (file_exists(CONFIG . 'ai.php')) {\n    Configure::load('ai', 'default');\n}",
-                '// Ai Plugin Configuration',
-            ),
-            static::manifestStarRepo('Crustum/Ai'),
-        );
     }
 
     /**

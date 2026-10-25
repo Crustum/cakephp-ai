@@ -6,6 +6,7 @@ namespace Crustum\Ai\Providers;
 use Cake\Event\EventManager;
 use Cake\Event\EventManagerInterface;
 use Crustum\Ai\Contracts\Gateway\AudioGateway;
+use Crustum\Ai\Contracts\Gateway\ClassificationGateway;
 use Crustum\Ai\Contracts\Gateway\EmbeddingGateway;
 use Crustum\Ai\Contracts\Gateway\FileGateway;
 use Crustum\Ai\Contracts\Gateway\ImageGateway;
@@ -13,6 +14,7 @@ use Crustum\Ai\Contracts\Gateway\StepTextGateway;
 use Crustum\Ai\Contracts\Gateway\StoreGateway;
 use Crustum\Ai\Contracts\Gateway\TranscriptionGateway;
 use Crustum\Ai\Contracts\Providers\AudioProvider;
+use Crustum\Ai\Contracts\Providers\ClassificationProvider;
 use Crustum\Ai\Contracts\Providers\EmbeddingProvider;
 use Crustum\Ai\Contracts\Providers\FileProvider;
 use Crustum\Ai\Contracts\Providers\ImageProvider;
@@ -24,18 +26,21 @@ use Crustum\Ai\Contracts\Providers\SupportsWebSearch;
 use Crustum\Ai\Contracts\Providers\TextProvider;
 use Crustum\Ai\Contracts\Providers\TranscriptionProvider;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Gateway\OpenAi\OpenAiClassificationGateway;
 use Crustum\Ai\Gateway\OpenAi\OpenAiFileGateway;
 use Crustum\Ai\Gateway\OpenAi\OpenAiGateway;
 use Crustum\Ai\Gateway\OpenAi\OpenAiStoreGateway;
 use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
 use Crustum\Ai\Providers\Tools\WebSearch;
+use Crustum\Ai\Providers\Trait\ClassifiesTrait;
 use Crustum\Ai\Providers\Trait\GeneratesAudioTrait;
 use Crustum\Ai\Providers\Trait\GeneratesEmbeddingsTrait;
 use Crustum\Ai\Providers\Trait\GeneratesImagesTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTextTrait;
 use Crustum\Ai\Providers\Trait\GeneratesTranscriptionsTrait;
 use Crustum\Ai\Providers\Trait\HasAudioGatewayTrait;
+use Crustum\Ai\Providers\Trait\HasClassificationGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasEmbeddingGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasFileGatewayTrait;
 use Crustum\Ai\Providers\Trait\HasImageGatewayTrait;
@@ -50,14 +55,16 @@ use Crustum\Ai\Utility\Value;
 /**
  * OpenAI provider.
  */
-class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsCodeExecution, SupportsFileSearch, SupportsToolSearch, SupportsWebSearch, TextProvider, TranscriptionProvider
+class OpenAiProvider extends Provider implements AudioProvider, ClassificationProvider, EmbeddingProvider, FileProvider, ImageProvider, StoreProvider, SupportsCodeExecution, SupportsFileSearch, SupportsToolSearch, SupportsWebSearch, TextProvider, TranscriptionProvider
 {
     use GeneratesAudioTrait;
     use GeneratesEmbeddingsTrait;
+    use ClassifiesTrait;
     use GeneratesImagesTrait;
     use GeneratesTextTrait;
     use GeneratesTranscriptionsTrait;
     use HasAudioGatewayTrait;
+    use HasClassificationGatewayTrait;
     use HasEmbeddingGatewayTrait;
     use HasFileGatewayTrait;
     use HasImageGatewayTrait;
@@ -327,6 +334,40 @@ class OpenAiProvider extends Provider implements AudioProvider, EmbeddingProvide
     public function defaultEmbeddingsModel(): string
     {
         return $this->config['models']['embeddings']['default'] ?? 'text-embedding-3-small';
+    }
+
+    /**
+     * Get the name of the default classification model.
+     *
+     * @return string
+     */
+    public function defaultClassificationModel(): string
+    {
+        return $this->config['models']['classification']['default'] ?? 'gpt-6-luna';
+    }
+
+    /**
+     * Determine if the provider can classify attachments alongside the state.
+     *
+     * @return bool
+     */
+    public function supportsClassificationAttachments(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Get the provider's classification gateway.
+     *
+     * @return \Crustum\Ai\Contracts\Gateway\ClassificationGateway
+     */
+    public function classificationGateway(): ClassificationGateway
+    {
+        if (!isset($this->classificationGateway)) {
+            $this->classificationGateway = new OpenAiClassificationGateway();
+        }
+
+        return $this->classificationGateway;
     }
 
     /**

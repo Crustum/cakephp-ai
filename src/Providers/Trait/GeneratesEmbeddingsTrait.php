@@ -5,11 +5,13 @@ namespace Crustum\Ai\Providers\Trait;
 
 use Cake\Utility\Text;
 use Crustum\Ai\Ai;
+use Crustum\Ai\Event\EmbeddingsFailed;
 use Crustum\Ai\Event\EmbeddingsGenerated;
 use Crustum\Ai\Event\GeneratingEmbeddings;
 use Crustum\Ai\Prompts\EmbeddingsPrompt;
 use Crustum\Ai\Responses\EmbeddingsResponse;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * Generates embeddings through the provider's embedding gateway.
@@ -61,13 +63,16 @@ trait GeneratesEmbeddingsTrait
             $prompt,
         ));
 
-        $response = $this->embeddingGateway()->generateEmbeddings(
-            $this,
-            $model,
-            $inputs,
-            $dimensions,
-            $timeout,
-            $providerOptions,
+        $response = $this->dispatchingFailure(
+            fn(): EmbeddingsResponse => $this->embeddingGateway()->generateEmbeddings(
+                $this,
+                $model,
+                $inputs,
+                $dimensions,
+                $timeout,
+                $providerOptions,
+            ),
+            fn(Throwable $exception): EmbeddingsFailed => new EmbeddingsFailed($invocationId, $this, $model, $prompt, $exception),
         );
 
         $this->events->dispatch(new EmbeddingsGenerated(

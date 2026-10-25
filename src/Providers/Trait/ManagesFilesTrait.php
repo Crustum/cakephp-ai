@@ -9,8 +9,10 @@ use Crustum\Ai\Contracts\Files\StorableFile;
 use Crustum\Ai\Event\FileDeleted;
 use Crustum\Ai\Event\FileStored;
 use Crustum\Ai\Event\StoringFile;
+use Crustum\Ai\Event\StoringFileFailed;
 use Crustum\Ai\Responses\FileResponse;
 use Crustum\Ai\Responses\StoredFileResponse;
+use Throwable;
 
 /**
  * Manages provider file operations.
@@ -48,7 +50,10 @@ trait ManagesFilesTrait
             $file,
         ));
 
-        $response = $this->fileGateway()->putFile($this, $file);
+        $response = $this->dispatchingFailure(
+            fn(): StoredFileResponse => $this->fileGateway()->putFile($this, $file),
+            fn(Throwable $exception): StoringFileFailed => new StoringFileFailed($invocationId, $this, $file, $exception),
+        );
 
         $this->events->dispatch(new FileStored(
             $invocationId,

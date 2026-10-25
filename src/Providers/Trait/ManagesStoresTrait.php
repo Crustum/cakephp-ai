@@ -8,14 +8,18 @@ use Cake\Utility\Text;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Contracts\Files\HasProviderId;
 use Crustum\Ai\Event\AddingFileToStore;
+use Crustum\Ai\Event\AddingFileToStoreFailed;
 use Crustum\Ai\Event\CreatingStore;
+use Crustum\Ai\Event\CreatingStoreFailed;
 use Crustum\Ai\Event\FileAddedToStore;
 use Crustum\Ai\Event\FileRemovedFromStore;
 use Crustum\Ai\Event\RemovingFileFromStore;
+use Crustum\Ai\Event\RemovingFileFromStoreFailed;
 use Crustum\Ai\Event\StoreCreated;
 use Crustum\Ai\Event\StoreDeleted;
 use Crustum\Ai\Store;
 use DateInterval;
+use Throwable;
 
 /**
  * Manages provider vector store operations.
@@ -65,7 +69,10 @@ trait ManagesStoresTrait
             $expiresWhenIdleFor,
         ));
 
-        $store = $this->storeGateway()->createStore($this, $name, $description, $fileIds, $expiresWhenIdleFor);
+        $store = $this->dispatchingFailure(
+            fn(): Store => $this->storeGateway()->createStore($this, $name, $description, $fileIds, $expiresWhenIdleFor),
+            fn(Throwable $exception): CreatingStoreFailed => new CreatingStoreFailed($invocationId, $this, $name, $description, $fileIds, $expiresWhenIdleFor, $exception),
+        );
 
         $this->events->dispatch(new StoreCreated(
             $invocationId,
@@ -99,7 +106,10 @@ trait ManagesStoresTrait
             $file->id(),
         ));
 
-        $documentId = $this->storeGateway()->addFile($this, $storeId, $file->id(), $metadata);
+        $documentId = $this->dispatchingFailure(
+            fn(): string => $this->storeGateway()->addFile($this, $storeId, $file->id(), $metadata),
+            fn(Throwable $exception): AddingFileToStoreFailed => new AddingFileToStoreFailed($invocationId, $this, $storeId, $file->id(), $exception),
+        );
 
         $this->events->dispatch(new FileAddedToStore(
             $invocationId,
@@ -136,7 +146,10 @@ trait ManagesStoresTrait
             $documentId,
         ));
 
-        $result = $this->storeGateway()->removeFile($this, $storeId, $documentId);
+        $result = $this->dispatchingFailure(
+            fn(): bool => $this->storeGateway()->removeFile($this, $storeId, $documentId),
+            fn(Throwable $exception): RemovingFileFromStoreFailed => new RemovingFileFromStoreFailed($invocationId, $this, $storeId, $documentId, $exception),
+        );
 
         $this->events->dispatch(new FileRemovedFromStore(
             $invocationId,

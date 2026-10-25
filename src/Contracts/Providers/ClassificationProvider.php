@@ -21,6 +21,7 @@ interface ClassificationProvider extends Provider
      * @param string|null $model Model to use for classification
      * @param int $timeout Timeout in seconds
      * @param array<string, mixed> $providerOptions Provider-specific options
+     * @param array<int|string, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Attachments to classify alongside the state
      * @return \Crustum\Ai\Responses\ClassificationResponse
      */
     public function classify(
@@ -29,6 +30,7 @@ interface ClassificationProvider extends Provider
         ?string $model = null,
         int $timeout = 30,
         array $providerOptions = [],
+        array $attachments = [],
     ): ClassificationResponse;
 
     /**

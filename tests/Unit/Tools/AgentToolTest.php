@@ -2,9 +2,11 @@
 declare(strict_types=1);
 
 use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\HasStructuredOutput;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\StreamableAgentResponse;
+use Crustum\Ai\Responses\StructuredAgentResponse;
 use Crustum\Ai\Streaming\Event\StreamEnd;
 use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Tools\AgentTool;
@@ -28,6 +30,23 @@ test('an agent tool streams its events by default and returns its final text', f
     expect($events)->toHaveCount(2)
         ->and($events[0])->toBeInstanceOf(TextDelta::class)
         ->and($generator->getReturn())->toBe('sub answer');
+});
+
+test('a structured sub-agent answers through a regular prompt on the streaming path', function (): void {
+    $agent = Double::for(Agent::class, HasStructuredOutput::class);
+    $agent->expects('stream')->never();
+    $agent->expects('prompt')->returns(new StructuredAgentResponse(
+        'invocation-sub',
+        ['answer' => 42],
+        '{"answer":42}',
+        new TextUsage(),
+        new Meta('fake', 'model'),
+    ));
+
+    $generator = (new AgentTool($agent))->stream(new Request(['task' => 'Do the thing']));
+
+    expect(iterator_to_array($generator))->toBe([])
+        ->and($generator->getReturn())->toBe('{"answer":42}');
 });
 
 test('a failing sub-agent surfaces its error as the tool result on the streaming path', function (): void {

@@ -23,7 +23,7 @@ if (!function_exists('agent')) {
      * @param iterable<int, mixed> $messages Initial messages
      * @param iterable<int, \Crustum\Ai\Contracts\Tool> $tools Available tools
      * @param \Closure|null $schema Structured output schema builder
-     * @return \Crustum\Ai\Contracts\Agent
+     * @return ($schema is null ? \Crustum\Ai\AnonymousAgent : \Crustum\Ai\StructuredAnonymousAgent)
      */
     function agent(
         string $instructions = '',

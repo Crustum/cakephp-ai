@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Crustum\Ai\Responses;
 
 use Crustum\Ai\Contracts\Files\HasProviderId;
+use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
 
 /**
  * Stored File Response
@@ -12,6 +13,8 @@ use Crustum\Ai\Contracts\Files\HasProviderId;
  */
 class StoredFileResponse implements HasProviderId
 {
+    use HasRawResponseTrait;
+
     /**
      * Constructor
      *

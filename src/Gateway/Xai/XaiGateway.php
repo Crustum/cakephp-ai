@@ -17,6 +17,7 @@ use Crustum\Ai\Gateway\StepResponse;
 use Crustum\Ai\Gateway\TextGenerationOptions;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\ParsesServerSentEventsTrait;
+use Crustum\Ai\Gateway\Trait\WrapsStoppableStreamsTrait;
 use Crustum\Ai\Gateway\Xai\Trait\BuildsTextRequestsTrait;
 use Crustum\Ai\Gateway\Xai\Trait\CreatesXaiClientTrait;
 use Crustum\Ai\Gateway\Xai\Trait\HandlesTextStreamingTrait;
@@ -47,6 +48,7 @@ class XaiGateway implements Gateway, StepTextGateway
     use ParsesTextResponsesTrait;
     use HandlesFailoverErrorsTrait;
     use ParsesServerSentEventsTrait;
+    use WrapsStoppableStreamsTrait;
 
     /**
      * Constructor.
@@ -138,7 +140,7 @@ class XaiGateway implements Gateway, StepTextGateway
             $invocationId,
             $provider,
             $model,
-            $response->getBody(),
+            $this->stoppableBody($response->getBody(), $stepContext),
         );
     }
 

@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Crustum\Ai\Gateway;
 
+use Closure;
+
 /**
  * Step Context
  *
@@ -17,11 +19,13 @@ class StepContext
      * @param int $stepNumber The current step number in the sequence.
      * @param bool $isFinalStep Whether this is the final step.
      * @param string|null $continuationToken Provider handle for stateful continuation; null for stateless providers that replay full history.
+     * @param (\Closure(): bool)|null $stopCheck Stop predicate polled while streaming.
      */
     public function __construct(
         public readonly int $stepNumber = 0,
         public readonly bool $isFinalStep = false,
         public readonly ?string $continuationToken = null,
+        public readonly ?Closure $stopCheck = null,
     ) {
     }
 }

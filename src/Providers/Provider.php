@@ -6,12 +6,14 @@ namespace Crustum\Ai\Providers;
 use Cake\Core\Configure;
 use Cake\Event\EventManagerInterface;
 use Cake\Utility\Security;
+use Closure;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Contracts\Gateway\Gateway;
 use Crustum\Ai\Contracts\Providers\Provider as ProviderContract;
 use Crustum\Ai\Enums\Lab;
 use RuntimeException;
 use Stringable;
+use Throwable;
 
 /**
  * Abstract Provider Base Class
@@ -94,6 +96,25 @@ abstract class Provider implements ProviderContract, Stringable
         $clone->config['headers'] = array_merge($clone->config['headers'] ?? [], $headers);
 
         return $clone;
+    }
+
+    /**
+     * Run the given gateway call, dispatching the event built from its exception before rethrowing.
+     *
+     * @template TResult
+     * @param \Closure(): TResult $call Gateway call
+     * @param \Closure(\Throwable): \Cake\Event\EventInterface<object> $failed Failed event factory
+     * @return TResult
+     */
+    protected function dispatchingFailure(Closure $call, Closure $failed): mixed
+    {
+        try {
+            return $call();
+        } catch (Throwable $throwable) {
+            $this->events->dispatch($failed($throwable));
+
+            throw $throwable;
+        }
     }
 
     /**

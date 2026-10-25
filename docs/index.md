@@ -6,6 +6,7 @@
     - [Custom Base URLs](#custom-base-urls)
     - [OpenAI-Compatible Providers](#openai-compatible-providers)
         - [OpenAI-Compatible Embeddings](#openai-compatible-embeddings)
+    - [On-Demand Providers](#on-demand-providers)
     - [Provider Support](#provider-support)
 - [Agents](#agents)
     - [Prompting](#prompting)
@@ -32,6 +33,7 @@
     - [Deferred Tool Loading](#deferred-tool-loading)
     - [File Storage Tools](#file-storage-tools)
     - [MCP Tools](#mcp-tools)
+    - [Skills](#skills)
     - [Provider Tools](#provider-tools)
         - [Web Search](#web-search)
         - [Web Fetch](#web-fetch)
@@ -57,6 +59,9 @@
 - [Reranking](#reranking)
     - [Reranking Collections](#reranking-collections)
 - [Classification](#classification)
+    - [Classifying Images](#classifying-images)
+    - [Yes or No Decisions](#yes-or-no-decisions)
+    - [Choosing From Collections](#choosing-from-collections)
 - [Files](#files)
     - [Using Stored Files in Conversations](#using-stored-files-in-conversations)
 - [Vector Stores](#vector-stores)
@@ -291,6 +296,39 @@ Likewise, you must configure a default transcription model to use `Transcription
 > [!NOTE]
 > The Groq provider does not support diarization. Invoking the `diarize` method when using Groq will throw an exception.
 
+<a name="on-demand-providers"></a>
+### On-Demand Providers
+
+Sometimes you need provider credentials that are not defined in `config/ai.php`, such as per-tenant API keys stored in your database. Use `Ai::manager()->build()` to create a provider from a configuration array. The array uses the same shape as a provider entry in `config/ai.php` — a `driver` matching a configured provider (or an explicit `className`):
+
+```php
+use App\Ai\Agents\SalesCoach;
+use Crustum\Ai\Ai;
+
+$response = (new SalesCoach)->prompt('Analyze this sales transcript...', provider: [
+    Ai::manager()->build([
+        'driver' => 'anthropic',
+        'key' => $user->anthropic_key,
+    ]),
+]);
+```
+
+On-demand providers may be used anywhere a provider is accepted, including failover lists and when generating images, audio, transcriptions, and embeddings. To specify a model, include a `models` array:
+
+```php
+$response = (new SalesCoach)->prompt('Analyze this sales transcript...', provider: [
+    Ai::manager()->build(['driver' => 'anthropic', 'key' => $user->anthropic_key]),
+    Ai::manager()->build([
+        'driver' => 'openai',
+        'key' => $user->openai_key,
+        'models' => ['text' => ['default' => 'gpt-6']],
+    ]),
+]);
+```
+
+> [!NOTE]
+> Pass on-demand providers within an array, as shown above. If you give an on-demand provider a `name`, it must not match a built-in provider or a provider defined in `config/ai.php`. Long-lived queue workers should call `Ai::manager()->flushState()` between jobs so tenant configurations do not leak across jobs.
+
 <a name="provider-support"></a>
 ### Provider Support
 
@@ -298,13 +336,13 @@ The AI plugin supports a variety of providers across its features. The following
 
 | Feature | Providers |
 |---|---|
-| Text | OpenAI, OpenAI Compatible, Anthropic, Gemini, Azure, Bedrock, Groq, xAI, DeepSeek, Mistral, Ollama, OpenRouter |
+| Text | OpenAI, OpenAI Compatible, Anthropic, Gemini, Azure, Bedrock, Groq, xAI, DeepSeek, Mistral, Ollama, OpenRouter, Cohere |
 | Images | OpenAI, Gemini, xAI, Azure, Bedrock, OpenRouter |
 | TTS | OpenAI, ElevenLabs, Gemini, Mistral, OpenRouter |
 | STT | OpenAI, OpenAI Compatible, ElevenLabs, Groq, Mistral, Gemini, OpenRouter |
 | Embeddings | OpenAI, OpenAI-Compatible, Gemini, Azure, Bedrock, Cohere, Mistral, Jina, VoyageAI, Ollama, OpenRouter |
 | Reranking | Cohere, Jina, VoyageAI, Bedrock, OpenRouter |
-| Classification | TypeSafe, OpenRouter |
+| Classification | OpenAI, TypeSafe, OpenRouter |
 | Files | OpenAI, Anthropic, Gemini, Azure, OpenRouter |
 
 The `Crustum\Ai\Enums\Lab` enum may be used to reference providers throughout your code instead of using plain strings:
@@ -1241,7 +1279,7 @@ public function handle(Request $request): Stringable|string
 }
 ```
 
-Rules use the same pipe-delimited shape as the Laravel SDK — each field maps to a pipe-delimited string or an array of rule names. The supported rules are `required`, `string`, `integer`, `numeric`, `boolean`, `email`, and `scalar`, plus any other rule name provided by CakePHP's validator. Custom messages and attribute names may be passed as the second and third arguments.
+Rules use the pipe-delimited shape — each field maps to a pipe-delimited string or an array of rule names. The supported rules are `required`, `string`, `integer`, `numeric`, `boolean`, `email`, and `scalar`, plus any other rule name provided by CakePHP's validator. Custom messages and attribute names may be passed as the second and third arguments.
 
 For full access to the framework's validation API, including parameterized rules, you may pass a `Cake\Validation\Validator` instance instead:
 
@@ -1373,7 +1411,7 @@ SimilaritySearch::usingModel(Document::class, 'embedding')
 <a name="deferred-tool-loading"></a>
 ### Deferred Tool Loading
 
-By default, every tool an agent exposes is sent to the provider with each request. When an agent provides a large number of tools, this consumes tokens and may reduce the accuracy of the model's tool selection. Using the `ToolSearch` provider tool with OpenAI or Anthropic, you may defer tool definitions so that the provider only loads them when they are needed:
+By default, every tool an agent exposes is sent to the provider with each request. When an agent provides a large number of tools, this consumes tokens and may reduce the accuracy of the model's tool selection. Using the `ToolSearch` provider tool with OpenAI, Azure, or Anthropic, you may defer tool definitions so that the provider only loads them when they are needed:
 
 ```php
 use App\Ai\Tools\RefundOrder;
@@ -1414,7 +1452,7 @@ When using Anthropic, additional provider-specific options may be passed to the 
 <a name="file-storage-tools"></a>
 ### File Storage Tools
 
-The `FileStorage` tool factory allows you to give agents access to a [CakePHP filesystem disk](https://book.cakephp.org/5/en/core-libraries/file-folder.html). The `all` method returns tools that allow the agent to list, read, inspect, generate URLs for, write, delete, and copy files on the given disk:
+The `FileStorage` tool factory allows you to give agents access to a [CakePHP filesystem disk](https://book.cakephp.org/5/en/core-libraries/file-folder.html). The `all` method returns tools that allow the agent to list, read, inspect, generate URLs for, write, delete, copy, and move files on the given disk:
 
 ```php
 use Crustum\Ai\Tools\FileStorage;
@@ -1470,6 +1508,49 @@ McpServerTool::supports($tool); // bool
 
 For more information on creating and authenticating MCP servers, including bearer tokens and OAuth, consult the `Crustum\Mcp` package documentation.
 
+<a name="skills"></a>
+### Skills
+
+[Agent Skills](https://agentskills.io) are folders of instructions and supporting files that teach an agent how to perform a specific task. Each skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name`, `description`) followed by instructions. Any other files in the directory, such as reference documents, are bundled with the skill:
+
+```text
+resources/skills/
+    refund-policy/
+        SKILL.md
+        references/EDGE-CASES.md
+```
+
+If the `name` is omitted, the directory name is used. Skills without a `description` are ignored.
+
+To give an agent access to skills, implement `Crustum\Ai\Contracts\HasSkills` and return skill sources from the `skills` method. Sources may be directories, `Crustum\Ai\Skills\Skill` instances, or closures returning skills:
+
+```php
+use Crustum\Ai\Contracts\Agent;
+use Crustum\Ai\Contracts\HasSkills;
+use Crustum\Ai\Promptable;
+use Crustum\Ai\Skills\Skill;
+
+class SupportAgent implements Agent, HasSkills
+{
+    use Promptable;
+
+    public function skills(): iterable
+    {
+        return [
+            RESOURCES . 'skills',
+            new Skill('house-style', 'Use when you write copy for a customer.', 'Always use plain language.'),
+            fn () => $this->user->team->skills->map(
+                fn ($skill) => new Skill($skill->name, $skill->description, $skill->instructions)
+            ),
+        ];
+    }
+}
+```
+
+Sources may be directories, `Skill` instances, or closures returning skills, which are only invoked once the agent needs them. When two skills share a name, the source listed first takes precedence.
+
+The agent receives a `Crustum\Ai\Tools\LoadSkill` tool that lists each skill's name and description, loading a skill's full instructions and bundled text files only when a prompt calls for it. Binary files and files larger than 256 KB are not returned.
+
 <a name="provider-tools"></a>
 ### Provider Tools
 
@@ -1482,7 +1563,7 @@ Provider tools can be returned by your agent's `tools` method.
 
 The `WebSearch` provider tool allows agents to search the web for real-time information. This is useful for answering questions about current events, recent data, or topics that may have changed since the model's training cutoff.
 
-**Supported providers:** Anthropic, OpenAI, Azure, Gemini, xAI, OpenRouter
+**Supported providers:** Anthropic, OpenAI, Azure, Gemini, xAI, Groq, OpenRouter
 
 ```php
 use Crustum\Ai\Providers\Tools\WebSearch;
@@ -1510,6 +1591,9 @@ To refine search results based on user location, use the `location` method:
     country: 'US'
 );
 ```
+
+> [!NOTE]
+> Groq only supports web search on its GPT-OSS models, and ignores the `max`, `allow`, and `location` methods.
 
 <a name="web-fetch"></a>
 #### Web Fetch
@@ -1540,7 +1624,7 @@ You may configure the web fetch tool to limit the number of fetches or restrict 
 
 The `FileSearch` provider tool allows agents to search through [files](#files) stored in [vector stores](#vector-stores). This enables retrieval-augmented generation (RAG) by allowing the agent to search your uploaded documents for relevant information.
 
-**Supported providers:** OpenAI, Gemini, xAI
+**Supported providers:** OpenAI, Azure, Gemini, xAI
 
 ```php
 use Crustum\Ai\Providers\Tools\FileSearch;
@@ -1585,7 +1669,7 @@ new FileSearch(stores: ['store_id'], where: fn (FileSearchQuery $query) =>
 
 The `CodeExecution` provider tool allows agents to run code in a sandbox hosted by the AI provider. This is useful for performing calculations and analyzing data.
 
-**Supported providers:** Anthropic, OpenAI, Azure, Gemini, xAI
+**Supported providers:** Anthropic, OpenAI, Azure, Gemini, xAI, Groq
 
 ```php
 use Crustum\Ai\Providers\Tools\CodeExecution;
@@ -1603,6 +1687,9 @@ When using OpenAI or Azure, you may make [stored files](#files) available to the
     'container' => ['type' => 'auto', 'file_ids' => ['file_123']],
 ]);
 ```
+
+> [!NOTE]
+> Groq only supports code execution on its GPT-OSS models.
 
 <a name="sub-agents"></a>
 ### Sub-Agents
@@ -2550,7 +2637,7 @@ Document::fromUpload($request->getData('report'));
 <a name="querying-embeddings"></a>
 ### Querying Embeddings
 
-Once you have generated embeddings, you will typically store them in a `vector` column in your database for later querying. The AI plugin provides native support for vector columns on PostgreSQL via the `pgvector` extension. To get started, define a `vector` column in your CakePHP migration, specifying the number of dimensions:
+Once you have generated embeddings, you will typically store them in a `vector` column in your database for later querying. The AI plugin provides native support for vector columns on PostgreSQL via the `pgvector` extension and on MariaDB 11.7 or later via its native vector support. To get started, define a `vector` column in your CakePHP migration, specifying the number of dimensions:
 
 ```php
 // In config/Migrations/..._CreateDocuments.php
@@ -2618,7 +2705,7 @@ $documents = TableRegistry::getTableLocator()->get('Documents')
 If you would like to give an agent the ability to perform similarity searches as a tool, check out the [Similarity Search](#similarity-search) tool documentation.
 
 > [!NOTE]
-> Vector queries are currently only supported on PostgreSQL connections using the `pgvector` extension.
+> Vector queries are currently supported on PostgreSQL connections using the `pgvector` extension, or on MariaDB 11.7 or later using its native vector support.
 
 <a name="caching-embeddings"></a>
 ### Caching Embeddings
@@ -2819,6 +2906,26 @@ $result->usage;
 $result->meta->provider;
 ```
 
+<a name="classifying-images"></a>
+### Classifying Images
+
+When using OpenAI, images may be classified alongside the given content by passing them as the second argument to the `of` method. Images may be created using the same [file classes used for attachments](#attachments):
+
+```php
+use Crustum\Ai\Classification;
+use Crustum\Ai\Classification\Boolean;
+use Crustum\Ai\Files\Image;
+
+$result = Classification::of('Inspect the product in this photo.', [
+    Image::fromPath($photo),
+])
+    ->question('damaged', new Boolean('Does the product have visible damage?'))
+    ->classify(provider: 'openai');
+```
+
+<a name="yes-or-no-decisions"></a>
+### Yes or No Decisions
+
 For a single yes or no decision, you may use the `decide` method available via the `Text` class, which returns a boolean instead of a full response. You may describe what a "yes" and a "no" mean, and specify the probability the answer must reach, which defaults to `0.5`:
 
 ```php
@@ -2832,6 +2939,38 @@ $spam = Text::of($message)->decide('Is this spam?', criteria: [
     'true' => 'Unsolicited bulk mail.',
     'false' => 'A genuine message from a customer.',
 ], threshold: 0.9);
+```
+
+<a name="choosing-from-collections"></a>
+### Choosing From Collections
+
+To choose a single item from a list of options, use the `decide` method on `Crustum\Ai\Support\AiCollection`. It accepts a question and the text to classify, and returns the chosen item. Collections of strings and enums may be used directly, while other items should be named using the `by` argument. Use `describe` (field, fields, or closure) to give the model more detail about each option:
+
+```php
+use Crustum\Ai\Collections;
+
+$department = Collections::of(['billing', 'technical', 'sales'])
+    ->decide('Which team should handle this request?', $ticket->body);
+
+$priority = Collections::of(Priority::cases())
+    ->decide('How urgent is this request?', $ticket->body);
+
+$department = Collections::of($departments)
+    ->decide(
+        'Which department should handle this request?',
+        $ticket->body,
+        by: 'name',
+        describe: 'description',
+    );
+```
+
+When a collection of strings is keyed by strings, its keys are used as the options and its values as their descriptions, and the chosen key is returned. If a `threshold` is given and the probability of the chosen option is below it, `null` is returned:
+
+```php
+$department = Collections::of([
+    'billing' => 'Payments, invoices, and refunds',
+    'technical' => 'Bugs, outages, and integrations',
+])->decide('Which team should handle this request?', $ticket->body, threshold: 0.6) ?? 'triage';
 ```
 
 By default, classification is performed by [TypeSafe](https://typesafe.ai). You may change this using the `default_for_classification` option within your application's `config/ai.php` configuration file. You may also specify the provider and model when classifying:

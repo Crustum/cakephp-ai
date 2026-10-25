@@ -97,7 +97,7 @@ trait CreatesOpenAiCompatibleClientTrait
      * @param array<string, mixed> $body Request body
      * @return \Crustum\Ai\Http\Contract\HttpResponseInterface
      */
-    protected function post(string $path, array $body): HttpResponseInterface
+    protected function post(string $path, array $body = []): HttpResponseInterface
     {
         $provider = $this->openAiCompatibleHttpProvider;
 

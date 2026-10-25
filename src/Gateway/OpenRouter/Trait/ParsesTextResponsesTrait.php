@@ -78,6 +78,7 @@ trait ParsesTextResponsesTrait
             usage: $this->extractUsage($data),
             meta: new Meta($provider->name(), $model, $citations),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
+            replayBlocks: $this->extractReasoningDetails($message),
             reasoning: $this->extractReasoning($message),
         );
     }
@@ -101,6 +102,19 @@ trait ParsesTextResponsesTrait
             ->map(fn(array $detail): string => (string)($detail['text'] ?? $detail['summary'] ?? ''));
 
         return static::joinReasoning($texts->toList());
+    }
+
+    /**
+     * Extract the reasoning details to replay with the message's tool calls.
+     *
+     * @param array<string, mixed> $message Assistant message
+     * @return array<int, array<string, mixed>>
+     */
+    protected function extractReasoningDetails(array $message): array
+    {
+        return is_array($message['reasoning_details'] ?? null)
+            ? array_values($message['reasoning_details'])
+            : [];
     }
 
     /**

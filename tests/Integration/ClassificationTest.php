@@ -7,6 +7,7 @@ use Crustum\Ai\Classification\Choice;
 use Crustum\Ai\Classification\Score;
 use Crustum\Ai\Event\Classified;
 use Crustum\Ai\Event\Classifying;
+use Crustum\Ai\Files\Image;
 use Crustum\Ai\Test\Support\Event\EventRecorder;
 use Crustum\Ai\Test\Support\Skips\ApiKey;
 
@@ -38,3 +39,39 @@ test('states can be classified', function (string $provider, string $apiKey): vo
     $recorder->assertDispatched(Classifying::class);
     $recorder->assertDispatched(Classified::class);
 })->with('classification-providers');
+
+test('images can be classified alongside the state', function (string $provider, string $apiKey, string $file, string $color): void {
+    ApiKey::required($apiKey);
+
+    $response = Classification::of('A product photo uploaded by a customer.', [Image::fromPath(__DIR__ . '/../Fixtures/Images/' . $file)])
+        ->questions([
+            'is_red' => new Boolean('Is the background of the image red?'),
+            'color' => new Choice('What color is the background of the image?', [
+                'red' => null,
+                'green' => null,
+                'blue' => null,
+            ]),
+        ])->classify(provider: $provider);
+
+    expect($response['is_red']->isTrue())->toBe($color === 'red')
+        ->and($response['color']->choice)->toBe($color);
+})->with('classification-image-providers')->with([
+    'png' => ['red.png', 'red'],
+    'jpeg' => ['blue.jpg', 'blue'],
+]);
+
+test('named images can be referred to by name', function (string $provider, string $apiKey): void {
+    ApiKey::required($apiKey);
+
+    $response = Classification::of('Two product photos uploaded by a customer.', [
+        'front' => Image::fromPath(__DIR__ . '/../Fixtures/Images/red.png'),
+        'back' => Image::fromPath(__DIR__ . '/../Fixtures/Images/blue.jpg'),
+    ])
+        ->questions([
+            'front_color' => new Choice('What color is the background of `front`?', ['red' => null, 'green' => null, 'blue' => null]),
+            'back_color' => new Choice('What color is the background of `back`?', ['red' => null, 'green' => null, 'blue' => null]),
+        ])->classify(provider: $provider);
+
+    expect($response['front_color']->choice)->toBe('red')
+        ->and($response['back_color']->choice)->toBe('blue');
+})->with('classification-image-providers');

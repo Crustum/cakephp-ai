@@ -7,8 +7,10 @@ use Cake\Event\EventManager;
 use Cake\Http\Client as CakeHttpClient;
 use Cake\Http\Client\ClientEvent;
 use Cake\Http\Client\Response as CakeHttpResponse;
+use Closure;
 use Crustum\Ai\Http\Contract\HttpClientAdapterInterface;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
+use Crustum\Ai\Http\Stream\StoppableStream;
 use Crustum\Ai\Http\Stream\TeeStream;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
@@ -81,6 +83,10 @@ class GuzzleHttpClientAdapter implements HttpClientAdapterInterface
      * Re-dispatches Cake's `HttpClient.beforeSend`/`HttpClient.afterSend`
      * events so monitoring tools keep working after the transport swap.
      *
+     * Streaming requests accept a `stop_check` option (`Closure(): bool`)
+     * polled on every stream read; when it fires the transport is closed
+     * and a `StoppedException` is thrown from the read.
+     *
      * @param string $method HTTP method (GET, POST, DELETE, ...)
      * @param string $url Request URL
      * @param array<string, mixed> $options Guzzle request options
@@ -97,6 +103,9 @@ class GuzzleHttpClientAdapter implements HttpClientAdapterInterface
         );
 
         $isStreaming = !empty($options['stream']);
+        $stopCheck = $options['stop_check'] ?? null;
+
+        unset($options['stop_check']);
 
         $this->dispatchEvent('HttpClient.beforeSend', $psrRequest, null, $isStreaming);
 
@@ -115,6 +124,10 @@ class GuzzleHttpClientAdapter implements HttpClientAdapterInterface
         }
 
         if ($isStreaming) {
+            if ($stopCheck instanceof Closure) {
+                $result = $result->withBody(new StoppableStream($result->getBody(), $stopCheck));
+            }
+
             $result = $this->teeStreamingBody($psrRequest, $result);
         }
 

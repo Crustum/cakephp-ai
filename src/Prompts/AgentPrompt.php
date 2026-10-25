@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Crustum\Ai\Prompts;
 
 use Cake\Collection\CollectionInterface;
+use Closure;
 use Crustum\Ai\Approvals\Decisions;
 use Crustum\Ai\Contracts\Agent;
 use Crustum\Ai\Contracts\Providers\TextProvider;
@@ -90,6 +91,7 @@ class AgentPrompt extends Prompt
      * @param bool $isFinalAttempt Whether the caller has run out of providers to retry against
      * @param list<\Crustum\Ai\Messages\Message>|null $messages Ad-hoc message history
      * @param array<int, \Crustum\Ai\Contracts\Agent|\Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool>|null $tools Runtime tool overrides
+     * @param \Closure(): bool|null $stopCheck Stop predicate polled while streaming
      */
     public function __construct(
         Agent $agent,
@@ -105,6 +107,7 @@ class AgentPrompt extends Prompt
         bool $isFinalAttempt = true,
         ?array $messages = null,
         ?array $tools = null,
+        public readonly ?Closure $stopCheck = null,
     ) {
         parent::__construct($prompt, $provider, $model, $approvalDecisions);
 
@@ -183,6 +186,37 @@ class AgentPrompt extends Prompt
             $this->isFinalAttempt,
             $this->messages,
             $this->tools,
+            $this->stopCheck,
+        );
+    }
+
+    /**
+     * Carry a stop predicate for this run, returning a new prompt instance.
+     *
+     * @param (\Closure(): bool)|null $stopCheck Stop predicate polled while streaming
+     * @return self
+     */
+    public function withStopCheck(?Closure $stopCheck): AgentPrompt
+    {
+        if ($this->hasApprovalDecisions()) {
+            return $this;
+        }
+
+        return new self(
+            $this->agent,
+            $this->prompt,
+            $this->attachments,
+            $this->provider,
+            $this->model,
+            $this->timeout,
+            $this->invocationId,
+            $this->approvalDecisions,
+            $this->parentInvocationId,
+            $this->parentToolInvocationId,
+            $this->isFinalAttempt,
+            $this->messages,
+            $this->tools,
+            $stopCheck,
         );
     }
 
@@ -212,6 +246,7 @@ class AgentPrompt extends Prompt
             $this->isFinalAttempt,
             $this->messages,
             [...$tools],
+            $this->stopCheck,
         );
     }
 

@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 use Crustum\Ai\Providers\Tools\CodeExecution;
 use Crustum\Ai\Providers\Tools\FileSearch;
+use Crustum\Ai\Providers\Tools\FileSearchQuery;
 use Crustum\Ai\Providers\Tools\WebSearch;
+use Crustum\Ai\Responses\AgentResponse;
 use Crustum\Ai\Test\Fixtures\Agents\NamedToolAgent;
 use Crustum\Ai\Test\Fixtures\Agents\NestedObjectToolAgent;
 use Crustum\Ai\Test\Fixtures\Agents\NullableToolAgent;
@@ -132,6 +134,70 @@ test('provider tools are sent without a tool choice', function (): void {
         'type' => 'file_search',
         'file_search_store_names' => ['fileSearchStores/store123'],
     ])->and(sentRequest()->data()['generation_config'] ?? [])->not->toHaveKey('tool_choice');
+});
+
+test('file search metadata filter escapes quotes and trailing backslashes', function (string $method, string $expected): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('ok'),
+    ]);
+
+    agent(tools: [new FileSearch(['fileSearchStores/store123'], where: function (FileSearchQuery $query) use ($method): void {
+        if (in_array($method, ['whereIn', 'whereNotIn'], true)) {
+            $query->{$method}('category', ['x" OR tenant="globex', 'x\\']);
+        } else {
+            $query->{$method}('category', 'x" OR tenant="globex')->{$method}('path', 'x\\');
+        }
+    })])->prompt('Question?', provider: 'gemini');
+
+    expect(sentRequest()->data()['tools'][0]['metadata_filter'])->toBe($expected);
+})->with([
+    'where' => ['where', '(category="x\\" OR tenant=\\"globex") AND (path="x\\\\")'],
+    'whereNot' => ['whereNot', '(category!="x\\" OR tenant=\\"globex") AND (path!="x\\\\")'],
+    'whereIn' => ['whereIn', '(category="x\\" OR tenant=\\"globex" OR category="x\\\\")'],
+    'whereNotIn' => ['whereNotIn', '(category!="x\\" OR tenant=\\"globex" AND category!="x\\\\")'],
+]);
+
+test('file search metadata filter rejects invalid keys before sending a request', function (string $key): void {
+    aiHttpFake();
+
+    expect(fn(): AgentResponse => agent(tools: [new FileSearch(['fileSearchStores/store123'], where: [$key => 'value'])])
+        ->prompt('Question?', provider: 'gemini'))
+        ->toThrow(InvalidArgumentException::class, "Invalid metadata filter key [{$key}].");
+
+    aiAssertHttpNothingSent();
+})->with(['tenant="acme" OR category', 'tenant name', 'tenant-name', '1tenant', '', "tenant\n"]);
+
+test('file search metadata filter groups ordinary conditions and preserves numeric values', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('ok'),
+    ]);
+
+    agent(tools: [new FileSearch(['fileSearchStores/store123'], where: fn(FileSearchQuery $query): FileSearchQuery => $query
+        ->where('tenant', 'acme')
+        ->whereIn('category', ['guide', 'reference'])
+        ->whereNot('_status', 'draft')
+        ->where('version.number', 2.5)
+        ->whereIn('year', [2024, '2025'])
+        ->whereNot('revision', 0))])->prompt('Question?', provider: 'gemini');
+
+    $expected = '(tenant="acme") AND (category="guide" OR category="reference") AND (_status!="draft") AND (version.number=2.5) AND (year=2024 OR year=2025) AND (revision!=0)';
+
+    expect(sentRequest()->data()['tools'][0]['metadata_filter'])->toBe($expected);
+});
+
+test('file search metadata filter supports whereNotIn', function (): void {
+    aiHttpFake([
+        'generativelanguage.googleapis.com/*' => $this->fakeTextResponse('ok'),
+    ]);
+
+    agent(tools: [new FileSearch(['fileSearchStores/store123'], where: fn(FileSearchQuery $query): FileSearchQuery => $query
+        ->where('tenant', 'acme')
+        ->whereNotIn('category', ['draft', 'internal'])
+        ->whereNotIn('year', [2023, '2024']))])->prompt('Question?', provider: 'gemini');
+
+    $expected = '(tenant="acme") AND (category!="draft" AND category!="internal") AND (year!=2023 AND year!=2024)';
+
+    expect(sentRequest()->data()['tools'][0]['metadata_filter'])->toBe($expected);
 });
 
 test('mixed function and provider tools are sent side by side', function (): void {

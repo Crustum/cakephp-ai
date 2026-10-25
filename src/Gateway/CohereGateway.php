@@ -21,6 +21,7 @@ use Crustum\Ai\Gateway\OpenAiCompatible\Trait\MapsChatCompletionToolsTrait;
 use Crustum\Ai\Gateway\Trait\HandlesFailoverErrorsTrait;
 use Crustum\Ai\Gateway\Trait\MergesHeadersTrait;
 use Crustum\Ai\Gateway\Trait\ParsesServerSentEventsTrait;
+use Crustum\Ai\Gateway\Trait\WrapsStoppableStreamsTrait;
 use Crustum\Ai\Http\Contract\HttpResponseInterface;
 use Crustum\Ai\Http\HttpClientFactory;
 use Crustum\Ai\Responses\Data\Meta;
@@ -48,6 +49,7 @@ class CohereGateway implements EmbeddingGateway, RerankingGateway, StepTextGatew
     use ParsesEmbeddingsTrait;
     use ParsesServerSentEventsTrait;
     use ParsesTextResponsesTrait;
+    use WrapsStoppableStreamsTrait;
 
     /**
      * Active provider for the pending HTTP request.
@@ -141,7 +143,7 @@ class CohereGateway implements EmbeddingGateway, RerankingGateway, StepTextGatew
                 ->post('/chat', $body),
         );
 
-        return yield from $this->processTextStream($invocationId, $provider, $model, $response->getBody());
+        return yield from $this->processTextStream($invocationId, $provider, $model, $this->stoppableBody($response->getBody(), $stepContext));
     }
 
     /**

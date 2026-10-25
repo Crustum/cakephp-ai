@@ -43,10 +43,12 @@ class PendingClassification
      * Create a new pending classification instance.
      *
      * @param array<string, mixed>|string $state The state to classify
+     * @param array<int|string, \Crustum\Ai\Files\File|\Laminas\Diactoros\UploadedFile> $attachments Attachments to classify alongside the state
      * @throws \InvalidArgumentException if the state is blank.
      */
     public function __construct(
         protected string|array $state,
+        protected array $attachments = [],
     ) {
         if (blank($state)) {
             throw new InvalidArgumentException('A non-blank state is required to classify.');
@@ -129,7 +131,7 @@ class PendingClassification
             $provider = $provider->withHeaders($headers);
 
             try {
-                return $provider->classify($this->state, $this->questions, $model, $this->timeout, $providerOptions);
+                return $provider->classify($this->state, $this->questions, $model, $this->timeout, $providerOptions, $this->attachments);
             } catch (FailoverableException $e) {
                 $lastException = $e;
 
