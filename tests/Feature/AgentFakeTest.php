@@ -341,7 +341,7 @@ describe('approval resumes', function (): void {
             'Done.',
         ]);
 
-        $user = (object)['id' => 1];
+        $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
 
         $paused = (new RememberingApprovableAgent())->forUser($user)->stream('Generate a number');
         $paused->each(fn(): true => true);
@@ -377,7 +377,7 @@ describe('approval resumes', function (): void {
             'Done.',
         ]);
 
-        $user = (object)['id' => 1];
+        $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
 
         $paused = (new RememberingApprovableAgent())->forUser($user)->stream('Generate a number');
         $paused->each(fn(): true => true);
@@ -400,7 +400,7 @@ describe('approval resumes', function (): void {
             'Done.',
         ]);
 
-        $user = (object)['id' => 1];
+        $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
 
         $paused = (new RememberingApprovableAgent())->forUser($user)->prompt('Generate a number');
 
@@ -433,7 +433,7 @@ describe('approval resumes', function (): void {
             'Done.',
         ]);
 
-        $user = (object)['id' => 1];
+        $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
 
         $paused = (new RememberingApprovableAgent())->forUser($user)->prompt('Generate a number');
 
@@ -452,7 +452,7 @@ describe('approval resumes', function (): void {
             'Resumed',
         ]);
 
-        $user = (object)['id' => 1];
+        $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
 
         $paused = (new RememberingApprovableAgent())->forUser($user)->prompt('Generate a number and delete config/app.php');
 
@@ -473,7 +473,7 @@ describe('approval resumes', function (): void {
             'Resumed',
         ]);
 
-        $user = (object)['id' => 1];
+        $user = (object)['id' => '00000000-0000-0000-0000-000000000001'];
 
         $paused = (new RememberingUngatedApprovableAgent())->forUser($user)->prompt('Generate a number');
 

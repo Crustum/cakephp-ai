@@ -5,6 +5,7 @@ namespace Crustum\Ai\Manifest;
 
 use Crustum\Ai\AiPlugin;
 use Crustum\PluginManifest\Manifest\ManifestOps;
+use Crustum\PluginManifest\Manifest\Tag;
 
 /**
  * Standalone manifest provider for the Ai plugin.
@@ -43,7 +44,28 @@ final class AiManifest
                 "if (file_exists(CONFIG . 'ai.php')) {\n    Configure::load('ai', 'default');\n}",
                 '// Ai Plugin Configuration',
             ),
-            ManifestOps::manifestStarRepo($plugin, 'Crustum/Ai'),
+            ManifestOps::manifestDependencies($plugin, [
+                'Crustum/Mcp' => [
+                    'required' => false,
+                    'tags' => [Tag::CONFIG, Tag::BOOTSTRAP],
+                    'reason' => 'MCP plugin',
+                ],
+            ]),
+            ManifestOps::manifestDependencies($plugin, [
+                'Crustum/Broadcasting' => [
+                    'required' => false,
+                    'tags' => [Tag::CONFIG, Tag::BOOTSTRAP],
+                    'reason' => 'Broadcasting plugin',
+                ],
+            ]),
+            ManifestOps::manifestDependencies($plugin, [
+                'Crustum/Queue' => [
+                    'required' => false,
+                    'tags' => [Tag::CONFIG, Tag::BOOTSTRAP],
+                    'reason' => 'Queue plugin',
+                ],
+            ]),
+            ManifestOps::manifestStarRepo($plugin, 'Crustum/cakephp-ai'),
         );
     }
 }
