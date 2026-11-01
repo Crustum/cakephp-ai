@@ -167,7 +167,7 @@ class GroqGateway implements StepTextGateway, TranscriptionGateway
 
         $data = $response->getJson() ?? [];
 
-        return new TranscriptionResponse(
+        return (new TranscriptionResponse(
             $data['text'] ?? '',
             collection(array_map(
                 fn(array $segment): TranscriptionSegment => new TranscriptionSegment(
@@ -180,6 +180,6 @@ class GroqGateway implements StepTextGateway, TranscriptionGateway
             )),
             new TranscriptionUsage(audioSeconds: $data['duration'] ?? null),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 }

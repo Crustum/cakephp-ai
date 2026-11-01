@@ -6,6 +6,7 @@ namespace Crustum\Ai\Responses;
 use Cake\Collection\CollectionInterface;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TranscriptionUsage;
+use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
 use Stringable;
 
 /**
@@ -15,6 +16,8 @@ use Stringable;
  */
 class TranscriptionResponse implements Stringable
 {
+    use HasRawResponseTrait;
+
     /**
      * Transcribed text
      */

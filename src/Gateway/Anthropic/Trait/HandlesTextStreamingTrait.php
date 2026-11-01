@@ -5,6 +5,7 @@ namespace Crustum\Ai\Gateway\Anthropic\Trait;
 
 use Cake\Utility\Text;
 use Crustum\Ai\Contracts\Providers\Provider;
+use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\UrlCitation;
@@ -28,12 +29,30 @@ use Generator;
 trait HandlesTextStreamingTrait
 {
     /**
+     * Get the content of the paused steps the turn being continued is made of.
+     *
+     * @param array<int, \Crustum\Ai\Messages\Message> $messages Conversation messages
+     * @return array<int, array<string, mixed>>
+     */
+    protected function pausedContent(array $messages): array
+    {
+        $assistant = array_reverse(collection(array_reverse($messages))
+            ->stopWhen(fn(mixed $message): bool => !$message instanceof AssistantMessage)
+            ->toList());
+
+        return collection($assistant)
+            ->unfold(fn(AssistantMessage $message): array => $message->replayBlocks)
+            ->toList();
+    }
+
+    /**
      * Process a single Anthropic streaming turn and yield stream events.
      *
      * @param string $invocationId Invocation identifier
      * @param \Crustum\Ai\Contracts\Providers\Provider $provider Provider instance
      * @param string $model Model name
      * @param object $streamBody Stream body
+     * @param array<int, array<string, mixed>> $pausedContent Paused turn content the stream continues
      * @return \Generator<int, \Crustum\Ai\Streaming\Event\StreamEvent, mixed, \Crustum\Ai\Gateway\StepResponse|null>
      */
     protected function processTextStream(
@@ -41,6 +60,7 @@ trait HandlesTextStreamingTrait
         Provider $provider,
         string $model,
         object $streamBody,
+        array $pausedContent = [],
     ): Generator {
         $messageId = $this->generateEventId();
         $reasoningId = '';
@@ -59,6 +79,18 @@ trait HandlesTextStreamingTrait
         $responseContent = [];
         $afterTool = false;
         $lastTextDelta = '';
+
+        // A turn resumed after pause_turn picks up where the paused content ended...
+        foreach ($pausedContent as $block) {
+            $blockType = $block['type'] ?? '';
+
+            if ($blockType === 'text' && ($block['text'] ?? '') !== '') {
+                $lastTextDelta = (string)$block['text'];
+                $afterTool = false;
+            } elseif ($this->isToolBlock($blockType)) {
+                $afterTool = true;
+            }
+        }
 
         $messageUsage = [];
         $usage = null;

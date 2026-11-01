@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Cake\Event\EventManager;
 use Crustum\Ai\Ai;
 use Crustum\Ai\Approvals\Decisions;
 use Crustum\Ai\Event\AgentFailed;
@@ -393,21 +394,20 @@ test('every step event names the provider and model the step ran against', funct
         ->and($completed->agent)->toBe($starting->agent);
 });
 
-test('a throwing tool dispatches tool failed and still propagates the exception', function (): void {
+test('a throwing tool dispatches tool failed and the run continues', function (): void {
     ToolUsingAgent::fake([
         new ToolCall('call_1', 'FixedNumberGenerator', []),
         ['number' => 5],
     ]);
 
-    expect(fn(): mixed => (new ToolUsingAgent(fixed: true, toolThrowsException: true))->prompt('Generate'))
-        ->toThrow(Exception::class, 'Forced to throw exception.');
+    (new ToolUsingAgent(fixed: true, toolThrowsException: true))->prompt('Generate');
 
     $this->assertAiEventDispatched(ToolFailed::class, fn(ToolFailed $event): bool => $event->tool instanceof FixedNumberGenerator
         && $event->exception->getMessage() === 'Forced to throw exception.');
 
     $this->assertAiEventNotDispatched(ToolInvoked::class);
 
-    $this->assertAiEventDispatched(AgentFailed::class);
+    $this->assertAiEventNotDispatched(AgentFailed::class);
 
     $invoking = agentEventsOf(InvokingTool::class)[0];
     $failed = agentEventsOf(ToolFailed::class)[0];
@@ -753,19 +753,29 @@ test('a streamed failure after the stream started reports the run as failed', fu
         '*' => agentEventsGroqStreamToolCall('RateLimitedNumberGenerator'),
     ]);
 
-    $response = (new RateLimitedToolAgent())->stream('Generate', provider: ['primary', 'backup']);
+    $listener = function (ToolFailed $event): void {
+        throw $event->exception;
+    };
 
-    $seen = 0;
+    EventManager::instance()->on('Ai.toolFailed', $listener);
 
-    // The stream had already reached the consumer, so the run can no longer be replayed against the backup...
-    expect(function () use ($response, &$seen): void {
-        foreach ($response as $event) {
-            $seen++;
-        }
-    })->toThrow(RateLimitedException::class, 'Rate limited while running the tool.');
+    try {
+        $response = (new RateLimitedToolAgent())->stream('Generate', provider: ['primary', 'backup']);
 
-    expect($seen)->toBeGreaterThan(0);
+        $seen = 0;
 
-    $this->assertAiEventCount(AgentFailed::class, 1);
-    $this->assertAiEventNotDispatched(AgentFailedOver::class);
+        // The stream had already reached the consumer, so the run can no longer be replayed against the backup...
+        expect(function () use ($response, &$seen): void {
+            foreach ($response as $event) {
+                $seen++;
+            }
+        })->toThrow(RateLimitedException::class, 'Rate limited while running the tool.');
+
+        expect($seen)->toBeGreaterThan(0);
+
+        $this->assertAiEventCount(AgentFailed::class, 1);
+        $this->assertAiEventNotDispatched(AgentFailedOver::class);
+    } finally {
+        EventManager::instance()->off('Ai.toolFailed', $listener);
+    }
 });

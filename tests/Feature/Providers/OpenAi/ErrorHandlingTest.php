@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use Cake\Core\Configure;
 use Crustum\Ai\Exception\AiException;
+use Crustum\Ai\Exception\InsufficientCreditsException;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
 use Crustum\Ai\Test\Fixtures\Agents\AssistantAgent;
@@ -42,6 +43,23 @@ test('rate limit response throws rate limited exception', function (): void {
         provider: 'openai',
     );
 })->throws(RateLimitedException::class);
+
+test('insufficient quota response throws insufficient credits exception', function (): void {
+    aiHttpFake([
+        'api.openai.com/*' => aiHttpResponse([
+            'error' => [
+                'type' => 'insufficient_quota',
+                'code' => 'insufficient_quota',
+                'message' => 'You exceeded your current quota, please check your plan and billing details.',
+            ],
+        ], 429),
+    ]);
+
+    (new AssistantAgent())->prompt(
+        'Hi',
+        provider: 'openai',
+    );
+})->throws(InsufficientCreditsException::class);
 
 test('overloaded response throws provider overloaded exception', function (): void {
     aiHttpFake([

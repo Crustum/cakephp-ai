@@ -73,11 +73,11 @@ class VoyageAiGateway implements EmbeddingGateway, RerankingGateway
 
         $data = $response->getJson() ?? [];
 
-        return new EmbeddingsResponse(
+        return (new EmbeddingsResponse(
             (new Collection($data['data'] ?? []))->extract('embedding')->toList(),
             new Usage($data['usage']['total_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -123,11 +123,11 @@ class VoyageAiGateway implements EmbeddingGateway, RerankingGateway
             );
         }
 
-        return new RerankingResponse(
+        return (new RerankingResponse(
             $results,
             new RerankingUsage($data['usage']['total_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -181,10 +181,10 @@ class VoyageAiGateway implements EmbeddingGateway, RerankingGateway
 
         $data = $response->getJson() ?? [];
 
-        return new EmbeddingsResponse(
+        return (new EmbeddingsResponse(
             (new Collection($data['data'] ?? []))->extract('embedding')->toList(),
             new Usage($data['usage']['total_tokens'] ?? $data['total_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 }

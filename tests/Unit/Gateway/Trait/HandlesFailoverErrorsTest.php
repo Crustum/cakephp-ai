@@ -57,6 +57,82 @@ test('429 takes precedence over insufficient credit pattern matching', function 
     ))->toThrow(RateLimitedException::class);
 });
 
+test('429 with an OpenAI billing error throws InsufficientCreditsException', function (array $error): void {
+    expect(fn() => $this->gateway->withErrorHandling(
+        'openai',
+        fn(): Response => failoverableResponse(429, ['error' => $error]),
+    ))->toThrow(InsufficientCreditsException::class);
+})->with([
+    'insufficient_quota code' => [['code' => 'insufficient_quota']],
+    'insufficient_quota type' => [['type' => 'insufficient_quota']],
+    'credit_balance_exhausted' => [['code' => 'credit_balance_exhausted']],
+    'organization_spend_limit_exceeded' => [['code' => 'organization_spend_limit_exceeded']],
+    'project_spend_limit_exceeded' => [['code' => 'project_spend_limit_exceeded']],
+    'organization_usage_limit_exceeded' => [['code' => 'organization_usage_limit_exceeded']],
+]);
+
+test('429 with an OpenAI slow_down error still throws RateLimitedException', function (): void {
+    expect(fn() => $this->gateway->withErrorHandling(
+        'openai',
+        fn(): Response => failoverableResponse(429, [
+            'error' => ['code' => 'slow_down', 'type' => 'rate_limit_error'],
+        ]),
+    ))->toThrow(RateLimitedException::class);
+});
+
+test('billing error codes are only mapped on a 429 response', function (): void {
+    expect(fn() => $this->gateway->withErrorHandling(
+        'openai',
+        fn(): Response => failoverableResponse(529, [
+            'error' => ['code' => 'insufficient_quota'],
+        ]),
+    ))->toThrow(ProviderOverloadedException::class);
+});
+
+test('billing error codes are ignored when insufficientCreditCodes is overridden empty', function (): void {
+    $gateway = new class
+    {
+        use HandlesFailoverErrorsTrait {
+            withErrorHandling as public;
+        }
+
+        protected function insufficientCreditCodes(): array
+        {
+            return [];
+        }
+    };
+
+    expect(fn(): mixed => $gateway->withErrorHandling(
+        'groq',
+        fn(): Response => failoverableResponse(429, [
+            'error' => ['code' => 'insufficient_quota', 'type' => 'insufficient_quota'],
+        ]),
+    ))->toThrow(RateLimitedException::class);
+});
+
+test('429 with a non-JSON body still throws RateLimitedException', function (): void {
+    $response = new Response(429, ['Content-Type' => 'text/html'], '<html>Too Many Requests</html>');
+
+    expect(fn() => $this->gateway->withErrorHandling('openai', fn(): Response => $response))
+        ->toThrow(RateLimitedException::class);
+});
+
+test('429 with an insufficient_quota error is not retried', function (): void {
+    $attempts = 0;
+
+    $request = function () use (&$attempts): Response {
+        $attempts++;
+
+        return failoverableResponse(429, [
+            'error' => ['code' => 'insufficient_quota'],
+        ], ['Retry-After' => '1']);
+    };
+
+    expect(fn() => $this->gateway->withErrorHandling('openai', $request))->toThrow(InsufficientCreditsException::class);
+
+    expect($attempts)->toBe(1);
+});
+
 test('402 throws InsufficientCreditsException without requiring patterns', function (): void {
     $gateway = new class
     {
@@ -78,6 +154,15 @@ test('non-matching message is rethrown as the original RequestException', functi
         'anthropic',
         fn(): Response => failoverableResponse(400, [
             'error' => ['message' => 'invalid prompt'],
+        ]),
+    ))->toThrow(ClientException::class);
+});
+
+test('non-string message is rethrown as the original RequestException', function (): void {
+    expect(fn() => $this->gateway->withErrorHandling(
+        'anthropic',
+        fn(): Response => failoverableResponse(400, [
+            'error' => ['message' => ['code' => 'invalid_prompt']],
         ]),
     ))->toThrow(ClientException::class);
 });

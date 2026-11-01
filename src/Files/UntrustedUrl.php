@@ -153,7 +153,7 @@ class UntrustedUrl
 
         $port = $uri->getPort() ?? ($uri->getScheme() === 'https' ? 443 : 80);
 
-        return [$host . ':' . $port . ':' . implode(',', $addresses)];
+        return [$uri->getHost() . ':' . $port . ':' . implode(',', $addresses)];
     }
 
     /**
@@ -202,10 +202,8 @@ class UntrustedUrl
             $address = $embedded;
         }
 
-        /** @phpstan-ignore identical.alwaysFalse */
         $isNotGlobal = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE) === false;
 
-        /** @phpstan-ignore booleanOr.rightAlwaysFalse */
         return IpUtils::checkIp($address, '64:ff9b:1::/48') || $isNotGlobal;
     }
 

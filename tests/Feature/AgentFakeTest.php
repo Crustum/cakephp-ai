@@ -3,10 +3,12 @@ declare(strict_types=1);
 
 use Cake\Core\Configure;
 use Crustum\Ai\Ai;
+use Crustum\Ai\Approvals\ApprovalMismatchException;
 use Crustum\Ai\Approvals\Decision;
 use Crustum\Ai\Approvals\Decisions;
 use Crustum\Ai\Approvals\PendingApproval;
 use Crustum\Ai\Enums\Lab;
+use Crustum\Ai\Event\ToolApprovalResolved;
 use Crustum\Ai\Http\Response;
 use Crustum\Ai\Job\InvokeAgentJob;
 use Crustum\Ai\Prompts\AgentPrompt;
@@ -33,7 +35,9 @@ use Crustum\Ai\Test\Fixtures\Agents\ConversationalAgent;
 use Crustum\Ai\Test\Fixtures\Agents\EmptySchemaStructuredAgent;
 use Crustum\Ai\Test\Fixtures\Agents\MultiStepToolAgent;
 use Crustum\Ai\Test\Fixtures\Agents\RememberingApprovableAgent;
+use Crustum\Ai\Test\Fixtures\Agents\RememberingUngatedApprovableAgent;
 use Crustum\Ai\Test\Fixtures\Agents\StructuredAgent;
+use Crustum\Ai\Test\Fixtures\Tools\ApprovableNumberGenerator;
 use PHPUnit\Framework\AssertionFailedError;
 
 describe('prompt responses', function (): void {
@@ -321,6 +325,165 @@ describe('stream responses', function (): void {
         expect($toolCall?->toolCall->id)->toBe('call-1')
             ->and($searchIndex($events, fn($event): bool => $event instanceof ToolCallEvent))
             ->toBeLessThan($searchIndex($events, fn($event): bool => $event instanceof ToolApprovalRequest));
+    });
+});
+
+describe('approval resumes', function (): void {
+    beforeEach(function (): void {
+        Configure::write('Ai.conversations.generate_title', false);
+
+        ApprovableNumberGenerator::$invocations = 0;
+    });
+
+    test('a faked agent runs an approved tool when resuming its paused tool call', function (): void {
+        RememberingApprovableAgent::fake([
+            new ToolCall('call-1', 'ApprovableNumberGenerator', []),
+            'Done.',
+        ]);
+
+        $user = (object)['id' => 1];
+
+        $paused = (new RememberingApprovableAgent())->forUser($user)->stream('Generate a number');
+        $paused->each(fn(): true => true);
+
+        $resumed = (new RememberingApprovableAgent())
+            ->continue($paused->conversationId, $user)
+            ->stream(Decisions::from(['call-1' => Decision::approve()]));
+        $resumed->each(fn(): true => true);
+
+        $result = $resumed->events->filter(fn($event): bool => $event instanceof ToolResultEvent)->first();
+
+        expect($result->toolResult->result)->toBe('72019')
+            ->and(ApprovableNumberGenerator::$invocations)->toBe(1)
+            ->and($resumed->text)->toBe('Done.');
+
+        /** @var \Crustum\Ai\Model\Table\ConversationMessagesTable $messagesTable */
+        $messagesTable = $this->getTableLocator()->get('Crustum/Ai.ConversationMessages');
+        $assistantRow = $messagesTable->find()
+            ->where(['conversation_id' => $paused->conversationId, 'role' => 'assistant'])
+            ->orderByDesc('id')
+            ->firstOrFail();
+
+        expect($assistantRow->steps[0]['tool_calls'])->toHaveCount(1)
+            ->and($assistantRow->steps[0]['tool_calls'][0]['id'])->toBe('call-1')
+            ->and($assistantRow->steps[0]['tool_calls'][0]['result'])->toBe('72019');
+    });
+
+    test('a faked agent resumes a pause faked with pending approvals', function (): void {
+        RememberingApprovableAgent::fake([
+            AgentResponse::fakeWithPendingApprovals([
+                new PendingApproval('call-1', 'ApprovableNumberGenerator', [], 'Needs approval'),
+            ]),
+            'Done.',
+        ]);
+
+        $user = (object)['id' => 1];
+
+        $paused = (new RememberingApprovableAgent())->forUser($user)->stream('Generate a number');
+        $paused->each(fn(): true => true);
+
+        $resumed = (new RememberingApprovableAgent())
+            ->continue($paused->conversationId, $user)
+            ->stream(Decisions::from(['call-1' => Decision::approve()]));
+        $resumed->each(fn(): true => true);
+
+        $result = $resumed->events->filter(fn($event): bool => $event instanceof ToolResultEvent)->first();
+
+        expect($result->toolResult->result)->toBe('72019')
+            ->and(ApprovableNumberGenerator::$invocations)->toBe(1)
+            ->and($resumed->text)->toBe('Done.');
+    });
+
+    test('a faked agent runs an approved tool when resuming with prompt', function (): void {
+        RememberingApprovableAgent::fake([
+            new ToolCall('call-1', 'ApprovableNumberGenerator', []),
+            'Done.',
+        ]);
+
+        $user = (object)['id' => 1];
+
+        $paused = (new RememberingApprovableAgent())->forUser($user)->prompt('Generate a number');
+
+        $resumed = (new RememberingApprovableAgent())
+            ->continue($paused->conversationId, $user)
+            ->prompt(Decisions::from(['call-1' => Decision::approve()]));
+
+        expect($resumed->toolResults->first()->result)->toBe('72019')
+            ->and(ApprovableNumberGenerator::$invocations)->toBe(1)
+            ->and($resumed->text)->toBe('Done.');
+
+        $this->assertAiEventDispatched(ToolApprovalResolved::class, fn(ToolApprovalResolved $event): bool => $event->conversationId === $paused->conversationId
+            && $event->toolResults->first()->result === '72019');
+
+        /** @var \Crustum\Ai\Model\Table\ConversationMessagesTable $messagesTable */
+        $messagesTable = $this->getTableLocator()->get('Crustum/Ai.ConversationMessages');
+        $assistantRow = $messagesTable->find()
+            ->where(['conversation_id' => $paused->conversationId, 'role' => 'assistant'])
+            ->orderByDesc('id')
+            ->firstOrFail();
+
+        expect($assistantRow->steps[0]['tool_calls'])->toHaveCount(1)
+            ->and($assistantRow->steps[0]['tool_calls'][0]['id'])->toBe('call-1')
+            ->and($assistantRow->steps[0]['tool_calls'][0]['result'])->toBe('72019');
+    });
+
+    test('a faked agent rejects decisions that do not match its paused tool call like the real gateway', function (): void {
+        RememberingApprovableAgent::fake([
+            new ToolCall('call-1', 'ApprovableNumberGenerator', []),
+            'Done.',
+        ]);
+
+        $user = (object)['id' => 1];
+
+        $paused = (new RememberingApprovableAgent())->forUser($user)->prompt('Generate a number');
+
+        expect(fn(): mixed => (new RememberingApprovableAgent())
+            ->continue($paused->conversationId, $user)
+            ->prompt(Decisions::from(['call-9' => Decision::approve()])))
+            ->toThrow(ApprovalMismatchException::class);
+    });
+
+    test('a faked agent keeps answering a wildcard over a pause that includes a tool it does not have', function (): void {
+        RememberingApprovableAgent::fake([
+            AgentResponse::fakeWithPendingApprovals([
+                new PendingApproval('call-1', 'ApprovableNumberGenerator', [], 'Needs approval'),
+                new PendingApproval('call-2', 'DeleteFile', ['path' => 'config/app.php'], 'Deletes a file'),
+            ]),
+            'Resumed',
+        ]);
+
+        $user = (object)['id' => 1];
+
+        $paused = (new RememberingApprovableAgent())->forUser($user)->prompt('Generate a number and delete config/app.php');
+
+        $resumed = (new RememberingApprovableAgent())
+            ->continue($paused->conversationId, $user)
+            ->prompt(Decisions::from(['*' => true]));
+
+        expect($resumed->toolResults)->toBeEmpty()
+            ->and(ApprovableNumberGenerator::$invocations)->toBe(0)
+            ->and($resumed->text)->toBe('Resumed');
+    });
+
+    test('a faked agent keeps answering a pause for an approvable tool that does not require approval', function (): void {
+        RememberingUngatedApprovableAgent::fake([
+            AgentResponse::fakeWithPendingApprovals([
+                new PendingApproval('call-1', 'ApprovableNumberGenerator', [], 'Needs approval'),
+            ]),
+            'Resumed',
+        ]);
+
+        $user = (object)['id' => 1];
+
+        $paused = (new RememberingUngatedApprovableAgent())->forUser($user)->prompt('Generate a number');
+
+        $resumed = (new RememberingUngatedApprovableAgent())
+            ->continue($paused->conversationId, $user)
+            ->prompt(Decisions::from(['call-1' => true]));
+
+        expect($resumed->toolResults)->toBeEmpty()
+            ->and(ApprovableNumberGenerator::$invocations)->toBe(0)
+            ->and($resumed->text)->toBe('Resumed');
     });
 });
 

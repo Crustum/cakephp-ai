@@ -33,6 +33,8 @@ use Crustum\Ai\Responses\Data\Step;
 use Crustum\Ai\Responses\Data\TextUsage;
 use Crustum\Ai\Responses\Data\ToolCall;
 use Crustum\Ai\Responses\Data\ToolResult;
+use Crustum\Ai\Responses\StreamedAgentResponse;
+use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Utility\Uuid;
 use Crustum\Ai\Utility\Value;
 use InvalidArgumentException;
@@ -290,9 +292,20 @@ class DatabaseConversationStore implements ConversationStore, PaginatesConversat
             $steps = $this->withoutReplayBlocks($steps);
         }
 
+        /** @var list<string> $texts */
+        $texts = $steps->map(fn(array $step): string => $step['content'] ?? '')->toList();
+
+        $content = $response instanceof StreamedAgentResponse
+            ? TextDelta::join($texts)
+            : $response->text;
+
+        if (Value::blank($content)) {
+            $content = $paused->content;
+        }
+
         $now = DateTime::now();
 
-        $paused->content = Value::blank($response->text) ? $paused->content : $response->text;
+        $paused->content = $content;
         $paused->steps = $steps->toList();
         $paused->usage_data = TextUsage::fromArray($this->decoded($paused->usage_data))->add($response->usage)->toArray();
         $paused->meta = $this->mergedMeta($paused, $response, $exception);

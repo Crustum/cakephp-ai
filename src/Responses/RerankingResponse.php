@@ -8,6 +8,7 @@ use Countable;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\RankedDocument;
 use Crustum\Ai\Responses\Data\RerankingUsage;
+use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
 use IteratorAggregate;
 use JsonSerializable;
 use Traversable;
@@ -21,6 +22,8 @@ use Traversable;
  */
 class RerankingResponse implements Countable, IteratorAggregate, JsonSerializable
 {
+    use HasRawResponseTrait;
+
     /**
      * Create a new reranking response instance.
      *

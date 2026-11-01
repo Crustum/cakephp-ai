@@ -19,14 +19,16 @@ use Crustum\Ai\Utility\Value;
 trait ResumesToolApprovalsTrait
 {
     /**
-     * Get the tool approval to resume with, unless the agent's gateway is faked.
+     * Get the tool approval to resume with, unless a faked agent has no paused approval to resume.
      *
      * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
+     * @param array<int, \Crustum\Ai\Messages\Message> $messages Conversation messages
+     * @param array<int, \Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> $tools Available tools
      * @return array<string, \Crustum\Ai\Approvals\Decision>|null
      */
-    protected function resumableApprovalFor(AgentPrompt $prompt): ?array
+    protected function resumableApprovalFor(AgentPrompt $prompt, array $messages, array $tools): ?array
     {
-        return $this->resumesAgainstRealGateway($prompt) ? $prompt->approvalDecisions->all() : null;
+        return $this->resumesApproval($prompt, $messages, $tools) ? $prompt->approvalDecisions->all() : null;
     }
 
     /**
@@ -52,26 +54,38 @@ trait ResumesToolApprovalsTrait
     }
 
     /**
-     * Determine whether the prompt is a resume that runs tools against the real (non-faked) gateway.
+     * Determine whether the prompt is a resume that runs the approved tools.
      *
      * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
+     * @param array<int, \Crustum\Ai\Messages\Message> $messages Conversation messages
+     * @param array<int, \Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> $tools Available tools
      * @return bool
      */
-    protected function resumesAgainstRealGateway(AgentPrompt $prompt): bool
+    protected function resumesApproval(AgentPrompt $prompt, array $messages, array $tools): bool
     {
-        return $prompt->hasApprovalDecisions() && !Ai::manager()->hasFakeGatewayFor($prompt->agent::class);
+        if (!$prompt->hasApprovalDecisions()) {
+            return false;
+        }
+
+        if (!Ai::manager()->hasFakeGatewayFor($prompt->agent::class)) {
+            return true;
+        }
+
+        // A faked agent resumes like the real gateway once it actually paused for approval, but decisions sent to a fake with nothing paused still just take its next response...
+        return $this->textGenerationLoop()->pausedForApproval($messages, $tools);
     }
 
     /**
      * Get a callback that captures a resume's resolved approval results, also durably recording them when the store supports it.
      *
      * @param \Crustum\Ai\Prompts\AgentPrompt $prompt Agent prompt
+     * @param array<string, \Crustum\Ai\Approvals\Decision>|null $approval Approval decisions keyed by tool call id
      * @param \Cake\Collection\CollectionInterface<int, \Crustum\Ai\Responses\Data\ToolResult>|null $resolvedApprovalResults Reference populated with the resolved results
      * @return \Closure|null
      */
-    protected function approvalResultRecorderFor(AgentPrompt $prompt, ?CollectionInterface &$resolvedApprovalResults): ?Closure
+    protected function approvalResultRecorderFor(AgentPrompt $prompt, ?array $approval, ?CollectionInterface &$resolvedApprovalResults): ?Closure
     {
-        if (!$this->resumesAgainstRealGateway($prompt)) {
+        if ($approval === null) {
             return null;
         }
 

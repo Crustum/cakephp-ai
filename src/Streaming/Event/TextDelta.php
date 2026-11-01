@@ -29,13 +29,7 @@ class TextDelta extends StreamEvent
     }
 
     /**
-     * Combine the text deltas in the given collection of events into a single string.
-     *
-     * Each step of a multi-step generation is a self-contained utterance
-     * (typically narration around a tool call), so steps are joined with a blank
-     * line instead of being run together mid-sentence. The boundary is the step's
-     * own `StreamStart` rather than a change of message ID, which Anthropic rotates
-     * per content block — web search splits one answer across several, mid-sentence.
+     * Combine the text deltas, starting a new paragraph only after a step that ran tools.
      *
      * @param \Cake\Collection\Collection<int, \Crustum\Ai\Streaming\Event\StreamEvent>|array<\Crustum\Ai\Streaming\Event\StreamEvent> $events Events
      * @return string
@@ -46,11 +40,17 @@ class TextDelta extends StreamEvent
 
         $steps = [];
         $current = [];
+        $currentHasToolResult = false;
 
         foreach ($events as $event) {
-            if ($event instanceof StreamStart && $current !== []) {
+            if ($event instanceof StreamStart && $current !== [] && $currentHasToolResult) {
                 $steps[] = $current;
                 $current = [];
+                $currentHasToolResult = false;
+            }
+
+            if ($event instanceof ToolResult) {
+                $currentHasToolResult = true;
             }
 
             $current[] = $event;
@@ -76,7 +76,20 @@ class TextDelta extends StreamEvent
             }
         }
 
-        return implode("\n\n", $texts);
+        return static::join($texts);
+    }
+
+    /**
+     * Join the text of each step, separating the steps with a blank line.
+     *
+     * @param \Cake\Collection\Collection<array-key, string>|array<array-key, string> $texts Step texts
+     * @return string
+     */
+    public static function join(Collection|array $texts): string
+    {
+        $texts = is_array($texts) ? collection($texts) : $texts;
+
+        return $texts->filter(fn(string $text): bool => trim($text) !== '')->implode("\n\n");
     }
 
     /**

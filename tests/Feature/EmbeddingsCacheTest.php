@@ -5,8 +5,11 @@ use Cake\Cache\Cache;
 use Cake\Core\Configure;
 use Crustum\Ai\Embeddings;
 use Crustum\Ai\Exception\EmbeddingsCountMismatchException;
+use Crustum\Ai\Http\Response;
 use Crustum\Ai\Prompts\EmbeddingsPrompt;
 use Crustum\Ai\Responses\EmbeddingsResponse;
+use Crustum\Ai\Test\Support\Http\AiHttpRequest;
+use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
 
 beforeEach(function (): void {
     if (!Cache::getConfig('array')) {
@@ -39,6 +42,26 @@ test('cache is used when enabled explicitly', function (): void {
 
     expect($calls)->toBe(1);
 });
+
+test('only freshly generated embeddings expose a raw response', function (bool $individually): void {
+    aiHttpFake(fn(AiHttpRequest $request): AiHttpResponseDefinition => aiHttpResponse([
+        'embeddings' => ['float' => array_map(
+            fn(string $text): array => [crc32($text), 0.5],
+            json_decode($request->body(), true)['texts'],
+        )],
+        'meta' => ['billed_units' => ['input_tokens' => count(json_decode($request->body(), true)['texts'])]],
+    ]));
+    Configure::write('Ai.providers.cohere.key', 'test-key');
+
+    $fresh = Embeddings::for(['a'])->cache(3600, individually: $individually)->generate(provider: 'cohere', model: 'embed-v4.0');
+    $partial = Embeddings::for(['b', 'a'])->cache(3600, individually: $individually)->generate(provider: 'cohere', model: 'embed-v4.0');
+    $cached = Embeddings::for(['b', 'a'])->cache(3600, individually: $individually)->generate(provider: 'cohere', model: 'embed-v4.0');
+
+    expect($fresh->raw)->toBeInstanceOf(Response::class)
+        ->and($partial->raw)->toBeInstanceOf(Response::class)
+        ->and($partial->raw->getJson()['meta']['billed_units']['input_tokens'])->toBe($individually ? 1 : 2)
+        ->and($cached->raw)->toBeNull();
+})->with([true, false]);
 
 test('cache is used when enabled globally via config', function (): void {
     Configure::write('Ai.caching.embeddings.cache', true);

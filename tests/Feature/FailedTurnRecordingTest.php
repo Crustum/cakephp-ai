@@ -2,8 +2,10 @@
 declare(strict_types=1);
 
 use Cake\Core\Configure;
+use Cake\Event\EventManager;
 use Cake\Http\Client\Exception\ClientException;
 use Crustum\Ai\Ai;
+use Crustum\Ai\Event\ToolFailed;
 use Crustum\Ai\Messages\AssistantMessage;
 use Crustum\Ai\Messages\ToolResultMessage;
 use Crustum\Ai\Providers\AnthropicProvider;
@@ -246,7 +248,17 @@ test('a step that dies on its second call keeps the result of the first', functi
 
     $agent = (new RememberingFailingToolAgent())->forUser((object)['id' => '00000000-0000-0000-0000-000000000001']);
 
-    expect(fn(): mixed => $agent->prompt('Go', provider: 'anthropic'))->toThrow(Exception::class, 'Forced to throw exception.');
+    $listener = function (ToolFailed $event): void {
+        throw $event->exception;
+    };
+
+    EventManager::instance()->on('Ai.toolFailed', $listener);
+
+    try {
+        expect(fn(): mixed => $agent->prompt('Go', provider: 'anthropic'))->toThrow(Exception::class, 'Forced to throw exception.');
+    } finally {
+        EventManager::instance()->off('Ai.toolFailed', $listener);
+    }
 
     $steps = json_decode((string)failedAssistantRow()->steps, true);
 
@@ -318,7 +330,17 @@ test('a replayed interrupted call keeps the call id the Responses API pairs its 
 
     $agent = (new RememberingFailingToolAgent())->forUser((object)['id' => '00000000-0000-0000-0000-000000000001']);
 
-    expect(fn(): mixed => $agent->prompt('Go', provider: $provider))->toThrow(Exception::class, 'Forced to throw exception.');
+    $listener = function (ToolFailed $event): void {
+        throw $event->exception;
+    };
+
+    EventManager::instance()->on('Ai.toolFailed', $listener);
+
+    try {
+        expect(fn(): mixed => $agent->prompt('Go', provider: $provider))->toThrow(Exception::class, 'Forced to throw exception.');
+    } finally {
+        EventManager::instance()->off('Ai.toolFailed', $listener);
+    }
 
     (new RememberingFailingToolAgent())->continueLastConversation((object)['id' => '00000000-0000-0000-0000-000000000001'])->prompt('Again', provider: $provider);
 

@@ -206,7 +206,7 @@ test('response usage is parsed using the openai standard shape', function (): vo
         ->and($response->usage->reasoningTokens)->toBe(10);
 });
 
-test('streaming omits stream_options by default', function (): void {
+test('streaming sends include_usage stream option by default', function (): void {
     aiHttpFake(['*' => fakeOpenAiCompatibleStream()]);
 
     foreach (agent()->stream('Hello', provider: 'openai-compatible') as $event) {
@@ -217,7 +217,7 @@ test('streaming omits stream_options by default', function (): void {
         $body = json_decode($request->body(), true);
 
         return $body['stream'] === true
-            && ! array_key_exists('stream_options', $body);
+            && Hash::get($body, 'stream_options.include_usage') === true;
     });
 });
 

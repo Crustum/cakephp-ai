@@ -85,6 +85,10 @@ trait HandlesFailoverErrorsTrait
             return null;
         }
 
+        if ($this->isInsufficientCredits($response)) {
+            return null;
+        }
+
         $retryAfter = $response->getHeaderLine('Retry-After');
 
         return ctype_digit($retryAfter) && (int)$retryAfter <= 10 ? (int)$retryAfter : null;
@@ -114,12 +118,12 @@ trait HandlesFailoverErrorsTrait
     {
         $status = $response->getStatusCode();
 
-        if ($status === 429) {
-            throw RateLimitedException::forProvider($providerName, $status);
+        if ($this->isInsufficientCredits($response)) {
+            throw InsufficientCreditsException::forProvider($providerName, $status);
         }
 
-        if ($status === 402) {
-            throw InsufficientCreditsException::forProvider($providerName, $status);
+        if ($status === 429) {
+            throw RateLimitedException::forProvider($providerName, $status);
         }
 
         if (in_array($status, $this->overloadedStatusCodes(), true)) {
@@ -129,16 +133,41 @@ trait HandlesFailoverErrorsTrait
         $patterns = $this->insufficientCreditPatterns();
         if ($patterns) {
             $json = $response->getJson();
-            $message = strtolower((string)Hash::get(is_array($json) ? $json : [], 'error.message', ''));
+            $message = Hash::get(is_array($json) ? $json : [], 'error.message');
 
-            foreach ($patterns as $pattern) {
-                if (str_contains($message, (string)$pattern)) {
-                    throw InsufficientCreditsException::forProvider($providerName, $status);
+            if (is_string($message)) {
+                $message = strtolower($message);
+
+                foreach ($patterns as $pattern) {
+                    if (str_contains($message, (string)$pattern)) {
+                        throw InsufficientCreditsException::forProvider($providerName, $status);
+                    }
                 }
             }
         }
 
         throw new ClientException('HTTP request returned status code ' . $status, $status);
+    }
+
+    /**
+     * Determine if the response is a 402, or a 429 insufficient credits or quota error rather than a rate limit.
+     */
+    protected function isInsufficientCredits(HttpResponseInterface $response): bool
+    {
+        $status = $response->getStatusCode();
+
+        if ($status === 402) {
+            return true;
+        }
+
+        if ($status !== 429) {
+            return false;
+        }
+
+        $codes = $this->insufficientCreditCodes();
+
+        return in_array(Hash::get($response->getJson() ?? [], 'error.code'), $codes, true)
+            || in_array(Hash::get($response->getJson() ?? [], 'error.type'), $codes, true);
     }
 
     /**
@@ -159,5 +188,22 @@ trait HandlesFailoverErrorsTrait
     protected function insufficientCreditPatterns(): array
     {
         return [];
+    }
+
+    /**
+     * The error codes or types that indicate insufficient credits or quota on a 429 response.
+     *
+     * @return list<string>
+     */
+    protected function insufficientCreditCodes(): array
+    {
+        // OpenAI sends these with a 429 status, and may still use "insufficient_quota" as the error type.
+        return [
+            'insufficient_quota',
+            'credit_balance_exhausted',
+            'organization_spend_limit_exceeded',
+            'project_spend_limit_exceeded',
+            'organization_usage_limit_exceeded',
+        ];
     }
 }

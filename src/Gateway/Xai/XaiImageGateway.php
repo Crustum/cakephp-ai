@@ -77,10 +77,10 @@ class XaiImageGateway implements ImageGateway
             'image/jpeg',
         ));
 
-        return new ImageResponse(
+        return (new ImageResponse(
             $images,
             new ImageUsage(),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 }

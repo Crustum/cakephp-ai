@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0]
+
+### Added
+
+- Raw HTTP responses on classification, embeddings, transcription, image, and
+  reranking responses: all five response types expose the provider response
+  through `HasRawResponseTrait`, attached by every gateway (VoyageAi splits
+  `$response`/`$data`; `PendingEmbeddingsGeneration` passes `raw` through,
+  fully-cached generations expose `null`).
+- OpenAI billing and quota errors now throw `InsufficientCreditsException`:
+  402 or 429 responses carrying `insufficient_quota`,
+  `credit_balance_exhausted`, `organization_spend_limit_exceeded`,
+  `project_spend_limit_exceeded`, or `organization_usage_limit_exceeded` are no
+  longer misreported as rate-limited and are excluded from the Retry-After
+  retry (codes list is overridable). See the 1.4 upgrade note.
+- `TextDelta::join()` for merged step texts; resumed turns rebuild their
+  content from merged steps (`DatabaseConversationStore`).
+- `TextGenerationLoop::pausedForApproval()`: faked agents resume tool
+  approvals when the history is actually paused for approval.
+- Tool failure recovery: tool throws are wrapped in the internal
+  `ToolExecutionException`, reported, and returned to the model as failed
+  `ToolResult`s instead of ending the run. Listeners that rethrow still fail
+  the run with the original exception.
+- Stored message IDs (`messageId`, `userMessageId`) are now also reported in
+  `RUN_FINISHED` metadata (`AgentUserInteractionProtocol`).
+
+### Fixed
+
+- OpenAI and Azure batch embeddings are returned in input order even when the
+  response is shuffled (`sortBy('index', SORT_ASC)`).
+- Credit pattern matching is skipped when the error message is not a string.
+- Hosts with a trailing dot are pinned as written in the URL
+  (`Files\UntrustedUrl`).
+- Anthropic messages ending with `end_turn` that still hold `tool_use` blocks
+  now run the tool calls.
+
+### Changed
+
+- Anthropic `pause_turn` continuations seed streaming state from the paused
+  replay blocks, and `TextDelta::combine` starts a new paragraph only after a
+  step that ran tools.
+- Refreshed Mistral model defaults (`mistral-large-4-0`,
+  `voxtral-mini-tts-3-0`, `voxtral-mini-transcribe-3-0`, plus the
+  `config/ai.php` env defaults).
+
 ## [2.1.0]
 
 ### Added

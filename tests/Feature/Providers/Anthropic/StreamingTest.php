@@ -15,6 +15,7 @@ use Crustum\Ai\Streaming\Event\TextDelta;
 use Crustum\Ai\Streaming\Event\TextEnd;
 use Crustum\Ai\Streaming\Event\TextStart;
 use Crustum\Ai\Streaming\Event\ToolCall as ToolCallEvent;
+use Crustum\Ai\Streaming\Event\ToolResult as ToolResultEvent;
 use Crustum\Ai\Test\Fixtures\Agents\ProviderOptionsWithToolsAgent;
 
 describe('text streaming', function (): void {
@@ -156,6 +157,180 @@ describe('tool calls', function (): void {
 
         expect($toolCallEvents)->not->toBeEmpty()
             ->and($toolCallEvents[0]->toolCall)->name->toBe('FixedNumberGenerator')->id->toBe('toolu_1');
+    });
+
+    test('streaming runs tool calls when the message ends with end_turn', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpSequence([
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'Let me generate two numbers.']),
+                        $this->contentBlockStop(0),
+                        $this->contentBlockStart(1, ['type' => 'tool_use', 'id' => 'toolu_1', 'name' => 'FixedNumberGenerator', 'input' => '']),
+                        $this->contentBlockDelta(1, ['type' => 'input_json_delta', 'partial_json' => '{}']),
+                        $this->contentBlockStop(1),
+                        $this->contentBlockStart(2, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(2, ['type' => 'text_delta', 'text' => 'And another one.']),
+                        $this->contentBlockStop(2),
+                        $this->contentBlockStart(3, ['type' => 'tool_use', 'id' => 'toolu_2', 'name' => 'FixedNumberGenerator', 'input' => '']),
+                        $this->contentBlockDelta(3, ['type' => 'input_json_delta', 'partial_json' => '{}']),
+                        $this->contentBlockStop(3),
+                        $this->messageDelta('end_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'Both numbers are 72019']),
+                        $this->contentBlockStop(0),
+                        $this->messageDelta('end_turn', 10),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+            ]),
+        ]);
+
+        $events = $this->collectStreamEvents(agent: new ProviderOptionsWithToolsAgent());
+
+        $toolResultEvents = array_values(array_filter($events, fn($e): bool => $e instanceof ToolResultEvent));
+
+        expect(aiHttpRecorded())->toHaveCount(2)
+            ->and($toolResultEvents)->toHaveCount(2)
+            ->and($toolResultEvents[0]->toolResult)->id->toBe('toolu_1')
+            ->and($toolResultEvents[1]->toolResult)->id->toBe('toolu_2')
+            ->and(TextDelta::combine($events))->toEndWith('Both numbers are 72019');
+    });
+
+    test('streaming continues a paused step that ran no tools without a separator', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpSequence([
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'The latest figures show that']),
+                        $this->contentBlockStop(0),
+                        $this->messageDelta('pause_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => ' revenue grew.']),
+                        $this->contentBlockStop(0),
+                        $this->messageDelta('end_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+            ]),
+        ]);
+
+        $events = $this->collectStreamEvents();
+
+        $textDeltas = array_values(array_filter($events, fn($e): bool => $e instanceof TextDelta));
+
+        expect(implode('', array_map(fn(TextDelta $e): string => $e->delta, $textDeltas)))->toBe('The latest figures show that revenue grew.')
+            ->and(TextDelta::combine($events))->toBe('The latest figures show that revenue grew.');
+    });
+
+    test('streaming separates text resumed after a paused server tool', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpSequence([
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'Let me check.']),
+                        $this->contentBlockStop(0),
+                        $this->contentBlockStart(1, ['type' => 'server_tool_use', 'id' => 'srvtoolu_1', 'name' => 'web_search']),
+                        $this->contentBlockStop(1),
+                        $this->messageDelta('pause_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'Revenue grew.']),
+                        $this->contentBlockStop(0),
+                        $this->messageDelta('end_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+            ]),
+        ]);
+
+        $events = $this->collectStreamEvents();
+
+        $textDeltas = array_values(array_filter($events, fn($e): bool => $e instanceof TextDelta));
+
+        expect(implode('', array_map(fn(TextDelta $e): string => $e->delta, $textDeltas)))->toBe("Let me check.\n\nRevenue grew.")
+            ->and(TextDelta::combine($events))->toBe("Let me check.\n\nRevenue grew.");
+    });
+
+    test('streaming separates text resumed after a turn paused twice', function (): void {
+        aiHttpFake([
+            'api.anthropic.com/*' => aiHttpSequence([
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(0, ['type' => 'text_delta', 'text' => 'Let me check.']),
+                        $this->contentBlockStop(0),
+                        $this->contentBlockStart(1, ['type' => 'server_tool_use', 'id' => 'srvtoolu_1', 'name' => 'web_search']),
+                        $this->contentBlockStop(1),
+                        $this->messageDelta('pause_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'web_search_tool_result', 'tool_use_id' => 'srvtoolu_1', 'content' => []]),
+                        $this->contentBlockStop(0),
+                        $this->contentBlockStart(1, ['type' => 'server_tool_use', 'id' => 'srvtoolu_2', 'name' => 'web_search']),
+                        $this->contentBlockStop(1),
+                        $this->messageDelta('pause_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+                aiHttpResponse(
+                    body: $this->ssePayload([
+                        $this->messageStart(),
+                        $this->contentBlockStart(0, ['type' => 'web_search_tool_result', 'tool_use_id' => 'srvtoolu_2', 'content' => []]),
+                        $this->contentBlockStop(0),
+                        $this->contentBlockStart(1, ['type' => 'text', 'text' => '']),
+                        $this->contentBlockDelta(1, ['type' => 'text_delta', 'text' => 'Revenue grew.']),
+                        $this->contentBlockStop(1),
+                        $this->messageDelta('end_turn', 5),
+                    ]),
+                    status: 200,
+                    headers: ['Content-Type' => 'text/event-stream'],
+                ),
+            ]),
+        ]);
+
+        $events = $this->collectStreamEvents();
+
+        $textDeltas = array_values(array_filter($events, fn($e): bool => $e instanceof TextDelta));
+
+        expect(implode('', array_map(fn(TextDelta $e): string => $e->delta, $textDeltas)))->toBe("Let me check.\n\nRevenue grew.")
+            ->and(TextDelta::combine($events))->toBe("Let me check.\n\nRevenue grew.");
     });
 });
 

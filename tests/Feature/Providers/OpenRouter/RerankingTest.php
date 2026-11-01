@@ -4,6 +4,7 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Crustum\Ai\Exception\AiException;
 use Crustum\Ai\Exception\RateLimitedException;
+use Crustum\Ai\Http\Response;
 use Crustum\Ai\Reranking;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
@@ -102,11 +103,13 @@ function fakeOpenRouterRerankingResponse(): AiHttpResponseDefinition
 test('reranking response reports the total tokens and search units', function (): void {
     aiHttpFake(['*' => aiHttpResponse([
         'results' => [['index' => 0, 'relevance_score' => 0.95]],
-        'usage' => ['total_tokens' => 320, 'search_units' => 1],
+        'usage' => ['total_tokens' => 320, 'search_units' => 1, 'cost' => 0.001],
     ])]);
 
     $response = Reranking::of(['Doc A'])->rerank('query', provider: 'openrouter', model: 'cohere/rerank-v3.5');
 
     expect($response->usage->inputTokens)->toBe(320)
-        ->and($response->usage->searchUnits)->toBe(1.0);
+        ->and($response->usage->searchUnits)->toBe(1.0)
+        ->and($response->raw)->toBeInstanceOf(Response::class)
+        ->and($response->raw->getJson()['usage']['cost'])->toBe(0.001);
 });

@@ -6,6 +6,7 @@ namespace Crustum\Ai\Responses;
 use Countable;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\Usage;
+use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
 use IteratorAggregate;
 use JsonSerializable;
 use Traversable;
@@ -19,6 +20,8 @@ use Traversable;
  */
 class EmbeddingsResponse implements Countable, IteratorAggregate, JsonSerializable
 {
+    use HasRawResponseTrait;
+
     /**
      * Create a new embeddings response instance.
      *

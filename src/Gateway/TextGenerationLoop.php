@@ -5,6 +5,7 @@ namespace Crustum\Ai\Gateway;
 
 use Cake\Collection\Collection;
 use Cake\Collection\CollectionInterface;
+use Cake\Log\Log;
 use Cake\Utility\Text;
 use Closure;
 use Crustum\Ai\Approvals\Approval;
@@ -25,6 +26,7 @@ use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Exception\NoSuchToolException;
 use Crustum\Ai\Exception\StoppedException;
 use Crustum\Ai\Exception\StreamErrorException;
+use Crustum\Ai\Exception\ToolExecutionException;
 use Crustum\Ai\Gateway\Trait\HandlesToolApprovalsTrait;
 use Crustum\Ai\Gateway\Trait\InvokesToolsTrait;
 use Crustum\Ai\Gateway\Trait\MeasuresDurationTrait;
@@ -938,15 +940,25 @@ class TextGenerationLoop
      */
     protected function resolvedToolResult(ToolCall $toolCall, ?Tool $tool, bool $isFinalStep, array $tools = [], ?RunContext $context = null): ToolResult
     {
-        return $this->recordedToolResult($this->toolResult(
-            $toolCall,
-            match (true) {
-                !$tool instanceof Tool && $this->repairsToolCalls => "Tool '{$toolCall->name}' does not exist. Available tools: {$this->availableToolNames($tools)}.",
-                $isFinalStep => 'The agent reached its maximum number of steps without running this tool call.',
-                default => $this->executeTool($tool, $toolCall->arguments, $toolCall->id, $context),
-            },
-            failed: !$tool instanceof Tool || $isFinalStep,
-        ), $context);
+        return $this->recordedToolResult(match (true) {
+            !$tool instanceof Tool && $this->repairsToolCalls => $this->toolResult($toolCall, "Tool '{$toolCall->name}' does not exist. Available tools: {$this->availableToolNames($tools)}.", failed: true),
+            $isFinalStep => $this->toolResult($toolCall, 'The agent reached its maximum number of steps without running this tool call.', failed: true),
+            default => $this->executedToolResult($toolCall, $tool, $context),
+        }, $context);
+    }
+
+    /**
+     * Execute the tool for the given call, returning a failure to the model instead of ending the run.
+     */
+    protected function executedToolResult(ToolCall $toolCall, Tool $tool, ?RunContext $context = null): ToolResult
+    {
+        try {
+            return $this->toolResult($toolCall, $this->executeTool($tool, $toolCall->arguments, $toolCall->id, $context));
+        } catch (ToolExecutionException $toolExecutionException) {
+            Log::error('Tool call failed: ' . $toolExecutionException->exception->getMessage(), ['exception' => $toolExecutionException->exception]);
+
+            return $this->toolResult($toolCall, 'The tool call failed: ' . $toolExecutionException->exception->getMessage(), failed: true);
+        }
     }
 
     /**
@@ -1169,6 +1181,40 @@ class TextGenerationLoop
     }
 
     /**
+     * Determine whether the history ends in a pause a real run could have left: every pending call is for a tool the agent still has, and at least one of them asks for approval.
+     *
+     * @param array<int, \Crustum\Ai\Messages\Message> $messages Conversation messages
+     * @param array<int, \Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> $tools Available tools
+     */
+    public function pausedForApproval(array $messages, array $tools): bool
+    {
+        [$pendingToolCalls] = $this->pendingToolCalls($messages);
+
+        $pendingTools = $this->toolsForPendingCalls($pendingToolCalls, $tools);
+
+        return !in_array(null, $pendingTools, true)
+            && $pendingToolCalls->some(fn(ToolCall $toolCall): bool => $this->approvalForTool($pendingTools[$toolCall->id], $toolCall) instanceof Approval);
+    }
+
+    /**
+     * Find the tool each pending call is for, keyed by the call's id.
+     *
+     * @param \Cake\Collection\CollectionInterface<array-key, \Crustum\Ai\Responses\Data\ToolCall> $pendingToolCalls Pending tool calls
+     * @param array<int, \Crustum\Ai\Contracts\Tool|\Crustum\Ai\Providers\Tools\ProviderTool> $tools Available tools
+     * @return array<string, \Crustum\Ai\Contracts\Tool|null>
+     */
+    protected function toolsForPendingCalls(CollectionInterface $pendingToolCalls, array $tools): array
+    {
+        $resolved = [];
+
+        foreach ($pendingToolCalls as $toolCall) {
+            $resolved[$toolCall->id] = $this->findTool($toolCall->name, $tools);
+        }
+
+        return $resolved;
+    }
+
+    /**
      * Validate the approval's decisions against the pending tool calls, throwing on any mismatch.
      *
      * @param array<string, \Crustum\Ai\Approvals\Decision> $approval Approval decisions keyed by tool call id
@@ -1190,13 +1236,11 @@ class TextGenerationLoop
             fn($id): bool => $id !== '*',
         ));
 
-        $resolvedTools = [];
+        $resolvedTools = $this->toolsForPendingCalls($pendingToolCalls, $tools);
         $approvals = [];
 
         foreach ($pending as $toolCall) {
-            $tool = $this->findTool($toolCall->name, $tools);
-            $resolvedTools[$toolCall->id] = $tool;
-            $approvals[$toolCall->id] = $this->approvalForTool($tool, $toolCall);
+            $approvals[$toolCall->id] = $this->approvalForTool($resolvedTools[$toolCall->id], $toolCall);
         }
 
         $gated = array_values(array_filter(

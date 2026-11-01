@@ -88,11 +88,11 @@ class AzureOpenAiGateway implements EmbeddingGateway, ImageGateway, StepTextGate
 
         $data = $response->getJson() ?? [];
 
-        return new EmbeddingsResponse(
-            (new Collection($data['data'] ?? []))->extract('embedding')->toList(),
+        return (new EmbeddingsResponse(
+            (new Collection($data['data'] ?? []))->sortBy('index', SORT_ASC)->extract('embedding')->toList(),
             new Usage($data['usage']['prompt_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -136,14 +136,14 @@ class AzureOpenAiGateway implements EmbeddingGateway, ImageGateway, StepTextGate
 
         $data = $response->getJson() ?? [];
 
-        return new ImageResponse(
+        return (new ImageResponse(
             (new Collection($data['data'] ?? []))->map(fn(array $image): GeneratedImage => new GeneratedImage(
                 $image['b64_json'] ?? '',
                 'image/png',
             )),
             $this->extractImageUsage($data),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**

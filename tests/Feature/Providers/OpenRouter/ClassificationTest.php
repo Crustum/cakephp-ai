@@ -118,7 +118,8 @@ test('decisions response is parsed into typed answers', function (): void {
         ->and($response['urgency']->label())->toBe('Blocking revenue')
         ->and($response->usage->inputTokens)->toBe(312)
         ->and($response->meta->provider)->toBe('openrouter')
-        ->and($response->meta->model)->toBe('typesafe/jev-1.13');
+        ->and($response->meta->model)->toBe('typesafe/jev-1.13')
+        ->and($response->raw)->not->toBeNull();
 });
 
 test('classification uses the default decisions model when none is specified', function (): void {

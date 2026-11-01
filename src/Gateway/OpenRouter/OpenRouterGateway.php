@@ -182,11 +182,11 @@ class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
             $image['media_type'] ?? 'image/png',
         ))->toList();
 
-        return new ImageResponse(
+        return (new ImageResponse(
             $images,
             new ImageUsage($data['usage']['prompt_tokens'] ?? 0, $data['usage']['completion_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -346,7 +346,7 @@ class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
 
         $data = $response->getJson() ?? [];
 
-        return new TranscriptionResponse(
+        return (new TranscriptionResponse(
             $data['text'] ?? '',
             collection([]),
             new TranscriptionUsage(
@@ -355,7 +355,7 @@ class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
                 audioSeconds: Hash::get($data, 'usage.seconds'),
             ),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -418,11 +418,11 @@ class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
         /** @var array<int, array<string, mixed>> $rows */
         $rows = $data['data'] ?? [];
 
-        return new EmbeddingsResponse(
+        return (new EmbeddingsResponse(
             collection($rows)->extract('embedding')->toList(),
             new Usage($data['usage']['prompt_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -461,13 +461,13 @@ class OpenRouterGateway implements Gateway, RerankingGateway, StepTextGateway
             score: $result['relevance_score'],
         ))->toList();
 
-        return new RerankingResponse(
+        return (new RerankingResponse(
             $results,
             new RerankingUsage(
                 inputTokens: $data['usage']['total_tokens'] ?? 0,
                 searchUnits: $data['usage']['search_units'] ?? null,
             ),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 }

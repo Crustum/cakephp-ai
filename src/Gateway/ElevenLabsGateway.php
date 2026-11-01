@@ -152,12 +152,12 @@ class ElevenLabsGateway implements AudioGateway, TranscriptionGateway
                 $segment['end'],
             ));
 
-        return new TranscriptionResponse(
+        return (new TranscriptionResponse(
             $data['text'] ?? '',
             $mappedSegments,
             new TranscriptionUsage(audioSeconds: $data['audio_duration_secs'] ?? null),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**

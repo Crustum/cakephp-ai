@@ -172,11 +172,11 @@ class MistralGateway implements AudioGateway, EmbeddingGateway, StepTextGateway,
         /** @var array<int, array<string, mixed>> $rows */
         $rows = $data['data'] ?? [];
 
-        return new EmbeddingsResponse(
+        return (new EmbeddingsResponse(
             collection($rows)->extract('embedding')->toList(),
             new Usage($data['usage']['prompt_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -229,7 +229,7 @@ class MistralGateway implements AudioGateway, EmbeddingGateway, StepTextGateway,
             $segment['end'] ?? 0,
         ));
 
-        return new TranscriptionResponse(
+        return (new TranscriptionResponse(
             $data['text'] ?? '',
             $mappedSegments,
             new TranscriptionUsage(
@@ -238,6 +238,6 @@ class MistralGateway implements AudioGateway, EmbeddingGateway, StepTextGateway,
                 audioSeconds: $data['usage']['prompt_audio_seconds'] ?? null,
             ),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 }

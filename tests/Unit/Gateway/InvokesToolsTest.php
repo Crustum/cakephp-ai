@@ -8,6 +8,7 @@ use Crustum\Ai\Contracts\Tool;
 use Crustum\Ai\Event\InvokingTool;
 use Crustum\Ai\Event\ToolFailed;
 use Crustum\Ai\Event\ToolInvoked;
+use Crustum\Ai\Exception\ToolExecutionException;
 use Crustum\Ai\Gateway\RunContext;
 use Crustum\Ai\Gateway\Trait\InvokesToolsTrait;
 use Crustum\Ai\Tools\Request;
@@ -173,7 +174,7 @@ test('a listener that throws is not reported as a tool failure', function (): vo
     expect($failed)->toBe(0);
 });
 
-test('a failing tool handler is reported as a tool failure and rethrown', function (): void {
+test('a failing tool handler is reported as a tool failure and rethrown wrapped so the loop can recognize it', function (): void {
     $failure = null;
 
     $events = new EventManager();
@@ -186,7 +187,8 @@ test('a failing tool handler is reported as a tool failure and rethrown', functi
     });
 
     expect(fn(): string => toolInvokingGateway()->invoke($tool, ['a' => 1], stubRunContext($events)))
-        ->toThrow(RuntimeException::class, 'Handler exploded.');
+        ->toThrow(fn(ToolExecutionException $exception): bool => $exception->exception instanceof RuntimeException
+            && $exception->exception->getMessage() === 'Handler exploded.');
 
     expect($failure)->toBeInstanceOf(ToolFailed::class)
         ->and($failure->invocationId)->toBe('inv_1')

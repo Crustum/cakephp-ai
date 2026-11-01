@@ -10,6 +10,7 @@ use Crustum\Ai\Files\Image;
 use Crustum\Ai\Files\LocalImage;
 use Crustum\Ai\Files\ProviderImage;
 use Crustum\Ai\Files\RemoteImage;
+use Crustum\Ai\Http\Response;
 use Crustum\Ai\Responses\ClassificationResponse;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 use Crustum\Ai\Test\Support\Storage\LocalDisk;
@@ -106,6 +107,15 @@ test('classification posts questions to the decisions endpoint in the openai wir
                 ],
             ];
     });
+});
+
+test('the raw decisions response is exposed on the classification response', function (): void {
+    aiHttpFake(['*' => aiHttpResponse(fakeOpenAiDecisionsResponse())]);
+
+    $response = Classification::of('text')->question('is_urgent', new Boolean('Is this urgent?'))->classify(provider: 'openai');
+
+    expect($response->raw)->toBeInstanceOf(Response::class)
+        ->and($response->raw->getJson()['model'])->toBe('gpt-6-luna');
 });
 
 test('structured state is sent as json text', function (): void {

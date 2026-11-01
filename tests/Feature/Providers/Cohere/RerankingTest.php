@@ -7,6 +7,7 @@ use Crustum\Ai\Contracts\Providers\Provider;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
 use Crustum\Ai\Gateway\CohereGateway;
+use Crustum\Ai\Http\Response;
 use Crustum\Ai\Reranking;
 use Crustum\Ai\Responses\Data\RankedDocument;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
@@ -84,7 +85,9 @@ test('reranking response is correctly parsed into RankedDocuments', function ():
         ->and($response->first()->document)->toBe('CakePHP is a PHP framework')
         ->and($response->first()->score)->toBe(0.95)
         ->and($response->meta->provider)->toBe('cohere')
-        ->and($response->meta->model)->toBe('rerank-v3.5');
+        ->and($response->meta->model)->toBe('rerank-v3.5')
+        ->and($response->raw)->toBeInstanceOf(Response::class)
+        ->and($response->raw->getJson()['results'][0]['relevance_score'])->toBe(0.95);
 });
 
 test('reranking request sends bearer token', function (): void {

@@ -1354,11 +1354,11 @@ test('a bare rejection resume does not persist a blank assistant row', function 
     expect($messagesTable->find()->where(['role' => 'assistant'])->count())->toBe(1);
 });
 
-test('a resume folds its steps, text and usage into the paused row', function (): void {
+test('a resume folds its steps, text and usage into the paused row', function (bool $streamed, string $content): void {
     $store = new DatabaseConversationStore();
     $conversationId = $store->storeConversation('user', ConversationFixtures::PARTICIPANT, 'Approval conversation');
 
-    insertAssistantTurn($conversationId, ConversationFixtures::MESSAGE_ONE, '', [
+    insertAssistantTurn($conversationId, ConversationFixtures::MESSAGE_ONE, 'Let me check.', [
         assistantStep(
             [['id' => 'call-1', 'name' => 'DeleteFile', 'arguments' => []]],
             [['id' => 'call-1', 'name' => 'DeleteFile', 'arguments' => [], 'result' => 'Deleted', 'result_id' => null]],
@@ -1381,19 +1381,70 @@ test('a resume folds its steps, text and usage into the paused row', function ()
         approvalDecisions: Decisions::from(['call-1' => true]),
     );
 
-    $response = new AgentResponse('invocation-id', 'Done.', new TextUsage(20, 7), new Meta('openai', 'gpt-5'));
-    $response->steps = collection([new Step('Done.', [], [], FinishReason::Stop, new TextUsage(20, 7), new Meta(), '', [])]);
+    $step = new Step('Done.', [], [], FinishReason::Stop, new TextUsage(20, 7), new Meta(), '', []);
+
+    if ($streamed) {
+        $response = new StreamedAgentResponse('invocation-id', collection([
+            new TextDelta('event-1', 'message-1', 'Done.', 0),
+            new StreamEnd('event-4', 'stop', new TextUsage(20, 7), 0, collection([$step])),
+        ]), new Meta('openai', 'gpt-5'));
+    } else {
+        $response = new AgentResponse('invocation-id', 'Done.', new TextUsage(20, 7), new Meta('openai', 'gpt-5'));
+        $response->steps = collection([$step]);
+    }
 
     $messageId = $store->storeAssistantMessage($conversationId, 'user', ConversationFixtures::PARTICIPANT, $prompt, $response);
 
     $row = $messagesTable->find()->where(['role' => 'assistant'])->firstOrFail();
 
     expect($messageId)->toBe(ConversationFixtures::MESSAGE_ONE)
-        ->and($row->content)->toBe('Done.')
+        ->and($row->content)->toBe($content)
         ->and($row->steps)->toHaveCount(2)
         ->and($row->steps[1]['content'])->toBe('Done.')
         ->and($row->usage_data)->toMatchArray(['input_tokens' => 30, 'output_tokens' => 12])
         ->and($row->meta)->toMatchArray(['provider' => 'openai', 'model' => 'gpt-5']);
+})->with([
+    'prompted' => [false, 'Done.'],
+    'streamed' => [true, "Let me check.\n\nDone."],
+]);
+
+test('a streamed turn that pauses twice keeps the text of every step', function (): void {
+    $store = new DatabaseConversationStore();
+    $conversationId = $store->storeConversation('user', ConversationFixtures::PARTICIPANT, 'Approval conversation');
+
+    insertAssistantTurn($conversationId, ConversationFixtures::MESSAGE_ONE, 'Let me check.', [
+        assistantStep([['id' => 'call-1', 'name' => 'DeleteFile', 'arguments' => []]]),
+    ], ['call-1' => 'Deletes a file']);
+
+    $resume = fn(string $callId): AgentPrompt => new AgentPrompt(
+        new ToolUsingAgent(),
+        '',
+        [],
+        Double::for(TextProvider::class),
+        'test-model',
+        approvalDecisions: Decisions::from([$callId => true]),
+    );
+
+    $store->storeAssistantMessage($conversationId, 'user', ConversationFixtures::PARTICIPANT, $resume('call-1'), new StreamedAgentResponse('invocation-1', collection([
+        new TextDelta('event-1', 'message-1', 'Deleting.', 0),
+        new ToolApprovalRequest('event-2', collection([new PendingApproval('call-2', 'DeleteFile', [], 'Deletes a file')]), 0, collection([
+            new Step('Deleting.', [new ToolCall('call-2', 'DeleteFile', [])], [], FinishReason::ToolCalls, new TextUsage(), new Meta(), '', []),
+        ])),
+    ]), new Meta('openai', 'gpt-5')));
+
+    $store->storeAssistantMessage($conversationId, 'user', ConversationFixtures::PARTICIPANT, $resume('call-2'), new StreamedAgentResponse('invocation-2', collection([
+        new TextDelta('event-3', 'message-2', 'Done.', 0),
+        new StreamEnd('event-4', 'stop', new TextUsage(), 0, collection([
+            new Step('Done.', [], [], FinishReason::Stop, new TextUsage(), new Meta(), '', []),
+        ])),
+    ]), new Meta('openai', 'gpt-5')));
+
+    /** @var \Crustum\Ai\Model\Table\ConversationMessagesTable $messagesTable */
+    $messagesTable = $this->getTableLocator()->get('Crustum/Ai.ConversationMessages');
+    $row = $messagesTable->find()->where(['role' => 'assistant'])->firstOrFail();
+
+    expect($row->content)->toBe("Let me check.\n\nDeleting.\n\nDone.")
+        ->and($row->status)->toBe(MessageStatus::Completed);
 });
 
 test('a resume keeps the citations the paused half of the turn collected', function (): void {

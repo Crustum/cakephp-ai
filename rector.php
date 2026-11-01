@@ -7,7 +7,6 @@ use Rector\CodeQuality\Rector\New_\NewStaticToNewSelfRector;
 use Rector\Config\RectorConfig;
 use Rector\DeadCode\Rector\For_\RemoveDeadIfForeachForRector;
 use Rector\DeadCode\Rector\For_\RemoveDeadLoopRector;
-use Rector\DeadCode\Rector\ClassMethod\RemoveDuplicatedReturnSelfDocblockRector;
 use Rector\DeadCode\Rector\ClassMethod\RemoveMixedDocblockOverruledByNativeTypeRector;
 use Rector\DeadCode\Rector\ClassMethod\RemoveReturnTagIncompatibleWithNativeTypeRector;
 use Rector\DeadCode\Rector\ClassMethod\RemoveUselessParamTagRector;
@@ -35,7 +34,7 @@ return RectorConfig::configure()
             __DIR__ . '/src/Support/AiCollection.php',
         ],
 		TernaryToNullsafeCoalesceRector::class => [
-            __DIR__ . '/src/Gateway/RunContext.php',		
+            __DIR__ . '/src/Gateway/RunContext.php',
 		],
         ReadOnlyPropertyRector::class,
         ClassPropertyAssignToConstructorPromotionRector::class,
@@ -48,7 +47,6 @@ return RectorConfig::configure()
         RemoveUselessParamTagRector::class,
         RemoveUselessVarTagRector::class,
         RemoveUselessUnionReturnDocblockRector::class,
-        RemoveDuplicatedReturnSelfDocblockRector::class,
         RemoveMixedDocblockOverruledByNativeTypeRector::class,
         RemoveReturnTagIncompatibleWithNativeTypeRector::class,
         ReturnTypeFromStrictFluentReturnRector::class,

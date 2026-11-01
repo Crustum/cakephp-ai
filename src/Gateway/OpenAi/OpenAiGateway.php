@@ -100,7 +100,7 @@ class OpenAiGateway implements Gateway, StepTextGateway
 
         $data = $response->getJson() ?? [];
 
-        return new ImageResponse(
+        return (new ImageResponse(
             array_map(
                 fn(array $image): GeneratedImage => new GeneratedImage(
                     $image['b64_json'] ?? '',
@@ -110,7 +110,7 @@ class OpenAiGateway implements Gateway, StepTextGateway
             ),
             $this->extractImageUsage($data),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -284,7 +284,7 @@ class OpenAiGateway implements Gateway, StepTextGateway
 
         $data = $response->getJson() ?? [];
 
-        return new TranscriptionResponse(
+        return (new TranscriptionResponse(
             $data['text'] ?? '',
             collection(array_map(
                 fn(array $segment): TranscriptionSegment => new TranscriptionSegment(
@@ -301,7 +301,7 @@ class OpenAiGateway implements Gateway, StepTextGateway
                 audioSeconds: Hash::get($data, 'usage.seconds') ?? Hash::get($data, 'duration'),
             ),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 
     /**
@@ -337,10 +337,10 @@ class OpenAiGateway implements Gateway, StepTextGateway
         /** @var array<int, array<string, mixed>> $rows */
         $rows = $data['data'] ?? [];
 
-        return new EmbeddingsResponse(
-            collection($rows)->extract('embedding')->toList(),
+        return (new EmbeddingsResponse(
+            collection($rows)->sortBy('index', SORT_ASC)->extract('embedding')->toList(),
             new Usage($data['usage']['prompt_tokens'] ?? 0),
             new Meta($provider->name(), $model),
-        );
+        ))->withRawResponse($response);
     }
 }

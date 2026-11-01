@@ -4,6 +4,7 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
+use Crustum\Ai\Http\Response;
 use Crustum\Ai\Image;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
@@ -20,6 +21,15 @@ function fakeOpenAiImageResponse(): AiHttpResponseDefinition
         ]],
     ]);
 }
+
+test('the raw HTTP response is exposed on the image response', function (): void {
+    aiHttpFake(['*' => fakeOpenAiImageResponse()]);
+
+    $response = Image::of('A red apple')->generate(provider: 'openai', model: 'gpt-image-1');
+
+    expect($response->raw)->toBeInstanceOf(Response::class)
+        ->and($response->raw->getJson()['data'][0]['b64_json'])->toBe(base64_encode('fake-image'));
+});
 
 test('image request does not include quality when not specified', function (): void {
     aiHttpFake([

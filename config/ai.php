@@ -166,16 +166,16 @@ return [
                 'url' => env('MISTRAL_URL', 'https://api.mistral.ai/v1'),
                 'models' => [
                     'text' => [
-                        'default' => env('MISTRAL_TEXT_MODEL', 'mistral-large-2512'),
+                        'default' => env('MISTRAL_TEXT_MODEL', 'mistral-large-4-0'),
                         'cheapest' => env('MISTRAL_TEXT_MODEL_CHEAPEST', 'mistral-small-4'),
-                        'smartest' => env('MISTRAL_TEXT_MODEL_SMARTEST', 'mistral-medium-3-5'),
+                        'smartest' => env('MISTRAL_TEXT_MODEL_SMARTEST', 'mistral-large-4-0'),
                     ],
                     'embeddings' => [
                         'default' => env('MISTRAL_EMBEDDINGS_MODEL', 'mistral-embed-2312'),
                         'dimensions' => (int)env('MISTRAL_EMBEDDINGS_DIMENSIONS', 1024),
                     ],
                     'transcription' => [
-                        'default' => env('MISTRAL_TRANSCRIPTION_MODEL', 'voxtral-mini-2602'),
+                        'default' => env('MISTRAL_TRANSCRIPTION_MODEL', 'voxtral-mini-transcribe-3-0'),
                     ],
                 ],
             ],

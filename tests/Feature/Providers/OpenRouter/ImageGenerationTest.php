@@ -25,9 +25,18 @@ function fakeOpenRouterImageResponse(string $mimeType = 'image/png', string $con
         'usage' => [
             'prompt_tokens' => 10,
             'completion_tokens' => 20,
+            'cost' => 0.04,
         ],
     ]);
 }
+
+test('the raw HTTP response exposes provider-specific image usage', function (): void {
+    aiHttpFake(['openrouter.ai/*' => fakeOpenRouterImageResponse()]);
+
+    $response = Image::of('A blue circle')->generate(provider: 'openrouter', model: 'black-forest-labs/flux.2-pro');
+
+    expect($response->raw->getJson()['usage']['cost'])->toBe(0.04);
+});
 
 test('image request is sent to the images endpoint with model and prompt', function (): void {
     aiHttpFake(['openrouter.ai/*' => fakeOpenRouterImageResponse()]);

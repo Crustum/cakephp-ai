@@ -12,6 +12,7 @@ use Crustum\Ai\Event\AgentStreamed;
 use Crustum\Ai\Event\InvokingTool;
 use Crustum\Ai\Event\PromptingAgent;
 use Crustum\Ai\Event\StreamingAgent;
+use Crustum\Ai\Event\ToolFailed;
 use Crustum\Ai\Event\ToolInvoked;
 use Crustum\Ai\Files;
 use Crustum\Ai\Files\LocalImage;
@@ -380,29 +381,22 @@ test('agents can analyze local image attachments with a detected mime type', fun
     'jpeg' => ['blue.jpg', 'blue'],
 ]);
 
-test('agent tool exception handling is not magical', function (string $provider, string $apiKey, string $model): void {
+test('a throwing tool returns its failure to the model', function (string $provider, string $apiKey, string $model): void {
     ApiKey::required($apiKey);
 
-    EventRecorder::start([InvokingTool::class, ToolInvoked::class]);
+    $recorder = EventRecorder::start([InvokingTool::class, ToolFailed::class]);
 
-    $agent = new ToolUsingAgent(toolThrowsException: true);
+    $response = (new ToolUsingAgent(toolThrowsException: true))->prompt(
+        'Can I have a random number between 1 and 1000?',
+        provider: $provider,
+        model: $model,
+    );
 
-    $caught = false;
+    expect($response->toolResults)->not->toBeEmpty()
+        ->and($response->toolResults->first()->error())->toBe('The tool call failed: Forced to throw exception.')
+        ->and($response->text)->not->toBeEmpty();
 
-    try {
-        $agent->prompt(
-            'Can I have a random number between 1 and 1000?',
-            provider: $provider,
-            model: $model,
-        );
-    } catch (Exception $exception) {
-        $caught = true;
-
-        expect($exception)->toBeInstanceOf(Exception::class)
-            ->and($exception->getMessage())->toEqual('Forced to throw exception.');
-    }
-
-    expect($caught)->toBeTrue();
+    $recorder->assertDispatched(ToolFailed::class);
 })->with('agent-providers');
 
 test('agents surface the reasoning a prompted turn produced', function (string $provider, string $apiKey, string $model, array $options): void {

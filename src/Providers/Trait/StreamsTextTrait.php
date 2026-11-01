@@ -65,8 +65,8 @@ trait StreamsTextTrait
                     }
 
                     $tools = $this->resolveTools($prompt);
-                    $approval = $this->resumableApprovalFor($prompt);
-                    $recordApprovalResults = $this->approvalResultRecorderFor($prompt, $resolvedApprovalResults);
+                    $approval = $this->resumableApprovalFor($prompt, $messages, $tools);
+                    $recordApprovalResults = $this->approvalResultRecorderFor($prompt, $approval, $resolvedApprovalResults);
 
                     $validatedApproval = $approval !== null
                         ? $this->textGenerationLoop()->validateApproval($approval, $messages, $tools)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 use Cake\Core\Configure;
 use Crustum\Ai\Exception\ProviderOverloadedException;
 use Crustum\Ai\Exception\RateLimitedException;
+use Crustum\Ai\Http\Response;
 use Crustum\Ai\Test\Support\Http\AiHttpRequest;
 use Crustum\Ai\Test\Support\Http\AiHttpResponseDefinition;
 use Crustum\Ai\Transcription;
@@ -70,6 +71,16 @@ test('transcription response text is correctly parsed', function (): void {
 
     expect($response->text)->toBe('Hello, world!')
         ->and($response->meta->provider)->toBe('openai');
+});
+
+test('the raw http response is exposed on the transcription response', function (): void {
+    aiHttpFake(['*' => fakeOpenAiTranscriptionResponse()]);
+
+    $response = Transcription::fromBase64(base64_encode('fake-audio'), 'audio/mp3')
+        ->generate(provider: 'openai');
+
+    expect($response->raw)->toBeInstanceOf(Response::class)
+        ->and($response->raw->getJson()['text'])->toBe('Hello, world!');
 });
 
 test('transcription usage is correctly parsed', function (): void {

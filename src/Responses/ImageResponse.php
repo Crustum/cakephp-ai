@@ -8,6 +8,7 @@ use Countable;
 use Crustum\Ai\Responses\Data\GeneratedImage;
 use Crustum\Ai\Responses\Data\ImageUsage;
 use Crustum\Ai\Responses\Data\Meta;
+use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
 use RuntimeException;
 use Stringable;
 
@@ -18,6 +19,8 @@ use Stringable;
  */
 class ImageResponse implements Countable, Stringable
 {
+    use HasRawResponseTrait;
+
     public ImageList $images;
 
     /**

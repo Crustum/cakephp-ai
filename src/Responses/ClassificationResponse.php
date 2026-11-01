@@ -9,6 +9,7 @@ use Countable;
 use Crustum\Ai\Responses\Data\Answer;
 use Crustum\Ai\Responses\Data\Meta;
 use Crustum\Ai\Responses\Data\TextUsage;
+use Crustum\Ai\Responses\Trait\HasRawResponseTrait;
 use InvalidArgumentException;
 use IteratorAggregate;
 use JsonSerializable;
@@ -25,6 +26,8 @@ use Traversable;
  */
 class ClassificationResponse implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 {
+    use HasRawResponseTrait;
+
     /**
      * Create a new classification response instance.
      *
